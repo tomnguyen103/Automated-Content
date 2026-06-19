@@ -1,0 +1,24 @@
+# Dependencies and build output
+node_modules/
+.next/
+out/
+dist/
+build/
+
+# Local environment
+.env*
+!.env.example
+
+# Test and coverage output
+coverage/
+playwright-report/
+test-results/
+
+# Deployment and package-manager state
+.vercel/
+*.tsbuildinfo
+
+# Local AI planning and tooling
+.ai-plans/
+.swarm/
+.codegraph/

@@ -54,6 +54,9 @@ const providerModels: Record<AiProvider, string> = {
   gemini: "gemini-2.5-flash"
 };
 
+const remoteModelTimeoutMs = 30_000;
+const remoteModelMaxRetries = 2;
+
 function toHashTag(keyword: string) {
   const compact = keyword.replace(/[^a-zA-Z0-9]/g, "");
   return compact ? `#${compact}` : null;
@@ -125,6 +128,23 @@ function buildModelMessages(input: ContentAgentInput, context: ContentModelConte
   ];
 }
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(new Error(`Remote model invocation timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 async function generateRemotePlan({
   provider,
   model,
@@ -143,18 +163,26 @@ async function generateRemotePlan({
       ? new ChatOpenAI({
           apiKey,
           model,
-          temperature: 0.2
+          temperature: 0.2,
+          timeout: remoteModelTimeoutMs,
+          maxRetries: remoteModelMaxRetries
         })
       : new ChatGoogle({
           apiKey,
           model,
-          temperature: 0.2
+          temperature: 0.2,
+          maxRetries: remoteModelMaxRetries
         });
   const structuredModel = chatModel.withStructuredOutput(contentModelPlanSchema, {
     name: "content_model_plan"
   });
 
-  return structuredModel.invoke(buildModelMessages(input, context));
+  return withTimeout(
+    structuredModel.invoke(buildModelMessages(input, context), {
+      timeout: remoteModelTimeoutMs
+    }),
+    remoteModelTimeoutMs
+  );
 }
 
 export function createContentModel(options: ModelFactoryOptions = {}): ContentModel {

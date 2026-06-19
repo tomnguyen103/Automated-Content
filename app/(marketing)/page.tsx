@@ -12,7 +12,7 @@ import {
 import { AuthControls } from "@/components/auth/auth-controls";
 import { Badge } from "@/components/ui/badge";
 import { platformLabels } from "@/lib/design/tokens";
-import { env, isClerkClientConfigured } from "@/lib/env";
+import { appUrl, isClerkClientConfigured } from "@/lib/env";
 
 const workflowSteps = [
   { label: "Research topic", icon: Sparkles, detail: "Sources, angle, audience" },
@@ -21,7 +21,13 @@ const workflowSteps = [
   { label: "Publish", icon: Workflow, detail: "Queue, retry, report" }
 ];
 
-const appHref = (path: string) => new URL(path, env.NEXT_PUBLIC_APP_URL).toString();
+const appHref = (path: string) => {
+  try {
+    return new URL(path, appUrl).toString();
+  } catch {
+    return path;
+  }
+};
 
 export default function MarketingPage() {
   return (

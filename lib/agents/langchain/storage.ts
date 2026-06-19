@@ -108,53 +108,55 @@ export function createDatabaseAgentStorage(db: DatabaseClient = getDb()): AgentS
       const now = new Date(input.savedAt);
       const topicId = `topic_${crypto.randomUUID()}`;
 
-      await db.insert(contentTopics).values({
-        id: topicId,
-        workspaceId: input.workspaceId,
-        createdByUserId: input.userId,
-        topic: input.contentPack.topic,
-        audience: input.contentPack.audience,
-        tone: input.contentPack.tone,
-        goal: input.contentPack.goal,
-        sources: input.sources,
-        platforms: input.contentPack.variants.map((variant) => variant.platform),
-        updatedAt: now
-      });
+      await db.transaction(async (tx) => {
+        await tx.insert(contentTopics).values({
+          id: topicId,
+          workspaceId: input.workspaceId,
+          createdByUserId: input.userId,
+          topic: input.contentPack.topic,
+          audience: input.contentPack.audience,
+          tone: input.contentPack.tone,
+          goal: input.contentPack.goal,
+          sources: input.sources,
+          platforms: input.contentPack.variants.map((variant) => variant.platform),
+          updatedAt: now
+        });
 
-      await db.insert(contentDrafts).values({
-        id: input.draftId,
-        workspaceId: input.workspaceId,
-        createdByUserId: input.userId,
-        topicId,
-        agentRunId: input.agentRunId ?? null,
-        contentPackId: input.contentPack.id,
-        status: "draft",
-        title: input.contentPack.ideas[0]?.title ?? input.contentPack.topic,
-        contentPack: toJsonRecord(input.contentPack),
-        savedAt: now,
-        updatedAt: now
-      });
+        await tx.insert(contentDrafts).values({
+          id: input.draftId,
+          workspaceId: input.workspaceId,
+          createdByUserId: input.userId,
+          topicId,
+          agentRunId: input.agentRunId ?? null,
+          contentPackId: input.contentPack.id,
+          status: "draft",
+          title: input.contentPack.ideas[0]?.title ?? input.contentPack.topic,
+          contentPack: toJsonRecord(input.contentPack),
+          savedAt: now,
+          updatedAt: now
+        });
 
-      if (input.contentPack.variants.length > 0) {
-        await db.insert(platformVariants).values(
-          input.contentPack.variants.map((variant) => ({
-            id: variant.id,
-            workspaceId: input.workspaceId,
-            draftId: input.draftId,
-            platform: variant.platform,
-            title: variant.title,
-            hook: variant.hook,
-            body: variant.body,
-            cta: variant.cta,
-            hashtags: variant.hashtags,
-            mediaPrompt: variant.mediaPrompt ?? null,
-            characterCount: variant.characterCount,
-            policyStatus: variant.policyStatus,
-            policyWarnings: variant.policyWarnings,
-            updatedAt: now
-          }))
-        );
-      }
+        if (input.contentPack.variants.length > 0) {
+          await tx.insert(platformVariants).values(
+            input.contentPack.variants.map((variant) => ({
+              id: variant.id,
+              workspaceId: input.workspaceId,
+              draftId: input.draftId,
+              platform: variant.platform,
+              title: variant.title,
+              hook: variant.hook,
+              body: variant.body,
+              cta: variant.cta,
+              hashtags: variant.hashtags,
+              mediaPrompt: variant.mediaPrompt ?? null,
+              characterCount: variant.characterCount,
+              policyStatus: variant.policyStatus,
+              policyWarnings: variant.policyWarnings,
+              updatedAt: now
+            }))
+          );
+        }
+      });
 
       return {
         draftId: input.draftId,

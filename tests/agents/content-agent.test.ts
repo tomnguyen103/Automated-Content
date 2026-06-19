@@ -49,7 +49,7 @@ describe("content agent integration", () => {
     expect(result.run.status).toBe("succeeded");
     expect(result.run.provider).toBe("gemini");
     expect(result.contentPack.variants).toHaveLength(2);
-    expect(result.contentPack.metadata.toolCallCount).toBe(result.run.toolCalls.length);
+    expect(result.contentPack.metadata.toolCallCount).toBe(result.run.toolCalls.length - 1);
     expect(result.run.toolCalls.map((call) => call.name)).toContain("save_draft");
     await expect(storage.getRun(result.run.id, "workspace_1")).resolves.toMatchObject({
       id: result.run.id,

@@ -31,7 +31,17 @@ export function GenerationTimeline({ run, loading }: GenerationTimelineProps) {
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">No run yet</p>
           )}
         </div>
-        <Badge tone={run?.status === "succeeded" ? "success" : loading ? "primary" : "neutral"}>
+        <Badge
+          tone={
+            loading
+              ? "primary"
+              : run?.status === "succeeded"
+                ? "success"
+                : run?.status === "failed"
+                  ? "critical"
+                  : "neutral"
+          }
+        >
           {loading ? "Running" : run?.status ?? "Ready"}
         </Badge>
       </div>

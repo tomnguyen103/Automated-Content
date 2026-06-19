@@ -17,7 +17,9 @@ export default defineConfig({
     env: {
       ...process.env,
       AUTH_LOCAL_PREVIEW: "1",
-      PLAYWRIGHT_AUTH_LOCAL_PREVIEW: "1"
+      PLAYWRIGHT_AUTH_LOCAL_PREVIEW: "1",
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "",
+      CLERK_SECRET_KEY: ""
     }
   },
   projects: [
@@ -25,15 +27,13 @@ export default defineConfig({
       name: "desktop-edge",
       use: {
         ...devices["Desktop Edge"],
-        channel: "msedge",
         viewport: { width: 1440, height: 1000 }
       }
     },
     {
       name: "mobile-edge",
       use: {
-        ...devices["Pixel 5"],
-        channel: "msedge"
+        ...devices["Pixel 5"]
       }
     }
   ]

@@ -27,9 +27,10 @@ export class AgentRunRecorder {
     input: z.infer<InputSchema>
   ): Promise<z.infer<OutputSchema>> {
     const startedAt = this.now().toISOString();
-    const parsedInput = tool.inputSchema.parse(input);
+    let parsedInput: z.infer<InputSchema> | undefined;
 
     try {
+      parsedInput = tool.inputSchema.parse(input);
       const output = tool.outputSchema.parse(await tool.execute(parsedInput, this.context));
       this.toolCalls.push({
         id: crypto.randomUUID(),
@@ -49,7 +50,7 @@ export class AgentRunRecorder {
         status: "failed",
         startedAt,
         completedAt: this.now().toISOString(),
-        input: parsedInput as Record<string, unknown>,
+        input: (parsedInput ?? input) as Record<string, unknown>,
         error: error instanceof Error ? error.message : "Unknown tool execution error"
       });
 

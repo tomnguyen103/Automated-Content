@@ -84,7 +84,8 @@ export function getRemainingUsage({
   key: UsageLimitKey;
   used: number;
 }) {
-  return Math.max(getUsageLimit(plan, key) - Math.max(used, 0), 0);
+  const normalizedUsed = Number.isFinite(used) ? Math.max(used, 0) : 0;
+  return Math.max(getUsageLimit(plan, key) - normalizedUsed, 0);
 }
 
 export function canConsumeUsage({

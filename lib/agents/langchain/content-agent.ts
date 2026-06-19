@@ -177,7 +177,7 @@ export async function runContentAgent(
         provider: model.provider,
         model: model.model,
         traceId,
-        toolCallCount: recorder.calls.length + 1
+        toolCallCount: recorder.calls.length
       }
     });
     const draft = await recorder.execute(tools.saveDraft, {

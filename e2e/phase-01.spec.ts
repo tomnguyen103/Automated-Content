@@ -1,22 +1,27 @@
-import { expect, test } from "@playwright/test";
+import { expect, test as base } from "@playwright/test";
 
-const consoleIssues: string[] = [];
+const test = base.extend<{ consoleIssues: string[] }>({
+  consoleIssues: [
+    async ({ page }, use) => {
+      const consoleIssues: string[] = [];
 
-test.beforeEach(({ page }) => {
-  consoleIssues.length = 0;
+      page.on("console", (message) => {
+        if (message.type() === "error" || message.type() === "warning") {
+          consoleIssues.push(`${message.type()}: ${message.text()}`);
+        }
+      });
 
-  page.on("console", (message) => {
-    if (message.type() === "error" || message.type() === "warning") {
-      consoleIssues.push(`${message.type()}: ${message.text()}`);
-    }
-  });
+      page.on("pageerror", (error) => {
+        consoleIssues.push(`pageerror: ${error.message}`);
+      });
 
-  page.on("pageerror", (error) => {
-    consoleIssues.push(`pageerror: ${error.message}`);
-  });
+      await use(consoleIssues);
+    },
+    { auto: true }
+  ]
 });
 
-test.afterEach(() => {
+test.afterEach(({ consoleIssues }) => {
   expect(consoleIssues).toEqual([]);
 });
 

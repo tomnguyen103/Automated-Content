@@ -8,21 +8,23 @@ import {
   planEntitlements,
   type BillingPlan
 } from "@/lib/billing/entitlements";
-import { buildUsageMetrics } from "@/lib/billing/usage";
+import { buildUsageMetrics, getWorkspaceBillingState } from "@/lib/billing/usage";
 import { getCurrentUser } from "@/lib/auth/current-user";
-
-const previewUsage = {
-  aiGenerationsPerMonth: 8,
-  scheduledPostsPerDay: 1,
-  providerConnections: 1,
-  mediaTransformsPerMonth: 3,
-  autoRepliesPerMonth: 0
-};
+import { isDatabaseConfigured } from "@/lib/env";
+import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
 
 export default async function BillingPage() {
   const user = await getCurrentUser();
-  const activePlan: BillingPlan = normalizeBillingPlan("free");
-  const usageMetrics = buildUsageMetrics(activePlan, previewUsage);
+  const workspace = user ? await resolvePersonalWorkspaceForUser(user) : null;
+  const fallbackPlan: BillingPlan = normalizeBillingPlan(undefined);
+  const billingState =
+    workspace && !workspace.isLocalPreview && isDatabaseConfigured
+      ? await getWorkspaceBillingState({ workspaceId: workspace.id })
+      : {
+          activePlan: fallbackPlan,
+          usageMetrics: buildUsageMetrics(fallbackPlan, {})
+        };
+  const { activePlan, usageMetrics } = billingState;
 
   return (
     <>
@@ -52,7 +54,9 @@ export default async function BillingPage() {
                   The same entitlement helpers power API checks, workers, and this dashboard view.
                 </p>
               </div>
-              <Badge tone="premium">Premium limit: 7 posts/day</Badge>
+              <Badge tone="premium">
+                Premium limit: {planEntitlements.premium.limits.scheduledPostsPerDay} posts/day
+              </Badge>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">

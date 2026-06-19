@@ -6,7 +6,9 @@ type UsageMeterProps = {
 };
 
 export function UsageMeter({ metric }: UsageMeterProps) {
-  const percent = metric.limit === 0 ? 100 : Math.min(Math.round((metric.used / metric.limit) * 100), 100);
+  const normalizedUsed = Number.isFinite(metric.used) ? Math.max(metric.used, 0) : 0;
+  const percent =
+    metric.limit === 0 ? 100 : Math.max(0, Math.min(100, Math.round((normalizedUsed / metric.limit) * 100)));
   const isAtLimit = metric.remaining === 0;
 
   return (

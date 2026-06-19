@@ -1,4 +1,5 @@
 import {
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -158,6 +159,7 @@ export const contentTopics = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
   },
   (table) => [
+    uniqueIndex("content_topics_workspace_id_id_idx").on(table.workspaceId, table.id),
     index("content_topics_workspace_idx").on(table.workspaceId),
     index("content_topics_created_by_user_idx").on(table.createdByUserId)
   ]
@@ -187,6 +189,7 @@ export const agentRuns = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
   },
   (table) => [
+    uniqueIndex("agent_runs_workspace_id_id_idx").on(table.workspaceId, table.id),
     index("agent_runs_workspace_idx").on(table.workspaceId),
     index("agent_runs_user_idx").on(table.userId),
     uniqueIndex("agent_runs_trace_idx").on(table.traceId)
@@ -203,8 +206,8 @@ export const contentDrafts = pgTable(
     createdByUserId: text("created_by_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    topicId: text("topic_id").references(() => contentTopics.id, { onDelete: "set null" }),
-    agentRunId: text("agent_run_id").references(() => agentRuns.id, { onDelete: "set null" }),
+    topicId: text("topic_id"),
+    agentRunId: text("agent_run_id"),
     contentPackId: text("content_pack_id").notNull(),
     status: contentDraftStatusEnum("status").default("draft").notNull(),
     title: text("title").notNull(),
@@ -214,6 +217,17 @@ export const contentDrafts = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
   },
   (table) => [
+    uniqueIndex("content_drafts_workspace_id_id_idx").on(table.workspaceId, table.id),
+    foreignKey({
+      columns: [table.workspaceId, table.topicId],
+      foreignColumns: [contentTopics.workspaceId, contentTopics.id],
+      name: "content_drafts_workspace_topic_fk"
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.agentRunId],
+      foreignColumns: [agentRuns.workspaceId, agentRuns.id],
+      name: "content_drafts_workspace_agent_run_fk"
+    }),
     index("content_drafts_workspace_idx").on(table.workspaceId),
     index("content_drafts_agent_run_idx").on(table.agentRunId),
     index("content_drafts_created_by_user_idx").on(table.createdByUserId)
@@ -227,9 +241,7 @@ export const platformVariants = pgTable(
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
-    draftId: text("draft_id")
-      .notNull()
-      .references(() => contentDrafts.id, { onDelete: "cascade" }),
+    draftId: text("draft_id").notNull(),
     platform: socialPlatformEnum("platform").notNull(),
     title: text("title").notNull(),
     hook: text("hook").notNull(),
@@ -244,6 +256,11 @@ export const platformVariants = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
   },
   (table) => [
+    foreignKey({
+      columns: [table.workspaceId, table.draftId],
+      foreignColumns: [contentDrafts.workspaceId, contentDrafts.id],
+      name: "platform_variants_workspace_draft_fk"
+    }).onDelete("cascade"),
     index("platform_variants_workspace_idx").on(table.workspaceId),
     index("platform_variants_draft_idx").on(table.draftId),
     index("platform_variants_platform_idx").on(table.platform)

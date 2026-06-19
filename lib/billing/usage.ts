@@ -2,11 +2,12 @@ import "server-only";
 
 import { and, eq, gte, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { usageLedger, type usageEventTypeEnum } from "@/db/schema";
+import { subscriptions, usageLedger, type usageEventTypeEnum } from "@/db/schema";
 import {
   canConsumeUsage,
   getRemainingUsage,
   getUsageLimit,
+  normalizeBillingPlan,
   type BillingPlan,
   type UsageLimitKey
 } from "@/lib/billing/entitlements";
@@ -63,6 +64,41 @@ export function buildUsageMetrics(plan: BillingPlan, used: Partial<Record<UsageL
   return (Object.keys(usageMetricLabels) as UsageLimitKey[]).map((key) =>
     buildUsageMetric(plan, key, used[key] ?? 0)
   );
+}
+
+export async function getWorkspaceBillingState({
+  workspaceId,
+  now = new Date()
+}: {
+  workspaceId: string;
+  now?: Date;
+}) {
+  const db = getDb();
+  const [subscription] = await db
+    .select({ plan: subscriptions.plan })
+    .from(subscriptions)
+    .where(eq(subscriptions.workspaceId, workspaceId))
+    .limit(1);
+  const activePlan = normalizeBillingPlan(subscription?.plan);
+  const used: Partial<Record<UsageLimitKey, number>> = {};
+
+  await Promise.all(
+    (Object.keys(usageMetricLabels) as UsageLimitKey[]).map(async (key) => {
+      const ledgerType = usageLimitToLedgerType[key];
+      used[key] = ledgerType
+        ? await getLedgerUsageTotal({
+            workspaceId,
+            type: ledgerType,
+            since: getUsageWindowStart(key, now)
+          })
+        : 0;
+    })
+  );
+
+  return {
+    activePlan,
+    usageMetrics: buildUsageMetrics(activePlan, used)
+  };
 }
 
 export function getUsageWindowStart(key: UsageLimitKey, now = new Date()) {

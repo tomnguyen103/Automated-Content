@@ -40,5 +40,8 @@ describe("billing entitlements", () => {
     expect(getRemainingUsage({ plan: "free", key: "aiGenerationsPerMonth", used: -4 })).toBe(
       getUsageLimit("free", "aiGenerationsPerMonth")
     );
+    expect(getRemainingUsage({ plan: "free", key: "aiGenerationsPerMonth", used: Number.NaN })).toBe(
+      getUsageLimit("free", "aiGenerationsPerMonth")
+    );
   });
 });

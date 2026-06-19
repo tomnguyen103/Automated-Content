@@ -15,8 +15,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Authentication is required." }, { status: 401 });
   }
 
+  let body: unknown;
   try {
-    const body = await request.json();
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON payload." }, { status: 400 });
+  }
+
+  try {
     const input = contentAgentInputSchema.parse(body);
     const workspace = await resolvePersonalWorkspaceForUser(user);
     const storage = createAgentStorage({
@@ -54,9 +60,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to generate content." },
-      { status: 500 }
-    );
+    console.error("Unexpected content generation error", error);
+    return NextResponse.json({ error: "Unable to generate content." }, { status: 500 });
   }
 }

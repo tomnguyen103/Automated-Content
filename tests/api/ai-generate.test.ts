@@ -1,11 +1,32 @@
 import { NextRequest } from "next/server";
-import { describe, expect, it } from "vitest";
-import { GET } from "@/app/api/agent-runs/[id]/route";
-import { POST } from "@/app/api/ai/generate/route";
-import { clearAgentStorageForTests } from "@/lib/agents/langchain/storage";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+async function loadApiModules() {
+  const [{ POST }, { GET }, { clearAgentStorageForTests }] = await Promise.all([
+    import("@/app/api/ai/generate/route"),
+    import("@/app/api/agent-runs/[id]/route"),
+    import("@/lib/agents/langchain/storage")
+  ]);
+
+  return { POST, GET, clearAgentStorageForTests };
+}
 
 describe("AI generate API", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv("AUTH_LOCAL_PREVIEW", "1");
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("GEMINI_API_KEY", "");
+    vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "1");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
   it("generates a content pack and exposes the agent run", async () => {
+    const { POST, GET, clearAgentStorageForTests } = await loadApiModules();
     clearAgentStorageForTests();
 
     const request = new NextRequest("http://localhost:3000/api/ai/generate", {
@@ -33,5 +54,21 @@ describe("AI generate API", () => {
 
     expect(getResponse.status).toBe(200);
     expect(getPayload.run.id).toBe(payload.run.id);
+  });
+
+  it("returns a 400 for malformed JSON", async () => {
+    const { POST, clearAgentStorageForTests } = await loadApiModules();
+    clearAgentStorageForTests();
+
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/ai/generate", {
+        method: "POST",
+        body: "{bad json"
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe("Invalid JSON payload.");
   });
 });

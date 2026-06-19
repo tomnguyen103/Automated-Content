@@ -14,10 +14,7 @@ const optionalUrl = z.preprocess(emptyToUndefined, z.string().url().optional());
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  NEXT_PUBLIC_APP_URL: z.preprocess(
-    emptyToUndefined,
-    z.string().url().default("http://localhost:3000")
-  ),
+  NEXT_PUBLIC_APP_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: optionalString,
   NEXT_PUBLIC_CLERK_SIGN_IN_URL: optionalString,
   NEXT_PUBLIC_CLERK_SIGN_UP_URL: optionalString,
@@ -51,11 +48,19 @@ if (!parsedEnv.success) {
 
 export const env = parsedEnv.data;
 
+if (env.NODE_ENV === "production" && !env.NEXT_PUBLIC_APP_URL) {
+  throw new Error("NEXT_PUBLIC_APP_URL is required in production.");
+}
+
+export const appUrl = env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 export type AppEnv = typeof env;
 export type AppEnvKey = keyof AppEnv;
 
+const playwrightPreviewFlag =
+  env.NODE_ENV === "test" && process.env.PLAYWRIGHT_AUTH_LOCAL_PREVIEW === "1";
+
 export const isLocalPreviewAuthEnabled =
-  env.AUTH_LOCAL_PREVIEW === "1" || process.env.PLAYWRIGHT_AUTH_LOCAL_PREVIEW === "1";
+  env.NODE_ENV !== "production" && (env.AUTH_LOCAL_PREVIEW === "1" || playwrightPreviewFlag);
 
 export const isClerkConfigured = Boolean(
   !isLocalPreviewAuthEnabled && env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && env.CLERK_SECRET_KEY

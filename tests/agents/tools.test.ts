@@ -69,6 +69,7 @@ describe("Phase 3 LangChain tools", () => {
 
     expect(output.platform).toBe("linkedin");
     expect(output.body).toContain("content systems");
+    expect(output.characterCount).toBe([output.hook, output.body, output.cta, output.hashtags.join(" ")].join(" ").length);
   });
 
   it("checks platform policy warnings", async () => {
@@ -104,6 +105,21 @@ describe("Phase 3 LangChain tools", () => {
 
     expect(output.suggestions).toHaveLength(2);
     expect(output.suggestions[0].platform).toBe("linkedin");
+    expect(output.suggestions[0].scheduledFor).toBe("2026-06-20T20:00:00.000Z");
+  });
+
+  it("rejects invalid schedule start dates", async () => {
+    await expect(
+      createSuggestScheduleTool().execute(
+        {
+          topic: "content systems",
+          platforms: ["linkedin"],
+          timezone: "America/Chicago",
+          startDate: "not-a-date"
+        },
+        context
+      )
+    ).rejects.toThrow("Invalid startDate");
   });
 
   it("saves drafts through an injected dependency", async () => {

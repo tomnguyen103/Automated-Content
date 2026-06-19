@@ -15,6 +15,13 @@
       "when": 1781911382413,
       "tag": "0001_talented_hedge_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781912909834,
+      "tag": "0002_oval_kang",
+      "breakpoints": true
     }
   ]
 }

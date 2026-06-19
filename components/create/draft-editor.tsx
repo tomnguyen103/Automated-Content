@@ -50,8 +50,8 @@ function EditableDraft({ contentPack }: { contentPack: ContentPack }) {
         <div>
           <h3 className="text-sm font-semibold">CTA options</h3>
           <div className="mt-2 flex flex-wrap gap-2">
-            {contentPack.ctaOptions.map((cta) => (
-              <Badge key={cta} tone="neutral">
+            {contentPack.ctaOptions.map((cta, index) => (
+              <Badge key={`cta-${index}-${cta}`} tone="neutral">
                 {cta}
               </Badge>
             ))}
@@ -60,8 +60,8 @@ function EditableDraft({ contentPack }: { contentPack: ContentPack }) {
         <div>
           <h3 className="text-sm font-semibold">Hashtags</h3>
           <div className="mt-2 flex flex-wrap gap-2">
-            {contentPack.hashtags.map((tag) => (
-              <Badge key={tag} tone="community">
+            {contentPack.hashtags.map((tag, index) => (
+              <Badge key={`tag-${index}-${tag}`} tone="community">
                 {tag}
               </Badge>
             ))}

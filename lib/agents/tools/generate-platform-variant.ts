@@ -52,7 +52,8 @@ export function buildPlatformVariant(input: GeneratePlatformVariantInput): Platf
     guidance.bodyLimit
   );
   const cta = input.platform === "x" ? "What would you test first?" : "Save this as a starting point for your next content batch.";
-  const characterCount = [hook, body, cta, input.hashtags.join(" ")].join(" ").length;
+  const hashtags = input.hashtags.slice(0, input.platform === "x" ? 4 : 8);
+  const characterCount = [hook, body, cta, hashtags.join(" ")].join(" ").length;
 
   return {
     id: `${input.platform}_${crypto.randomUUID()}`,
@@ -61,7 +62,7 @@ export function buildPlatformVariant(input: GeneratePlatformVariantInput): Platf
     hook,
     body,
     cta,
-    hashtags: input.hashtags.slice(0, input.platform === "x" ? 4 : 8),
+    hashtags,
     mediaPrompt:
       input.platform === "tiktok"
         ? `Creator-facing short video storyboard about ${input.topic}`

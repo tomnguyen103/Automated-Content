@@ -53,6 +53,7 @@ export function BriefForm() {
     event.preventDefault();
     setLoading(true);
     setError(null);
+    setResult(null);
 
     try {
       const response = await fetch("/api/ai/generate", {
@@ -81,6 +82,7 @@ export function BriefForm() {
 
       setResult(payload);
     } catch (caughtError) {
+      setResult(null);
       setError(caughtError instanceof Error ? caughtError.message : "Generation failed.");
     } finally {
       setLoading(false);

@@ -25,6 +25,7 @@ export function Button({
   className,
   variant = "primary",
   size = "md",
+  type = "button",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
@@ -38,6 +39,7 @@ export function Button({
         sizeClasses[size],
         className
       )}
+      type={type}
       {...props}
     />
   );

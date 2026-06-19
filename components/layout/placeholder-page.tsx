@@ -1,5 +1,4 @@
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/layout/page-shell";
 import { SubNav } from "@/components/layout/sub-nav";
 
@@ -17,7 +16,6 @@ export function PlaceholderPage({ title, description, tabs, phase }: Placeholder
       <PageShell
         title={title}
         description={description}
-        actions={<Button variant="outline">View phase spec</Button>}
       >
         <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-6">
           <Badge tone="primary">{phase}</Badge>

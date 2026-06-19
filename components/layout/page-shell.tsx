@@ -9,7 +9,7 @@ type PageShellProps = {
 
 export function PageShell({ title, description, actions, children }: PageShellProps) {
   return (
-    <main className="px-4 py-6 sm:px-6 lg:px-8">
+    <main id="main-content" className="px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>

@@ -9,8 +9,10 @@ import {
   Sparkles,
   Workflow
 } from "lucide-react";
+import { AuthControls } from "@/components/auth/auth-controls";
 import { Badge } from "@/components/ui/badge";
 import { platformLabels } from "@/lib/design/tokens";
+import { env, isClerkClientConfigured } from "@/lib/env";
 
 const workflowSteps = [
   { label: "Research topic", icon: Sparkles, detail: "Sources, angle, audience" },
@@ -19,9 +21,11 @@ const workflowSteps = [
   { label: "Publish", icon: Workflow, detail: "Queue, retry, report" }
 ];
 
+const appHref = (path: string) => new URL(path, env.NEXT_PUBLIC_APP_URL).toString();
+
 export default function MarketingPage() {
   return (
-    <main className="min-h-dvh bg-white">
+    <main id="main-content" className="min-h-dvh bg-white">
       <header className="mx-auto flex max-w-7xl items-center justify-between px-4 py-5 sm:px-6 lg:px-8">
         <Link href="/" className="flex items-center gap-3">
           <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary)] text-white">
@@ -34,12 +38,17 @@ export default function MarketingPage() {
           <a href="#platforms">Platforms</a>
           <a href="#pricing">Premium</a>
         </nav>
-        <Link
-          href="/dashboard"
-          className="inline-flex h-10 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-text)] px-4 text-sm font-medium text-white"
-        >
-          Open app
-        </Link>
+        {isClerkClientConfigured ? (
+          <AuthControls />
+        ) : (
+          <Link
+            href={appHref("/dashboard")}
+            prefetch={false}
+            className="inline-flex h-10 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-text)] px-4 text-sm font-medium text-white"
+          >
+            Open app
+          </Link>
+        )}
       </header>
 
       <section className="mx-auto grid max-w-7xl gap-10 px-4 pb-16 pt-10 sm:px-6 lg:grid-cols-[0.92fr_1.08fr] lg:px-8 lg:pb-24 lg:pt-16">
@@ -54,14 +63,16 @@ export default function MarketingPage() {
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link
-              href="/create"
+              href={appHref("/create")}
+              prefetch={false}
               className="inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-5 text-base font-medium text-white transition hover:bg-[var(--color-primary-strong)]"
             >
               Start creating
               <ArrowRight size={17} />
             </Link>
             <Link
-              href="/dashboard"
+              href={appHref("/dashboard")}
+              prefetch={false}
               className="inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 text-base font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface)]"
             >
               <Play size={17} />
@@ -173,7 +184,8 @@ export default function MarketingPage() {
             </p>
           </div>
           <Link
-            href="/billing"
+            href={appHref("/billing")}
+            prefetch={false}
             className="inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-white px-5 text-base font-medium text-[var(--color-text)]"
           >
             Compare plans

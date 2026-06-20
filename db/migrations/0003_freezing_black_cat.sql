@@ -1,0 +1,1 @@
+ALTER TABLE "usage_ledger" ADD CONSTRAINT "usage_ledger_quantity_positive_check" CHECK ("usage_ledger"."quantity" > 0);

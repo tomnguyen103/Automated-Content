@@ -1,4 +1,6 @@
+import { sql } from "drizzle-orm";
 import {
+  check,
   foreignKey,
   index,
   integer,
@@ -134,6 +136,7 @@ export const usageLedger = pgTable(
     occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull()
   },
   (table) => [
+    check("usage_ledger_quantity_positive_check", sql`${table.quantity} > 0`),
     index("usage_ledger_workspace_type_idx").on(table.workspaceId, table.type),
     index("usage_ledger_occurred_at_idx").on(table.occurredAt)
   ]

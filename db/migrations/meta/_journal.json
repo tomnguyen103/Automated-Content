@@ -22,6 +22,13 @@
       "when": 1781912909834,
       "tag": "0002_oval_kang",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781913836805,
+      "tag": "0003_freezing_black_cat",
+      "breakpoints": true
     }
   ]
 }

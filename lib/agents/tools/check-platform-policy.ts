@@ -6,6 +6,7 @@ import {
   type SocialPlatform
 } from "@/lib/agents/schemas/platform-variant";
 import type { AgentTool } from "@/lib/agents/tools/types";
+import { getPlatformMediaWarnings, getPolicyStatusForWarnings } from "@/lib/media/platform-constraints";
 
 const characterLimits: Partial<Record<SocialPlatform, number>> = {
   x: 280,
@@ -46,11 +47,9 @@ export function evaluatePlatformPolicy(input: CheckPlatformPolicyInput, checkedA
     }
   }
 
-  const status: PlatformPolicyStatus = warnings.some((warning) => warning.startsWith("Avoid claim"))
-    ? "block"
-    : warnings.length > 0
-      ? "warn"
-      : "pass";
+  warnings.push(...getPlatformMediaWarnings(input.variant.platform, input.variant.media));
+
+  const status: PlatformPolicyStatus = getPolicyStatusForWarnings(warnings);
 
   return {
     status,

@@ -144,7 +144,8 @@ export async function runContentAgent(
           audience: input.audience || brandProfile.defaultAudience,
           tone: input.tone || brandProfile.voice,
           goal: input.goal,
-          hashtags: plan.hashtags
+          hashtags: plan.hashtags,
+          media: []
         });
         const policy = await recorder.execute(tools.checkPlatformPolicy, { variant });
 

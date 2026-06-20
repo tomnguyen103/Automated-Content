@@ -355,7 +355,8 @@ function createContentWorkflowGraph(runtime: ContentWorkflowRuntime, remember?: 
               audience: state.input.audience || brandProfile.defaultAudience,
               tone: state.input.tone || brandProfile.voice,
               goal: state.input.goal,
-              hashtags: plan.hashtags
+              hashtags: plan.hashtags,
+              media: []
             })
           )
         );

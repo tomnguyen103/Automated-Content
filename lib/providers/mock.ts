@@ -1,7 +1,4 @@
-import {
-  ProviderCapabilityError,
-  normalizeProviderError
-} from "@/lib/providers/errors";
+import { normalizeProviderError } from "@/lib/providers/errors";
 import { defineProviderCapabilities } from "@/lib/providers/capabilities";
 import type {
   ProviderAdapter,
@@ -73,10 +70,6 @@ export const mockProvider: ProviderAdapter = {
     return mockProviderCapabilities;
   },
   async publish(input: ProviderPublishInput) {
-    if (!mockProviderCapabilities.immediate_publish.supported && !input.scheduledFor) {
-      throw new ProviderCapabilityError("mock", "immediate_publish");
-    }
-
     const publishedAt = input.scheduledFor ?? new Date();
 
     return {

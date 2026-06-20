@@ -32,6 +32,7 @@ const envSchema = z.object({
   IMAGEKIT_PUBLIC_KEY: optionalString,
   IMAGEKIT_PRIVATE_KEY: optionalString,
   IMAGEKIT_URL_ENDPOINT: optionalUrl,
+  PROVIDER_TOKEN_ENCRYPTION_KEY: optionalString,
   REDIS_URL: optionalUrl,
   N8N_WEBHOOK_SECRET: optionalString
 });

@@ -377,6 +377,28 @@ export const connectedAccounts = pgTable(
   ]
 );
 
+export const tokenVaultEntries = pgTable(
+  "token_vault_entries",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    provider: providerKeyEnum("provider").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    encryptedPayload: text("encrypted_payload").notNull(),
+    keyVersion: text("key_version").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    index("token_vault_entries_workspace_idx").on(table.workspaceId),
+    index("token_vault_entries_provider_account_idx").on(table.provider, table.providerAccountId),
+    index("token_vault_entries_expires_at_idx").on(table.expiresAt)
+  ]
+);
+
 export const scheduledJobs = pgTable(
   "scheduled_jobs",
   {
@@ -498,6 +520,7 @@ export type AgentRunRow = typeof agentRuns.$inferSelect;
 export type ContentDraft = typeof contentDrafts.$inferSelect;
 export type PlatformVariantRow = typeof platformVariants.$inferSelect;
 export type ConnectedAccount = typeof connectedAccounts.$inferSelect;
+export type TokenVaultEntry = typeof tokenVaultEntries.$inferSelect;
 export type ScheduledJob = typeof scheduledJobs.$inferSelect;
 export type PublishAttempt = typeof publishAttempts.$inferSelect;
 export type WorkflowCheckpoint = typeof workflowCheckpoints.$inferSelect;

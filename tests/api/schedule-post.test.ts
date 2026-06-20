@@ -10,6 +10,10 @@ async function loadScheduleRoute() {
   return { POST, clearScheduledPostsForTests, listScheduledPostsForTests };
 }
 
+function futureIsoDate() {
+  return new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+}
+
 describe("schedule post API", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -35,7 +39,7 @@ describe("schedule post API", () => {
         method: "POST",
         body: JSON.stringify({
           provider: "mock",
-          scheduledFor: "2026-06-21T15:00:00.000Z",
+          scheduledFor: futureIsoDate(),
           metadata: {
             source: "api-test"
           }
@@ -54,6 +58,26 @@ describe("schedule post API", () => {
     expect(payload.scheduledJob.enqueueStatus).toBe("failed");
     expect(storedJobs).toHaveLength(1);
     expect(storedJobs[0].enqueueStatus).toBe("failed");
+  });
+
+  it("returns a 400 when the scheduled time is in the past", async () => {
+    const { POST } = await loadScheduleRoute();
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/posts/variant_1/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "mock",
+          scheduledFor: new Date(Date.now() - 60_000).toISOString()
+        })
+      }),
+      {
+        params: Promise.resolve({ id: "variant_1" })
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe("Scheduled time must be in the future.");
   });
 
   it("returns a 400 for malformed schedule payloads", async () => {

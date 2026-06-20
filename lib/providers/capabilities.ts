@@ -1,5 +1,4 @@
 import type {
-  CapabilitySupport,
   ProviderAdapter,
   ProviderCapability,
   ProviderCapabilityMap,
@@ -37,19 +36,6 @@ export function defineProviderCapabilities({
     };
     return map;
   }, {} as ProviderCapabilityMap);
-}
-
-export function requireCapability(
-  capabilities: ProviderCapabilityMap,
-  capability: ProviderCapability
-): CapabilitySupport {
-  const support = capabilities[capability];
-
-  if (!support.supported) {
-    throw new Error(support.reason ?? `${providerCapabilityLabels[capability]} is unsupported.`);
-  }
-
-  return support;
 }
 
 export function summarizeCapabilities(capabilities: ProviderCapabilityMap) {

@@ -29,7 +29,7 @@ export default function ConnectionsPage() {
         title="Connections"
         description="Review provider readiness, publishing support, reply coverage, and metric sync before a post enters the queue."
         actions={
-          <Button variant="outline">
+          <Button variant="outline" disabled title="Health checks are not available yet">
             <RadioTower size={16} aria-hidden="true" />
             Check health
           </Button>
@@ -98,7 +98,7 @@ function ProviderSection({
                   {provider.supportedCount} of {provider.totalCount} capabilities supported.
                 </p>
               </div>
-              <Button variant="outline" size="sm" disabled={provider.key !== "mock"}>
+              <Button variant="outline" size="sm" disabled title="Provider connection actions are not available yet">
                 <ExternalLink size={15} aria-hidden="true" />
                 {provider.key === "mock" ? "Use mock" : "Configure"}
               </Button>

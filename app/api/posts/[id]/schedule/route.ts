@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { and, eq } from "drizzle-orm";
+import { getDb } from "@/db";
+import { platformVariants } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { isDatabaseConfigured } from "@/lib/env";
 import { providerKeys } from "@/lib/providers/types";
 import {
   createScheduledPost,
@@ -16,6 +20,26 @@ const scheduleRequestSchema = z.object({
   scheduledFor: z.string().datetime(),
   metadata: z.record(z.string(), z.unknown()).optional()
 });
+
+async function platformVariantExistsForWorkspace({
+  platformVariantId,
+  workspaceId
+}: {
+  platformVariantId: string;
+  workspaceId: string;
+}) {
+  if (!isDatabaseConfigured) {
+    return true;
+  }
+
+  const [variant] = await getDb()
+    .select({ id: platformVariants.id })
+    .from(platformVariants)
+    .where(and(eq(platformVariants.id, platformVariantId), eq(platformVariants.workspaceId, workspaceId)))
+    .limit(1);
+
+  return Boolean(variant);
+}
 
 export async function POST(
   request: NextRequest,
@@ -42,13 +66,28 @@ export async function POST(
     const { id: platformVariantId } = await params;
     const input = scheduleRequestSchema.parse(body);
     const workspace = await resolvePersonalWorkspaceForUser(user);
+    const scheduledFor = new Date(input.scheduledFor);
+
+    if (scheduledFor <= new Date()) {
+      return NextResponse.json({ error: "Scheduled time must be in the future." }, { status: 400 });
+    }
+
+    const variantExists = await platformVariantExistsForWorkspace({
+      platformVariantId,
+      workspaceId: workspace.id
+    });
+
+    if (!variantExists) {
+      return NextResponse.json({ error: "Platform variant not found." }, { status: 404 });
+    }
+
     const result = await createScheduledPost({
       input: {
         workspaceId: workspace.id,
         platformVariantId,
         provider: input.provider,
         connectedAccountId: input.connectedAccountId ?? null,
-        scheduledFor: new Date(input.scheduledFor),
+        scheduledFor,
         metadata: input.metadata
       },
       repository: createSchedulerRepository({

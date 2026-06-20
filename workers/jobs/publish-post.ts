@@ -1,18 +1,25 @@
 import "server-only";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb, type DatabaseClient } from "@/db";
 import {
   connectedAccounts,
   platformVariants,
   publishAttempts,
   scheduledJobs,
+  type ScheduledJob,
   usageLedger
 } from "@/db/schema";
 import { getProviderAdapter } from "@/lib/providers/registry";
 import type { PublishPostJobData } from "@/lib/scheduler/enqueue";
 
+const publishableJobStatuses = ["scheduled", "queued"] as const;
+
 type PublishJobRepository = ReturnType<typeof createPublishJobRepository>;
+
+function isPublishableJobStatus(status: ScheduledJob["status"]) {
+  return publishableJobStatuses.some((publishableStatus) => publishableStatus === status);
+}
 
 function toJsonRecord(value: unknown) {
   return value as Record<string, unknown>;
@@ -39,7 +46,14 @@ export function createPublishJobRepository(db: DatabaseClient = getDb()) {
             eq(scheduledJobs.platformVariantId, platformVariants.id)
           )
         )
-        .leftJoin(connectedAccounts, eq(scheduledJobs.connectedAccountId, connectedAccounts.id))
+        .leftJoin(
+          connectedAccounts,
+          and(
+            eq(scheduledJobs.workspaceId, connectedAccounts.workspaceId),
+            eq(scheduledJobs.connectedAccountId, connectedAccounts.id),
+            eq(scheduledJobs.provider, connectedAccounts.provider)
+          )
+        )
         .where(and(eq(scheduledJobs.workspaceId, data.workspaceId), eq(scheduledJobs.id, data.scheduledJobId)))
         .limit(1);
 
@@ -48,7 +62,7 @@ export function createPublishJobRepository(db: DatabaseClient = getDb()) {
     async startAttempt(data: PublishPostJobData) {
       const now = new Date();
       const [attempt] = await db.transaction(async (tx) => {
-        await tx
+        const [job] = await tx
           .update(scheduledJobs)
           .set({
             status: "publishing",
@@ -56,7 +70,18 @@ export function createPublishJobRepository(db: DatabaseClient = getDb()) {
             attemptCount: sql`${scheduledJobs.attemptCount} + 1`,
             updatedAt: now
           })
-          .where(and(eq(scheduledJobs.workspaceId, data.workspaceId), eq(scheduledJobs.id, data.scheduledJobId)));
+          .where(
+            and(
+              eq(scheduledJobs.workspaceId, data.workspaceId),
+              eq(scheduledJobs.id, data.scheduledJobId),
+              inArray(scheduledJobs.status, [...publishableJobStatuses])
+            )
+          )
+          .returning({ id: scheduledJobs.id });
+
+        if (!job) {
+          throw new Error(`Scheduled job ${data.scheduledJobId} is not eligible for publishing.`);
+        }
 
         return tx
           .insert(publishAttempts)
@@ -178,6 +203,18 @@ export async function publishScheduledPostJob({
 
   if (!loaded) {
     throw new Error(`Scheduled job ${data.scheduledJobId} was not found.`);
+  }
+
+  if (!isPublishableJobStatus(loaded.job.status)) {
+    throw new Error(`Scheduled job ${data.scheduledJobId} is not eligible for publishing.`);
+  }
+
+  if (loaded.job.connectedAccountId && !loaded.account) {
+    throw new Error(`Connected account ${loaded.job.connectedAccountId} was not found for this workspace.`);
+  }
+
+  if (loaded.account && loaded.account.status !== "connected") {
+    throw new Error(`Connected account ${loaded.account.id} is not ready for publishing.`);
   }
 
   const provider = getProviderAdapter(loaded.job.provider);

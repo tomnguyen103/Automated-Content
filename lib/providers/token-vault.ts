@@ -1,7 +1,7 @@
 import "server-only";
 
 import crypto from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, type DatabaseClient } from "@/db";
 import { tokenVaultEntries } from "@/db/schema";
 import { env, isDatabaseConfigured } from "@/lib/env";
@@ -18,6 +18,11 @@ export type TokenVaultStoreResult = {
   tokenRef: string;
   expiresAt?: Date;
   scopes: string[];
+};
+
+export type TokenVaultReadInput = {
+  tokenRef: string;
+  workspaceId: string;
 };
 
 type TokenVaultPayload = {
@@ -159,21 +164,18 @@ export async function storeProviderTokens(
   };
 }
 
-export async function getProviderTokens(
-  tokenRef: string,
-  db?: DatabaseClient
-): Promise<ProviderTokenSet | null> {
+export async function getProviderTokens(input: TokenVaultReadInput, db?: DatabaseClient): Promise<ProviderTokenSet | null> {
   if (!isDatabaseConfigured) {
-    const entry = memoryTokenVault.get(tokenRef);
+    const entry = memoryTokenVault.get(input.tokenRef);
 
-    return entry ? fromPayload(entry.payload) : null;
+    return entry?.workspaceId === input.workspaceId ? fromPayload(entry.payload) : null;
   }
 
   const database = db ?? getDb();
   const [entry] = await database
     .select({ encryptedPayload: tokenVaultEntries.encryptedPayload })
     .from(tokenVaultEntries)
-    .where(eq(tokenVaultEntries.id, tokenRef))
+    .where(and(eq(tokenVaultEntries.id, input.tokenRef), eq(tokenVaultEntries.workspaceId, input.workspaceId)))
     .limit(1);
 
   if (!entry) {

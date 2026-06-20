@@ -2,10 +2,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { platformVariants } from "@/db/schema";
+import { connectedAccounts, platformVariants } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { isDatabaseConfigured } from "@/lib/env";
-import { providerKeys } from "@/lib/providers/types";
+import { providerKeys, type ProviderKey } from "@/lib/providers/types";
 import {
   createScheduledPost,
   createSchedulerRepository
@@ -39,6 +39,35 @@ async function platformVariantExistsForWorkspace({
     .limit(1);
 
   return Boolean(variant);
+}
+
+async function connectedAccountExistsForWorkspace({
+  connectedAccountId,
+  provider,
+  workspaceId
+}: {
+  connectedAccountId: string | null | undefined;
+  provider: ProviderKey;
+  workspaceId: string;
+}) {
+  if (!connectedAccountId || !isDatabaseConfigured) {
+    return true;
+  }
+
+  const [account] = await getDb()
+    .select({ id: connectedAccounts.id })
+    .from(connectedAccounts)
+    .where(
+      and(
+        eq(connectedAccounts.id, connectedAccountId),
+        eq(connectedAccounts.workspaceId, workspaceId),
+        eq(connectedAccounts.provider, provider),
+        eq(connectedAccounts.status, "connected")
+      )
+    )
+    .limit(1);
+
+  return Boolean(account);
 }
 
 export async function POST(
@@ -79,6 +108,16 @@ export async function POST(
 
     if (!variantExists) {
       return NextResponse.json({ error: "Platform variant not found." }, { status: 404 });
+    }
+
+    const accountExists = await connectedAccountExistsForWorkspace({
+      connectedAccountId: input.connectedAccountId,
+      provider: input.provider,
+      workspaceId: workspace.id
+    });
+
+    if (!accountExists) {
+      return NextResponse.json({ error: "Connected account not found." }, { status: 404 });
     }
 
     const result = await createScheduledPost({

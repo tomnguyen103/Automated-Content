@@ -7,7 +7,9 @@ import { PageShell } from "@/components/layout/page-shell";
 import { SubNav } from "@/components/layout/sub-nav";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { isDatabaseConfigured } from "@/lib/env";
+import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -90,9 +92,19 @@ function formatScheduledFor(date: Date) {
   }).format(date);
 }
 
-async function getQueueRows(): Promise<QueueRow[]> {
-  if (!isDatabaseConfigured) {
+async function getQueueRows({
+  isLocalPreview = false,
+  workspaceId
+}: {
+  isLocalPreview?: boolean;
+  workspaceId: string | null | undefined;
+}): Promise<QueueRow[]> {
+  if (!isDatabaseConfigured || isLocalPreview) {
     return previewQueueRows;
+  }
+
+  if (!workspaceId) {
+    return [];
   }
 
   const rows = await getDb()
@@ -113,7 +125,15 @@ async function getQueueRows(): Promise<QueueRow[]> {
         eq(scheduledJobs.platformVariantId, platformVariants.id)
       )
     )
-    .leftJoin(connectedAccounts, eq(scheduledJobs.connectedAccountId, connectedAccounts.id))
+    .leftJoin(
+      connectedAccounts,
+      and(
+        eq(scheduledJobs.workspaceId, connectedAccounts.workspaceId),
+        eq(scheduledJobs.connectedAccountId, connectedAccounts.id),
+        eq(scheduledJobs.provider, connectedAccounts.provider)
+      )
+    )
+    .where(eq(scheduledJobs.workspaceId, workspaceId))
     .orderBy(asc(scheduledJobs.scheduledFor))
     .limit(20);
 
@@ -136,7 +156,12 @@ function getQueueStats(queueRows: QueueRow[]) {
 }
 
 export default async function CalendarPage() {
-  const queueRows = await getQueueRows();
+  const user = await getCurrentUser();
+  const workspace = user ? await resolvePersonalWorkspaceForUser(user) : null;
+  const queueRows = await getQueueRows({
+    isLocalPreview: workspace?.isLocalPreview,
+    workspaceId: workspace?.id
+  });
   const queueStats = getQueueStats(queueRows);
 
   return (

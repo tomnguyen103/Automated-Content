@@ -27,6 +27,11 @@ describe("schedule post API", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.doUnmock("@/db");
+    vi.doUnmock("@/lib/auth/current-user");
+    vi.doUnmock("@/lib/env");
+    vi.doUnmock("@/lib/scheduler/create-scheduled-post");
+    vi.doUnmock("@/lib/workspaces/personal-workspace");
     vi.resetModules();
   });
 
@@ -98,5 +103,69 @@ describe("schedule post API", () => {
 
     expect(response.status).toBe(400);
     expect(payload.error).toBe("Invalid schedule request.");
+  });
+
+  it("returns a 404 when the connected account is not available in the workspace", async () => {
+    vi.resetModules();
+
+    const limit = vi.fn().mockResolvedValueOnce([{ id: "variant_1" }]).mockResolvedValueOnce([]);
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit
+          }))
+        }))
+      }))
+    };
+    const createScheduledPost = vi.fn();
+
+    vi.doMock("@/db", () => ({
+      getDb: () => db
+    }));
+    vi.doMock("@/lib/auth/current-user", () => ({
+      getCurrentUser: vi.fn(async () => ({
+        id: "user_1",
+        email: "user@example.com",
+        name: "User One",
+        imageUrl: null,
+        initials: "UO",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/env", () => ({
+      isDatabaseConfigured: true
+    }));
+    vi.doMock("@/lib/scheduler/create-scheduled-post", () => ({
+      createScheduledPost,
+      createSchedulerRepository: vi.fn()
+    }));
+    vi.doMock("@/lib/workspaces/personal-workspace", () => ({
+      resolvePersonalWorkspaceForUser: vi.fn(async () => ({
+        id: "00000000-0000-0000-0000-000000000001",
+        role: "owner",
+        isLocalPreview: false
+      }))
+    }));
+
+    const { POST } = await import("@/app/api/posts/[id]/schedule/route");
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/posts/variant_1/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "mock",
+          connectedAccountId: "22222222-2222-4222-8222-222222222222",
+          scheduledFor: futureIsoDate()
+        })
+      }),
+      {
+        params: Promise.resolve({ id: "variant_1" })
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(payload.error).toBe("Connected account not found.");
+    expect(createScheduledPost).not.toHaveBeenCalled();
   });
 });

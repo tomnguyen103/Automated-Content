@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { ReviewStep } from "@/components/create/review-step";
 import {
   createInitialContentWorkflowState,
+  failContentWorkflowState,
   markContentWorkflowNode,
   type ContentWorkflowState
 } from "@/lib/agents/graphs/state";
@@ -106,5 +107,41 @@ describe("ReviewStep", () => {
     expect(html).toContain("Changes");
     expect(html).toContain("Pause");
     expect(html).toContain("Schedule suggestions");
+  });
+
+  it("renders workflow errors when a checkpoint fails before content exists", () => {
+    const state = createInitialContentWorkflowState({
+      input: {
+        topic: "AI content calendars",
+        audience: "founders",
+        tone: "clear",
+        goal: "educate",
+        sources: ["Manual review before publishing."],
+        platforms: ["linkedin"]
+      },
+      model: "mock-gemini",
+      provider: "gemini",
+      runId: "run_1",
+      traceId: "trace_1",
+      userId: "user_1",
+      workspaceId: "workspace_1",
+      now: () => new Date("2026-06-19T12:00:00.000Z")
+    });
+    const failed = failContentWorkflowState(
+      state,
+      "research",
+      new Error("Research service unavailable"),
+      () => new Date("2026-06-19T12:01:00.000Z")
+    );
+    const html = renderToStaticMarkup(
+      React.createElement(ReviewStep, {
+        workflow: failed,
+        onDecision: () => undefined
+      })
+    );
+
+    expect(html).toContain("failed");
+    expect(html).toContain("Workflow errors");
+    expect(html).toContain("Research service unavailable");
   });
 });

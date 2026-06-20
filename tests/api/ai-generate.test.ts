@@ -71,7 +71,11 @@ describe("AI generate API", () => {
       new Request(`http://localhost:3000/api/agent-runs/${payload.run.id}/approval`, {
         method: "POST",
         body: JSON.stringify({
-          action: "approve"
+          action: "approve",
+          contentPack: {
+            ...payload.contentPack,
+            captions: ["Edited API caption"]
+          }
         })
       }),
       {
@@ -83,6 +87,7 @@ describe("AI generate API", () => {
     expect(approveResponse.status).toBe(200);
     expect(approvePayload.run.status).toBe("succeeded");
     expect(approvePayload.workflow.status).toBe("succeeded");
+    expect(approvePayload.contentPack.captions[0]).toBe("Edited API caption");
     expect(approvePayload.draft.status).toBe("saved");
   });
 

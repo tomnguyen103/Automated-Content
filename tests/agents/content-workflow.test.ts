@@ -128,6 +128,54 @@ describe("content workflow integration", () => {
     expect(requested.run.toolCalls.map((call) => call.name)).not.toContain("save_draft");
   });
 
+  it("saves reviewed content pack edits after approval", async () => {
+    const storage = createMemoryAgentStorage();
+    const checkpoints = createMemoryContentWorkflowCheckpointStore();
+    const result = await runContentWorkflow(
+      {
+        topic: "Approval checkpoints",
+        audience: "operators",
+        tone: "clear",
+        goal: "educate",
+        sources: ["Approval checkpoints build trust."],
+        platforms: ["linkedin"]
+      },
+      {
+        userId: "user_1",
+        workspaceId: "workspace_1",
+        storage,
+        checkpoints,
+        now: () => new Date("2026-06-19T12:00:00.000Z"),
+        model: createMockModel()
+      }
+    );
+    const editedPack = {
+      ...result.contentPack!,
+      captions: ["Edited primary caption"],
+      variants: result.contentPack!.variants.map((variant) => ({
+        ...variant,
+        body: "Edited platform body",
+        cta: "Edited CTA"
+      }))
+    };
+
+    const approved = await applyContentWorkflowApproval(result.run.id, {
+      action: "approve",
+      contentPack: editedPack,
+      userId: "user_1",
+      workspaceId: "workspace_1",
+      storage,
+      checkpoints,
+      now: () => new Date("2026-06-19T12:05:00.000Z")
+    });
+    const savedDraft = storage.getDraft(approved.draft?.draftId ?? "");
+
+    expect(approved.contentPack?.captions[0]).toBe("Edited primary caption");
+    expect(approved.contentPack?.variants[0].body).toBe("Edited platform body");
+    expect(savedDraft?.contentPack.captions[0]).toBe("Edited primary caption");
+    expect(savedDraft?.contentPack.variants[0].cta).toBe("Edited CTA");
+  });
+
   it("saves only one draft for duplicate approve requests", async () => {
     const storage = createMemoryAgentStorage();
     const checkpoints = createMemoryContentWorkflowCheckpointStore();

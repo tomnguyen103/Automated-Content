@@ -15,14 +15,43 @@ type ReviewStepProps = {
   onDecision: (action: ContentWorkflowApprovalAction, comment?: string) => Promise<void> | void;
 };
 
+function WorkflowErrors({ workflow }: { workflow: ContentWorkflowState }) {
+  if (workflow.errors.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+      <h3 className="font-semibold">Workflow errors</h3>
+      <ul className="mt-2 grid gap-1">
+        {workflow.errors.map((error, index) => (
+          <li key={`${error.node}-${error.occurredAt}-${index}`}>
+            <span className="font-mono text-xs">{error.node}</span>: {error.message}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function ReviewStep({ disabled = false, onDecision, workflow }: ReviewStepProps) {
   const contentPack = workflow?.contentPack ?? null;
 
   if (!workflow || !contentPack) {
     return (
       <section className="rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border)] bg-white p-5">
-        <h2 className="text-base font-semibold">Review</h2>
-        <p className="mt-2 text-sm text-[var(--color-text-muted)]">Approval controls will appear with the workflow checkpoint.</p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold">Review</h2>
+            <p className="mt-2 text-sm text-[var(--color-text-muted)]">Approval controls will appear with the workflow checkpoint.</p>
+          </div>
+          {workflow ? <Badge tone={workflow.status === "failed" ? "premium" : "neutral"}>{workflow.status}</Badge> : null}
+        </div>
+        {workflow ? (
+          <div className="mt-4">
+            <WorkflowErrors workflow={workflow} />
+          </div>
+        ) : null}
       </section>
     );
   }
@@ -35,6 +64,10 @@ export function ReviewStep({ disabled = false, onDecision, workflow }: ReviewSte
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">{contentPack.summary}</p>
         </div>
         <Badge tone={workflow.status === "succeeded" ? "success" : "primary"}>{workflow.status}</Badge>
+      </div>
+
+      <div className="mt-4">
+        <WorkflowErrors workflow={workflow} />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_0.85fr]">

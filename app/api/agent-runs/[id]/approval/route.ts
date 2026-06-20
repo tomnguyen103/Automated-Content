@@ -8,6 +8,7 @@ import {
   WorkflowNotFoundError
 } from "@/lib/agents/graphs/content-workflow";
 import { contentWorkflowApprovalActionSchema } from "@/lib/agents/graphs/state";
+import { contentPackSchema } from "@/lib/agents/schemas/content-pack";
 import { createAgentStorage } from "@/lib/agents/langchain/storage";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
@@ -16,7 +17,8 @@ export const runtime = "nodejs";
 
 const approvalRequestSchema = z.object({
   action: contentWorkflowApprovalActionSchema,
-  comment: z.string().max(1000).optional()
+  comment: z.string().max(1000).optional(),
+  contentPack: contentPackSchema.optional()
 });
 
 type ApprovalRouteContext = {
@@ -40,7 +42,7 @@ export async function POST(request: Request, context: ApprovalRouteContext) {
   }
 
   try {
-    const { action, comment } = approvalRequestSchema.parse(body);
+    const { action, comment, contentPack } = approvalRequestSchema.parse(body);
     const { id } = await context.params;
     const workspace = await resolvePersonalWorkspaceForUser(user);
     const storage = createAgentStorage({
@@ -54,6 +56,7 @@ export async function POST(request: Request, context: ApprovalRouteContext) {
       comment,
       userId: user.id,
       workspaceId: workspace.id,
+      contentPack,
       storage,
       checkpoints
     });

@@ -304,6 +304,14 @@ export const workflowCheckpoints = pgTable(
       foreignColumns: [agentRuns.workspaceId, agentRuns.id],
       name: "workflow_checkpoints_workspace_run_fk"
     }).onDelete("cascade"),
+    check(
+      "workflow_checkpoints_approval_status_check",
+      sql`${table.approvalStatus} in ('not_requested', 'pending', 'approved', 'changes_requested', 'paused')`
+    ),
+    check(
+      "workflow_checkpoints_current_node_check",
+      sql`${table.currentNode} in ('intake', 'research', 'strategy', 'draft', 'platform_adaptation', 'safety', 'schedule_suggestion', 'review', 'save')`
+    ),
     index("workflow_checkpoints_workspace_status_idx").on(table.workspaceId, table.status),
     index("workflow_checkpoints_user_idx").on(table.userId)
   ]

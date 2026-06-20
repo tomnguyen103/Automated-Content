@@ -13,6 +13,8 @@ CREATE TABLE "workflow_checkpoints" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+ALTER TABLE "workflow_checkpoints" ADD CONSTRAINT "workflow_checkpoints_approval_status_check" CHECK ("workflow_checkpoints"."approval_status" in ('not_requested', 'pending', 'approved', 'changes_requested', 'paused'));--> statement-breakpoint
+ALTER TABLE "workflow_checkpoints" ADD CONSTRAINT "workflow_checkpoints_current_node_check" CHECK ("workflow_checkpoints"."current_node" in ('intake', 'research', 'strategy', 'draft', 'platform_adaptation', 'safety', 'schedule_suggestion', 'review', 'save'));--> statement-breakpoint
 ALTER TABLE "workflow_checkpoints" ADD CONSTRAINT "workflow_checkpoints_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workflow_checkpoints" ADD CONSTRAINT "workflow_checkpoints_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workflow_checkpoints" ADD CONSTRAINT "workflow_checkpoints_workspace_run_fk" FOREIGN KEY ("workspace_id","run_id") REFERENCES "public"."agent_runs"("workspace_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

@@ -102,4 +102,26 @@ describe("AI generate API", () => {
     expect(response.status).toBe(400);
     expect(payload.error).toBe("Invalid JSON payload.");
   });
+
+  it("returns a 404 when an approval checkpoint is missing", async () => {
+    const { approve, clearAgentStorageForTests, clearContentWorkflowCheckpointsForTests } = await loadApiModules();
+    clearAgentStorageForTests();
+    clearContentWorkflowCheckpointsForTests();
+
+    const response = await approve(
+      new Request("http://localhost:3000/api/agent-runs/missing_run/approval", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "approve"
+        })
+      }),
+      {
+        params: Promise.resolve({ id: "missing_run" })
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(payload.error).toBe("Workflow checkpoint not found.");
+  });
 });

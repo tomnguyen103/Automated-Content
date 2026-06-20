@@ -45,7 +45,8 @@ describe("content workflow integration", () => {
         tone: "direct",
         goal: "generate replies",
         sources: ["Manual approval remains required."],
-        platforms: ["linkedin", "x"]
+        platforms: ["linkedin", "x"],
+        timezone: "UTC"
       },
       {
         userId: "user_1",
@@ -62,6 +63,7 @@ describe("content workflow integration", () => {
     expect(result.workflow.currentNode).toBe("review");
     expect(result.workflow.approvalStatus).toBe("pending");
     expect(result.contentPack?.variants).toHaveLength(2);
+    expect(result.contentPack?.scheduleSuggestions.every((suggestion) => suggestion.timezone === "UTC")).toBe(true);
     expect(result.draft).toBeNull();
     expect(result.run.toolCalls.map((call) => call.name)).not.toContain("save_draft");
     await expect(checkpoints.get(result.run.id, "workspace_1")).resolves.toMatchObject({

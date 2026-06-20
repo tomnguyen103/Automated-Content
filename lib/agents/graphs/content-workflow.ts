@@ -71,6 +71,20 @@ export class ContentWorkflowExecutionError extends Error {
   }
 }
 
+export class WorkflowNotFoundError extends Error {
+  constructor(message = "Workflow checkpoint not found.") {
+    super(message);
+    this.name = "WorkflowNotFoundError";
+  }
+}
+
+export class WorkflowForbiddenError extends Error {
+  constructor(message = "Workflow is not available to this user.") {
+    super(message);
+    this.name = "WorkflowForbiddenError";
+  }
+}
+
 function createStartedRun({
   input,
   model,
@@ -330,7 +344,7 @@ function createContentWorkflowGraph(runtime: ContentWorkflowRuntime, remember?: 
         const schedule = await runtime.recorder.execute(runtime.tools.suggestSchedule, {
           topic: state.topic,
           platforms: state.input.platforms,
-          timezone: "America/Chicago",
+          timezone: state.input.timezone ?? "America/Chicago",
           startDate: runtime.now().toISOString()
         });
         const policyWarnings = state.variants.flatMap((variant) => variant.policyWarnings);
@@ -513,17 +527,17 @@ export async function applyContentWorkflowApproval(
   const state = await checkpoints.get(runId, options.workspaceId);
 
   if (!state) {
-    throw new Error("Workflow checkpoint not found.");
+    throw new WorkflowNotFoundError();
   }
 
   if (state.userId !== options.userId) {
-    throw new Error("Workflow is not available to this user.");
+    throw new WorkflowForbiddenError();
   }
 
   const run = await storage.getRun(runId, options.workspaceId);
 
   if (!run) {
-    throw new Error("Agent run not found.");
+    throw new WorkflowNotFoundError("Agent run not found.");
   }
 
   if (action === "approve" && state.status === "succeeded" && state.approvalStatus === "approved") {

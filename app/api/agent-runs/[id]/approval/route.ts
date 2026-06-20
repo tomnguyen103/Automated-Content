@@ -3,7 +3,9 @@ import { z } from "zod";
 import { createContentWorkflowCheckpointStore } from "@/lib/agents/graphs/checkpoints";
 import {
   applyContentWorkflowApproval,
-  ContentWorkflowExecutionError
+  ContentWorkflowExecutionError,
+  WorkflowForbiddenError,
+  WorkflowNotFoundError
 } from "@/lib/agents/graphs/content-workflow";
 import { contentWorkflowApprovalActionSchema } from "@/lib/agents/graphs/state";
 import { createAgentStorage } from "@/lib/agents/langchain/storage";
@@ -84,11 +86,11 @@ export async function POST(request: Request, context: ApprovalRouteContext) {
       );
     }
 
-    if (error instanceof Error && error.message.includes("not available")) {
+    if (error instanceof WorkflowForbiddenError) {
       return NextResponse.json({ error: error.message }, { status: 403 });
     }
 
-    if (error instanceof Error && error.message.includes("not found")) {
+    if (error instanceof WorkflowNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
 

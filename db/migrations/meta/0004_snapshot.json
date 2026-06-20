@@ -1393,7 +1393,16 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "workflow_checkpoints_approval_status_check": {
+          "name": "workflow_checkpoints_approval_status_check",
+          "value": "\"workflow_checkpoints\".\"approval_status\" in ('not_requested', 'pending', 'approved', 'changes_requested', 'paused')"
+        },
+        "workflow_checkpoints_current_node_check": {
+          "name": "workflow_checkpoints_current_node_check",
+          "value": "\"workflow_checkpoints\".\"current_node\" in ('intake', 'research', 'strategy', 'draft', 'platform_adaptation', 'safety', 'schedule_suggestion', 'review', 'save')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.workspaces": {

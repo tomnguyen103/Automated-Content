@@ -53,6 +53,29 @@ export const socialPlatformEnum = pgEnum("social_platform", [
   "tiktok",
   "threads"
 ]);
+export const providerKeyEnum = pgEnum("provider_key", ["mock", "meta", "linkedin", "x", "slack", "discord"]);
+export const connectedAccountStatusEnum = pgEnum("connected_account_status", [
+  "connected",
+  "requires_configuration",
+  "unsupported",
+  "disconnected",
+  "error"
+]);
+export const scheduledJobStatusEnum = pgEnum("scheduled_job_status", [
+  "scheduled",
+  "queued",
+  "publishing",
+  "published",
+  "failed",
+  "canceled"
+]);
+export const queueEnqueueStatusEnum = pgEnum("queue_enqueue_status", ["pending", "queued", "failed"]);
+export const publishAttemptStatusEnum = pgEnum("publish_attempt_status", [
+  "queued",
+  "publishing",
+  "succeeded",
+  "failed"
+]);
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -314,9 +337,114 @@ export const platformVariants = pgTable(
       foreignColumns: [contentDrafts.workspaceId, contentDrafts.id],
       name: "platform_variants_workspace_draft_fk"
     }).onDelete("cascade"),
+    uniqueIndex("platform_variants_workspace_id_id_idx").on(table.workspaceId, table.id),
     index("platform_variants_workspace_idx").on(table.workspaceId),
     index("platform_variants_draft_idx").on(table.draftId),
     index("platform_variants_platform_idx").on(table.platform)
+  ]
+);
+
+export const connectedAccounts = pgTable(
+  "connected_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    provider: providerKeyEnum("provider").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    displayName: text("display_name").notNull(),
+    status: connectedAccountStatusEnum("status").default("connected").notNull(),
+    tokenRef: text("token_ref"),
+    scopes: jsonb("scopes").$type<string[]>().default([]).notNull(),
+    capabilities: jsonb("capabilities").$type<string[]>().default([]).notNull(),
+    lastValidatedAt: timestamp("last_validated_at", { withTimezone: true }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    disconnectedAt: timestamp("disconnected_at", { withTimezone: true })
+  },
+  (table) => [
+    uniqueIndex("connected_accounts_workspace_id_id_idx").on(table.workspaceId, table.id),
+    uniqueIndex("connected_accounts_workspace_provider_account_idx").on(
+      table.workspaceId,
+      table.provider,
+      table.providerAccountId
+    ),
+    index("connected_accounts_workspace_idx").on(table.workspaceId),
+    index("connected_accounts_provider_idx").on(table.provider),
+    index("connected_accounts_status_idx").on(table.status)
+  ]
+);
+
+export const scheduledJobs = pgTable(
+  "scheduled_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    platformVariantId: text("platform_variant_id").notNull(),
+    connectedAccountId: uuid("connected_account_id").references(() => connectedAccounts.id, { onDelete: "set null" }),
+    provider: providerKeyEnum("provider").notNull(),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+    status: scheduledJobStatusEnum("status").default("scheduled").notNull(),
+    enqueueStatus: queueEnqueueStatusEnum("enqueue_status").default("pending").notNull(),
+    queueJobId: text("queue_job_id"),
+    enqueueError: text("enqueue_error"),
+    attemptCount: integer("attempt_count").default(0).notNull(),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex("scheduled_jobs_workspace_id_id_idx").on(table.workspaceId, table.id),
+    foreignKey({
+      columns: [table.workspaceId, table.platformVariantId],
+      foreignColumns: [platformVariants.workspaceId, platformVariants.id],
+      name: "scheduled_jobs_workspace_variant_fk"
+    }).onDelete("cascade"),
+    check("scheduled_jobs_attempt_count_nonnegative_check", sql`${table.attemptCount} >= 0`),
+    index("scheduled_jobs_workspace_status_idx").on(table.workspaceId, table.status),
+    index("scheduled_jobs_connected_account_idx").on(table.connectedAccountId),
+    index("scheduled_jobs_scheduled_for_idx").on(table.scheduledFor),
+    index("scheduled_jobs_enqueue_status_idx").on(table.enqueueStatus),
+    index("scheduled_jobs_provider_idx").on(table.provider)
+  ]
+);
+
+export const publishAttempts = pgTable(
+  "publish_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    scheduledJobId: uuid("scheduled_job_id").notNull(),
+    provider: providerKeyEnum("provider").notNull(),
+    status: publishAttemptStatusEnum("status").default("queued").notNull(),
+    providerPostId: text("provider_post_id"),
+    providerResponse: jsonb("provider_response").$type<Record<string, unknown>>(),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    retryAt: timestamp("retry_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.workspaceId, table.scheduledJobId],
+      foreignColumns: [scheduledJobs.workspaceId, scheduledJobs.id],
+      name: "publish_attempts_workspace_job_fk"
+    }).onDelete("cascade"),
+    index("publish_attempts_workspace_status_idx").on(table.workspaceId, table.status),
+    index("publish_attempts_scheduled_job_idx").on(table.scheduledJobId),
+    index("publish_attempts_provider_idx").on(table.provider)
   ]
 );
 
@@ -369,4 +497,7 @@ export type MediaAssetRow = typeof mediaAssets.$inferSelect;
 export type AgentRunRow = typeof agentRuns.$inferSelect;
 export type ContentDraft = typeof contentDrafts.$inferSelect;
 export type PlatformVariantRow = typeof platformVariants.$inferSelect;
+export type ConnectedAccount = typeof connectedAccounts.$inferSelect;
+export type ScheduledJob = typeof scheduledJobs.$inferSelect;
+export type PublishAttempt = typeof publishAttempts.$inferSelect;
 export type WorkflowCheckpoint = typeof workflowCheckpoints.$inferSelect;

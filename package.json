@@ -22,6 +22,7 @@
     "@langchain/langgraph": "^1.4.4",
     "@langchain/openai": "^1.5.1",
     "@neondatabase/serverless": "1.1.0",
+    "bullmq": "^5.79.0",
     "clsx": "2.1.1",
     "drizzle-orm": "0.45.2",
     "lucide-react": "1.21.0",

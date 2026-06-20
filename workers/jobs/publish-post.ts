@@ -209,6 +209,12 @@ export async function publishScheduledPostJob({
     throw new Error(`Scheduled job ${data.scheduledJobId} is not eligible for publishing.`);
   }
 
+  if (loaded.job.provider !== data.provider) {
+    throw new Error(
+      `Scheduled job ${data.scheduledJobId} provider mismatch: expected ${loaded.job.provider}, received ${data.provider}.`
+    );
+  }
+
   if (loaded.job.connectedAccountId && !loaded.account) {
     throw new Error(`Connected account ${loaded.job.connectedAccountId} was not found for this workspace.`);
   }
@@ -218,7 +224,10 @@ export async function publishScheduledPostJob({
   }
 
   const provider = getProviderAdapter(loaded.job.provider);
-  const attempt = await repository.startAttempt(data);
+  const attempt = await repository.startAttempt({
+    ...data,
+    provider: loaded.job.provider
+  });
 
   try {
     const result = await provider.publish({

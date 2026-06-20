@@ -143,6 +143,26 @@ describe("publishScheduledPostJob", () => {
     expect(startAttempt).not.toHaveBeenCalled();
   });
 
+  it("does not publish when queued provider data diverges from the persisted job", async () => {
+    const { repository, startAttempt } = createRepository({
+      job: createScheduledJob({
+        provider: "linkedin"
+      })
+    });
+
+    await expect(
+      publishScheduledPostJob({
+        data: {
+          scheduledJobId,
+          workspaceId,
+          provider: "mock"
+        },
+        repository
+      })
+    ).rejects.toThrow("provider mismatch");
+    expect(startAttempt).not.toHaveBeenCalled();
+  });
+
   it("does not publish through disconnected accounts", async () => {
     const { repository, startAttempt } = createRepository({
       job: createScheduledJob({

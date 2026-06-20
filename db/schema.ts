@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  boolean,
   foreignKey,
   index,
   integer,
@@ -75,6 +76,27 @@ export const publishAttemptStatusEnum = pgEnum("publish_attempt_status", [
   "publishing",
   "succeeded",
   "failed"
+]);
+export const autoReplyRuleMatchTypeEnum = pgEnum("auto_reply_rule_match_type", [
+  "contains",
+  "exact",
+  "starts_with",
+  "regex"
+]);
+export const commentEventStatusEnum = pgEnum("comment_event_status", [
+  "new",
+  "matched",
+  "awaiting_approval",
+  "replied",
+  "ignored",
+  "failed"
+]);
+export const replyAttemptStatusEnum = pgEnum("reply_attempt_status", [
+  "approved",
+  "awaiting_approval",
+  "sent",
+  "failed",
+  "skipped"
 ]);
 
 export const users = pgTable("users", {
@@ -470,6 +492,110 @@ export const publishAttempts = pgTable(
   ]
 );
 
+export const commentEvents = pgTable(
+  "comment_events",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    connectedAccountId: uuid("connected_account_id").references(() => connectedAccounts.id, { onDelete: "set null" }),
+    provider: providerKeyEnum("provider").notNull(),
+    platform: socialPlatformEnum("platform").notNull(),
+    providerCommentId: text("provider_comment_id").notNull(),
+    providerPostId: text("provider_post_id"),
+    authorDisplayName: text("author_display_name"),
+    authorProviderId: text("author_provider_id"),
+    text: text("text").notNull(),
+    status: commentEventStatusEnum("status").default("new").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex("comment_events_workspace_id_id_idx").on(table.workspaceId, table.id),
+    uniqueIndex("comment_events_workspace_provider_comment_idx").on(
+      table.workspaceId,
+      table.provider,
+      table.providerCommentId
+    ),
+    index("comment_events_workspace_status_idx").on(table.workspaceId, table.status),
+    index("comment_events_provider_post_idx").on(table.provider, table.providerPostId),
+    index("comment_events_received_at_idx").on(table.receivedAt)
+  ]
+);
+
+export const autoReplyRules = pgTable(
+  "auto_reply_rules",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    platformScope: text("platform_scope").default("all").notNull(),
+    matchType: autoReplyRuleMatchTypeEnum("match_type").default("contains").notNull(),
+    keywords: jsonb("keywords").$type<string[]>().default([]).notNull(),
+    template: text("template").notNull(),
+    rateLimitWindowMinutes: integer("rate_limit_window_minutes").default(60).notNull(),
+    rateLimitMaxReplies: integer("rate_limit_max_replies").default(5).notNull(),
+    enabled: boolean("enabled").default(true).notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex("auto_reply_rules_workspace_id_id_idx").on(table.workspaceId, table.id),
+    check(
+      "auto_reply_rules_platform_scope_check",
+      sql`${table.platformScope} in ('all', 'linkedin', 'x', 'instagram', 'facebook', 'tiktok', 'threads')`
+    ),
+    check("auto_reply_rules_rate_window_positive_check", sql`${table.rateLimitWindowMinutes} > 0`),
+    check("auto_reply_rules_rate_limit_positive_check", sql`${table.rateLimitMaxReplies} > 0`),
+    index("auto_reply_rules_workspace_enabled_idx").on(table.workspaceId, table.enabled),
+    index("auto_reply_rules_platform_scope_idx").on(table.platformScope)
+  ]
+);
+
+export const replyAttempts = pgTable(
+  "reply_attempts",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    commentEventId: text("comment_event_id").notNull(),
+    ruleId: text("rule_id").references(() => autoReplyRules.id, { onDelete: "set null" }),
+    provider: providerKeyEnum("provider").notNull(),
+    connectedAccountId: uuid("connected_account_id").references(() => connectedAccounts.id, { onDelete: "set null" }),
+    status: replyAttemptStatusEnum("status").notNull(),
+    replyText: text("reply_text").notNull(),
+    approvalRequired: boolean("approval_required").default(false).notNull(),
+    approvedByUserId: text("approved_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    providerReplyId: text("provider_reply_id"),
+    providerResponse: jsonb("provider_response").$type<Record<string, unknown>>(),
+    audit: jsonb("audit").$type<Record<string, unknown>>().default({}).notNull(),
+    error: text("error"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex("reply_attempts_workspace_id_id_idx").on(table.workspaceId, table.id),
+    foreignKey({
+      columns: [table.workspaceId, table.commentEventId],
+      foreignColumns: [commentEvents.workspaceId, commentEvents.id],
+      name: "reply_attempts_workspace_comment_fk"
+    }).onDelete("cascade"),
+    index("reply_attempts_workspace_status_idx").on(table.workspaceId, table.status),
+    index("reply_attempts_comment_event_idx").on(table.commentEventId),
+    index("reply_attempts_rule_idx").on(table.ruleId),
+    index("reply_attempts_provider_idx").on(table.provider)
+  ]
+);
+
 export const workflowCheckpoints = pgTable(
   "workflow_checkpoints",
   {
@@ -502,7 +628,7 @@ export const workflowCheckpoints = pgTable(
     ),
     check(
       "workflow_checkpoints_current_node_check",
-      sql`${table.currentNode} in ('intake', 'research', 'strategy', 'draft', 'platform_adaptation', 'safety', 'schedule_suggestion', 'review', 'save')`
+      sql`${table.currentNode} in ('intake', 'research', 'strategy', 'draft', 'platform_adaptation', 'safety', 'schedule_suggestion', 'review', 'save', 'ingest_comment', 'match_keyword_rules', 'retrieve_context', 'draft_reply', 'decide_reply', 'send_reply', 'audit')`
     ),
     index("workflow_checkpoints_workspace_status_idx").on(table.workspaceId, table.status),
     index("workflow_checkpoints_user_idx").on(table.userId)
@@ -523,4 +649,7 @@ export type ConnectedAccount = typeof connectedAccounts.$inferSelect;
 export type TokenVaultEntry = typeof tokenVaultEntries.$inferSelect;
 export type ScheduledJob = typeof scheduledJobs.$inferSelect;
 export type PublishAttempt = typeof publishAttempts.$inferSelect;
+export type CommentEvent = typeof commentEvents.$inferSelect;
+export type AutoReplyRuleRow = typeof autoReplyRules.$inferSelect;
+export type ReplyAttempt = typeof replyAttempts.$inferSelect;
 export type WorkflowCheckpoint = typeof workflowCheckpoints.$inferSelect;

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { contentAgentInputSchema, contentPackSchema } from "@/lib/agents/schemas/content-pack";
+import { commentReplyInputSchema, commentReplyOutputSchema } from "@/lib/agents/schemas/comment-reply";
 
 export const agentRunStatusSchema = z.enum(["queued", "running", "succeeded", "failed"]);
 export const aiProviderSchema = z.enum(["openai", "gemini"]);
@@ -14,6 +15,8 @@ export const agentToolCallSchema = z.object({
   output: z.record(z.string(), z.unknown()).optional(),
   error: z.string().optional()
 });
+export const agentRunInputSchema = z.union([contentAgentInputSchema, commentReplyInputSchema]);
+export const agentRunOutputSchema = z.union([contentPackSchema, commentReplyOutputSchema]);
 
 export const agentRunSchema = z.object({
   id: z.string().min(1),
@@ -23,8 +26,8 @@ export const agentRunSchema = z.object({
   model: z.string().min(1),
   userId: z.string().min(1),
   workspaceId: z.string().min(1),
-  input: contentAgentInputSchema,
-  output: contentPackSchema.optional(),
+  input: agentRunInputSchema,
+  output: agentRunOutputSchema.optional(),
   toolCalls: z.array(agentToolCallSchema),
   error: z.string().optional(),
   startedAt: z.string().min(1),
@@ -34,4 +37,6 @@ export const agentRunSchema = z.object({
 export type AgentRunStatus = z.infer<typeof agentRunStatusSchema>;
 export type AiProvider = z.infer<typeof aiProviderSchema>;
 export type AgentToolCall = z.infer<typeof agentToolCallSchema>;
+export type AgentRunInput = z.infer<typeof agentRunInputSchema>;
+export type AgentRunOutput = z.infer<typeof agentRunOutputSchema>;
 export type AgentRun = z.infer<typeof agentRunSchema>;

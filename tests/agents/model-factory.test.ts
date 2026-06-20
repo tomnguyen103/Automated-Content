@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createContentModel } from "@/lib/agents/langchain/model-factory";
+import { createCommentModel, createContentModel } from "@/lib/agents/langchain/model-factory";
 
 describe("model factory", () => {
   beforeEach(() => {
@@ -46,5 +46,18 @@ describe("model factory", () => {
     });
 
     expect(model.mode).toBe("local");
+  });
+
+  it("selects remote comment models through the shared provider factory", () => {
+    const model = createCommentModel({
+      env: {
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "sk-test",
+        GEMINI_API_KEY: undefined
+      }
+    });
+
+    expect(model.provider).toBe("openai");
+    expect(model.mode).toBe("remote");
   });
 });

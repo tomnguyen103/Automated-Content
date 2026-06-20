@@ -5,8 +5,13 @@ import { FormEvent, useState } from "react";
 import { DraftEditor } from "@/components/create/draft-editor";
 import { GenerationTimeline } from "@/components/create/generation-timeline";
 import { PlatformTabs } from "@/components/create/platform-tabs";
+import { ReviewStep } from "@/components/create/review-step";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import type {
+  ContentWorkflowApprovalAction,
+  ContentWorkflowState
+} from "@/lib/agents/graphs/state";
 import type { AgentRun } from "@/lib/agents/schemas/agent-run";
 import type { ContentPack } from "@/lib/agents/schemas/content-pack";
 import type { SocialPlatform } from "@/lib/agents/schemas/platform-variant";
@@ -20,12 +25,13 @@ const platformOptions: Array<{ value: SocialPlatform; label: string }> = [
 
 type GenerateResponse = {
   run: AgentRun;
-  contentPack: ContentPack;
+  workflow: ContentWorkflowState;
+  contentPack: ContentPack | null;
   draft: {
     draftId: string;
     status: "saved";
     savedAt: string;
-  };
+  } | null;
 };
 
 export function BriefForm() {
@@ -36,6 +42,7 @@ export function BriefForm() {
   const [sources, setSources] = useState("Manual review stays in the loop before scheduling.");
   const [platforms, setPlatforms] = useState<SocialPlatform[]>(["linkedin", "x"]);
   const [loading, setLoading] = useState(false);
+  const [decisionLoading, setDecisionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerateResponse | null>(null);
 
@@ -89,6 +96,40 @@ export function BriefForm() {
     }
   };
 
+  const submitApprovalDecision = async (action: ContentWorkflowApprovalAction, comment?: string) => {
+    if (!result) {
+      return;
+    }
+
+    setDecisionLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/agent-runs/${result.run.id}/approval`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action,
+          comment
+        })
+      });
+      const payload = (await response.json()) as GenerateResponse | { error?: string };
+
+      if (!response.ok || !("workflow" in payload)) {
+        const message = "error" in payload ? payload.error : undefined;
+        throw new Error(message ?? "Approval update failed.");
+      }
+
+      setResult(payload);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Approval update failed.");
+    } finally {
+      setDecisionLoading(false);
+    }
+  };
+
   return (
     <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
       <form className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-5" onSubmit={submitBrief}>
@@ -97,7 +138,7 @@ export function BriefForm() {
             <h2 className="text-base font-semibold">Content brief</h2>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">Topic to structured content pack.</p>
           </div>
-          <Badge tone="primary">Phase 3</Badge>
+          <Badge tone="primary">Phase 4</Badge>
         </div>
 
         <div className="mt-5 grid gap-4">
@@ -186,11 +227,11 @@ export function BriefForm() {
 
         <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="font-mono text-xs text-[var(--color-text-muted)]">
-            {result ? result.run.id : "No run started"}
+            {result ? `${result.run.id} / ${result.workflow.currentNode}` : "No run started"}
           </p>
           <Button className="min-w-36" disabled={loading} type="submit">
             {loading ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}
-            {loading ? "Generating" : "Generate"}
+            {loading ? "Running" : "Run workflow"}
           </Button>
         </div>
       </form>
@@ -198,7 +239,12 @@ export function BriefForm() {
       <div className="grid gap-5">
         <GenerationTimeline run={result?.run ?? null} loading={loading} />
         <DraftEditor contentPack={result?.contentPack ?? null} />
-        <PlatformTabs variants={result?.contentPack.variants ?? []} />
+        <PlatformTabs variants={result?.contentPack?.variants ?? []} />
+        <ReviewStep
+          disabled={decisionLoading}
+          workflow={result?.workflow ?? null}
+          onDecision={submitApprovalDecision}
+        />
       </div>
     </div>
   );

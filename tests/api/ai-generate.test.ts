@@ -2,13 +2,21 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 async function loadApiModules() {
-  const [{ POST }, { GET }, { clearAgentStorageForTests }] = await Promise.all([
+  const [
+    { POST: generate },
+    { GET },
+    { POST: approve },
+    { clearAgentStorageForTests },
+    { clearContentWorkflowCheckpointsForTests }
+  ] = await Promise.all([
     import("@/app/api/ai/generate/route"),
     import("@/app/api/agent-runs/[id]/route"),
-    import("@/lib/agents/langchain/storage")
+    import("@/app/api/agent-runs/[id]/approval/route"),
+    import("@/lib/agents/langchain/storage"),
+    import("@/lib/agents/graphs/checkpoints")
   ]);
 
-  return { POST, GET, clearAgentStorageForTests };
+  return { generate, GET, approve, clearAgentStorageForTests, clearContentWorkflowCheckpointsForTests };
 }
 
 describe("AI generate API", () => {
@@ -26,8 +34,9 @@ describe("AI generate API", () => {
   });
 
   it("generates a content pack and exposes the agent run", async () => {
-    const { POST, GET, clearAgentStorageForTests } = await loadApiModules();
+    const { generate, GET, approve, clearAgentStorageForTests, clearContentWorkflowCheckpointsForTests } = await loadApiModules();
     clearAgentStorageForTests();
+    clearContentWorkflowCheckpointsForTests();
 
     const request = new NextRequest("http://localhost:3000/api/ai/generate", {
       method: "POST",
@@ -40,12 +49,14 @@ describe("AI generate API", () => {
         platforms: ["linkedin", "x"]
       })
     });
-    const response = await POST(request);
+    const response = await generate(request);
     const payload = await response.json();
 
     expect(response.status).toBe(200);
     expect(payload.contentPack.variants).toHaveLength(2);
-    expect(payload.run.status).toBe("succeeded");
+    expect(payload.run.status).toBe("running");
+    expect(payload.workflow.status).toBe("awaiting_review");
+    expect(payload.draft).toBeNull();
 
     const getResponse = await GET(new Request(`http://localhost:3000/api/agent-runs/${payload.run.id}`), {
       params: Promise.resolve({ id: payload.run.id })
@@ -54,13 +65,33 @@ describe("AI generate API", () => {
 
     expect(getResponse.status).toBe(200);
     expect(getPayload.run.id).toBe(payload.run.id);
+    expect(getPayload.workflow.runId).toBe(payload.run.id);
+
+    const approveResponse = await approve(
+      new Request(`http://localhost:3000/api/agent-runs/${payload.run.id}/approval`, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "approve"
+        })
+      }),
+      {
+        params: Promise.resolve({ id: payload.run.id })
+      }
+    );
+    const approvePayload = await approveResponse.json();
+
+    expect(approveResponse.status).toBe(200);
+    expect(approvePayload.run.status).toBe("succeeded");
+    expect(approvePayload.workflow.status).toBe("succeeded");
+    expect(approvePayload.draft.status).toBe("saved");
   });
 
   it("returns a 400 for malformed JSON", async () => {
-    const { POST, clearAgentStorageForTests } = await loadApiModules();
+    const { generate, clearAgentStorageForTests, clearContentWorkflowCheckpointsForTests } = await loadApiModules();
     clearAgentStorageForTests();
+    clearContentWorkflowCheckpointsForTests();
 
-    const response = await POST(
+    const response = await generate(
       new NextRequest("http://localhost:3000/api/ai/generate", {
         method: "POST",
         body: "{bad json"

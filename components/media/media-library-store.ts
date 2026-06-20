@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { mockMediaAssets } from "@/lib/media/mock-assets";
-import { mediaAssetSchema, type MediaAsset } from "@/lib/media/types";
+import type { MediaAsset } from "@/lib/media/types";
 
-const storageKey = "automated-content.media-assets.v1";
 const updateEventName = "automated-content:media-library-updated";
 
 let mediaAssets: MediaAsset[] | null = null;
@@ -27,41 +26,11 @@ function uniqueAssets(assets: MediaAsset[]) {
   return unique;
 }
 
-function readStoredAssets() {
-  if (!isBrowser()) {
-    return [];
-  }
-
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    const parsed = raw ? JSON.parse(raw) : [];
-
-    return mediaAssetSchema.array().parse(parsed);
-  } catch {
-    return [];
-  }
-}
-
-function writeStoredAssets(assets: MediaAsset[]) {
-  if (!isBrowser()) {
-    return;
-  }
-
-  const durableAssets = assets.filter((asset) => !asset.url.startsWith("blob:"));
-
-  window.localStorage.setItem(storageKey, JSON.stringify(durableAssets));
-}
-
 function loadAssets() {
   if (!mediaAssets) {
-    mediaAssets = uniqueAssets([...readStoredAssets(), ...mockMediaAssets]);
+    mediaAssets = mockMediaAssets;
   }
 
-  return mediaAssets;
-}
-
-function reloadAssets() {
-  mediaAssets = uniqueAssets([...readStoredAssets(), ...mockMediaAssets]);
   return mediaAssets;
 }
 
@@ -75,9 +44,13 @@ export function getMediaLibraryAssets() {
   return loadAssets();
 }
 
+export function setMediaLibraryAssets(assets: MediaAsset[]) {
+  mediaAssets = uniqueAssets(assets);
+  notifyUpdated();
+}
+
 export function addMediaLibraryAssets(assets: MediaAsset[]) {
   mediaAssets = uniqueAssets([...assets, ...loadAssets()]);
-  writeStoredAssets(mediaAssets);
   notifyUpdated();
 }
 
@@ -86,20 +59,11 @@ export function useMediaLibraryAssets() {
 
   useEffect(() => {
     const handleUpdate = () => setAssets([...getMediaLibraryAssets()]);
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key !== storageKey) {
-        return;
-      }
-
-      setAssets([...reloadAssets()]);
-    };
 
     window.addEventListener(updateEventName, handleUpdate);
-    window.addEventListener("storage", handleStorage);
 
     return () => {
       window.removeEventListener(updateEventName, handleUpdate);
-      window.removeEventListener("storage", handleStorage);
     };
   }, []);
 

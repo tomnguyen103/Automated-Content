@@ -148,6 +148,7 @@ export function createDatabaseAgentStorage(db: DatabaseClient = getDb()): AgentS
               body: variant.body,
               cta: variant.cta,
               hashtags: variant.hashtags,
+              media: variant.media,
               mediaPrompt: variant.mediaPrompt ?? null,
               characterCount: variant.characterCount,
               policyStatus: variant.policyStatus,

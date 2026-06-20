@@ -2,11 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 import { MediaGrid } from "@/components/media/media-grid";
-import { addMediaLibraryAssets, useMediaLibraryAssets } from "@/components/media/media-library-store";
+import {
+  addMediaLibraryAssets,
+  setMediaLibraryAssets,
+  useMediaLibraryAssets
+} from "@/components/media/media-library-store";
 import { TransformPanel } from "@/components/media/transform-panel";
 import { UploadDropzone } from "@/components/media/upload-dropzone";
 import { imageKitUploadAuthSchema } from "@/lib/media/upload-auth";
+import { mediaAssetSchema, type MediaAsset } from "@/lib/media/types";
 import { uploadMediaFile } from "@/lib/media/upload";
+import { z } from "zod";
+
+const mediaAssetsResponseSchema = z.object({
+  assets: z.array(mediaAssetSchema)
+});
 
 export function MediaLibrary() {
   const assets = useMediaLibraryAssets();
@@ -17,6 +27,45 @@ export function MediaLibrary() {
   const selectedAsset = assets.find((asset) => asset.id === selectedId) ?? assets[0] ?? null;
   const displayedSelectedId = selectedAsset?.id ?? null;
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAssets = async () => {
+      try {
+        const response = await fetch("/api/media/assets");
+        const payload = await response.json();
+
+        if (!response.ok) {
+          const message = payload && typeof payload === "object" && "error" in payload ? String(payload.error) : "Media library failed to load.";
+          throw new Error(message);
+        }
+
+        const parsed = mediaAssetsResponseSchema.parse(payload);
+
+        if (cancelled) {
+          return;
+        }
+
+        setMediaLibraryAssets(parsed.assets);
+        setSelectedId((currentId) =>
+          currentId && parsed.assets.some((asset) => asset.id === currentId)
+            ? currentId
+            : (parsed.assets[0]?.id ?? null)
+        );
+      } catch (caughtError) {
+        if (!cancelled) {
+          setError(caughtError instanceof Error ? caughtError.message : "Media library failed to load.");
+        }
+      }
+    };
+
+    void loadAssets();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(
     () => () => {
       for (const objectUrl of objectUrlsRef.current) {
@@ -25,6 +74,26 @@ export function MediaLibrary() {
     },
     []
   );
+
+  const persistUploadedAssets = async (assetsToPersist: MediaAsset[]) => {
+    const response = await fetch("/api/media/assets", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        assets: assetsToPersist
+      })
+    });
+    const payload = await response.json();
+
+    if (!response.ok) {
+      const message = payload && typeof payload === "object" && "error" in payload ? String(payload.error) : "Media asset save failed.";
+      throw new Error(message);
+    }
+
+    return mediaAssetsResponseSchema.parse(payload).assets;
+  };
 
   const uploadFiles = async (files: File[]) => {
     setUploading(true);
@@ -50,12 +119,14 @@ export function MediaLibrary() {
 
       objectUrlsRef.current.push(...uploadedAssets.map((asset) => asset.url).filter((url) => url.startsWith("blob:")));
 
-      addMediaLibraryAssets(uploadedAssets);
-      setSelectedId(uploadedAssets[0]?.id ?? selectedId);
+      const savedAssets = await persistUploadedAssets(uploadedAssets);
 
-      const failedUploads = results.length - uploadedAssets.length;
+      addMediaLibraryAssets(savedAssets);
+      setSelectedId(savedAssets[0]?.id ?? selectedId);
+
+      const failedUploads = results.length - savedAssets.length;
       if (failedUploads > 0) {
-        setError(`${failedUploads} upload${failedUploads === 1 ? "" : "s"} failed. Added ${uploadedAssets.length} successful file${uploadedAssets.length === 1 ? "" : "s"}.`);
+        setError(`${failedUploads} upload${failedUploads === 1 ? "" : "s"} failed. Added ${savedAssets.length} successful file${savedAssets.length === 1 ? "" : "s"}.`);
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Upload failed.");

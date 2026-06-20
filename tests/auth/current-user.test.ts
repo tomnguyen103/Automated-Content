@@ -44,11 +44,11 @@ describe("getCurrentUser", () => {
     expect(clerkMocks.auth).not.toHaveBeenCalled();
   });
 
-  it("fails closed when Clerk is not configured and local preview is disabled", async () => {
+  it("fails closed when Clerk is not configured and production preview auth is not local Playwright", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.com");
-    vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
-    vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "");
+    vi.stubEnv("AUTH_LOCAL_PREVIEW", "1");
+    vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "1");
     vi.stubEnv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "");
     vi.stubEnv("CLERK_SECRET_KEY", "");
 
@@ -56,6 +56,24 @@ describe("getCurrentUser", () => {
     const user = await getCurrentUser();
 
     expect(user).toBeNull();
+    expect(clerkMocks.auth).not.toHaveBeenCalled();
+  });
+
+  it("allows Playwright preview auth for a local production-mode server", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://127.0.0.1:3100");
+    vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
+    vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "1");
+    vi.stubEnv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "");
+    vi.stubEnv("CLERK_SECRET_KEY", "");
+
+    const { getCurrentUser } = await loadCurrentUser();
+    const user = await getCurrentUser();
+
+    expect(user).toMatchObject({
+      id: "local-preview-user",
+      isLocalPreview: true
+    });
     expect(clerkMocks.auth).not.toHaveBeenCalled();
   });
 

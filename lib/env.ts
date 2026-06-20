@@ -58,11 +58,21 @@ export const appUrl = env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 export type AppEnv = typeof env;
 export type AppEnvKey = keyof AppEnv;
 
+function isLocalAppUrl(value: string) {
+  try {
+    const hostname = new URL(value).hostname;
+
+    return hostname === "localhost" || hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
 const playwrightPreviewFlag =
-  env.NODE_ENV === "test" && process.env.PLAYWRIGHT_AUTH_LOCAL_PREVIEW === "1";
+  process.env.PLAYWRIGHT_AUTH_LOCAL_PREVIEW === "1" && isLocalAppUrl(appUrl);
 
 export const isLocalPreviewAuthEnabled =
-  env.NODE_ENV !== "production" && (env.AUTH_LOCAL_PREVIEW === "1" || playwrightPreviewFlag);
+  (env.NODE_ENV !== "production" && env.AUTH_LOCAL_PREVIEW === "1") || playwrightPreviewFlag;
 
 export const isClerkConfigured = Boolean(
   !isLocalPreviewAuthEnabled && env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && env.CLERK_SECRET_KEY

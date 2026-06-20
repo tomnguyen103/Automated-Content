@@ -40,10 +40,3 @@ export const platformLabels = [
 ];
 
 export const createTabs = ["Brief", "Research", "Drafts", "Variants", "Media", "Schedule", "Review"];
-
-export const statusCards = [
-  { label: "Scheduled today", value: "7", tone: "primary" },
-  { label: "Agent runs", value: "18", tone: "community" },
-  { label: "Reply matches", value: "42", tone: "premium" },
-  { label: "Publish health", value: "98%", tone: "success" }
-];

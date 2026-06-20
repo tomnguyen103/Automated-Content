@@ -638,6 +638,17 @@ function createPreviewAnalyticsSnapshot(now = new Date()) {
   });
 }
 
+function createEmptyAnalyticsSnapshot(now = new Date()) {
+  return aggregateAnalyticsMetrics({
+    posts: [],
+    comments: [],
+    replies: [],
+    usage: [],
+    agentRuns: [],
+    now
+  });
+}
+
 async function getWorkspaceAnalyticsSummary(
   db: ReturnType<typeof getDb>,
   workspaceId: string,
@@ -822,8 +833,12 @@ export async function getWorkspaceAnalyticsSnapshot({
   isLocalPreview?: boolean;
   now?: Date;
 }): Promise<AnalyticsSnapshot> {
-  if (!isDatabaseConfigured || isLocalPreview || !workspaceId) {
+  if (isLocalPreview) {
     return createPreviewAnalyticsSnapshot(now);
+  }
+
+  if (!isDatabaseConfigured || !workspaceId) {
+    return createEmptyAnalyticsSnapshot(now);
   }
 
   const db = getDb();

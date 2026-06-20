@@ -42,16 +42,32 @@ body {
   font-feature-settings: "rlig" 1, "calt" 1;
 }
 
-button,
-a,
-input,
-textarea,
-select {
-  outline-color: var(--color-primary);
-}
-
 ::selection {
   background: rgba(244, 63, 94, 0.16);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 50;
+  transform: translateY(-150%);
+  border-radius: var(--radius-md);
+  background: var(--color-text);
+  color: white;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: transform 160ms ease;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
 }
 
 .shell-grid {

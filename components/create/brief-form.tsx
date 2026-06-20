@@ -1,0 +1,205 @@
+"use client";
+
+import { Loader2, Sparkles } from "lucide-react";
+import { FormEvent, useState } from "react";
+import { DraftEditor } from "@/components/create/draft-editor";
+import { GenerationTimeline } from "@/components/create/generation-timeline";
+import { PlatformTabs } from "@/components/create/platform-tabs";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import type { AgentRun } from "@/lib/agents/schemas/agent-run";
+import type { ContentPack } from "@/lib/agents/schemas/content-pack";
+import type { SocialPlatform } from "@/lib/agents/schemas/platform-variant";
+
+const platformOptions: Array<{ value: SocialPlatform; label: string }> = [
+  { value: "linkedin", label: "LinkedIn" },
+  { value: "x", label: "X" },
+  { value: "instagram", label: "Instagram" },
+  { value: "threads", label: "Threads" }
+];
+
+type GenerateResponse = {
+  run: AgentRun;
+  contentPack: ContentPack;
+  draft: {
+    draftId: string;
+    status: "saved";
+    savedAt: string;
+  };
+};
+
+export function BriefForm() {
+  const [topic, setTopic] = useState("Turn a weekly founder lesson into a multi-platform content batch");
+  const [audience, setAudience] = useState("founders and operators");
+  const [tone, setTone] = useState("clear, practical, confident");
+  const [goal, setGoal] = useState("educate and drive replies");
+  const [sources, setSources] = useState("Manual review stays in the loop before scheduling.");
+  const [platforms, setPlatforms] = useState<SocialPlatform[]>(["linkedin", "x"]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<GenerateResponse | null>(null);
+
+  const togglePlatform = (platform: SocialPlatform) => {
+    setPlatforms((current) => {
+      if (current.includes(platform)) {
+        return current.length === 1 ? current : current.filter((item) => item !== platform);
+      }
+
+      return [...current, platform];
+    });
+  };
+
+  const submitBrief = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const response = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          topic,
+          audience,
+          tone,
+          goal,
+          sources: sources
+            .split(/\n+/)
+            .map((source) => source.trim())
+            .filter(Boolean),
+          platforms
+        })
+      });
+      const payload = (await response.json()) as GenerateResponse | { error?: string };
+
+      if (!response.ok || !("contentPack" in payload)) {
+        const message = "error" in payload ? payload.error : undefined;
+        throw new Error(message ?? "Generation failed.");
+      }
+
+      setResult(payload);
+    } catch (caughtError) {
+      setResult(null);
+      setError(caughtError instanceof Error ? caughtError.message : "Generation failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+      <form className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-5" onSubmit={submitBrief}>
+        <div className="flex flex-col gap-3 border-b border-[var(--color-border)] pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold">Content brief</h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">Topic to structured content pack.</p>
+          </div>
+          <Badge tone="primary">Phase 3</Badge>
+        </div>
+
+        <div className="mt-5 grid gap-4">
+          <label className="grid gap-2 text-sm font-medium" htmlFor="topic">
+            Topic
+            <input
+              id="topic"
+              className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-sm font-normal outline-none transition focus:border-[var(--color-primary)]"
+              value={topic}
+              onChange={(event) => setTopic(event.target.value)}
+            />
+          </label>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium" htmlFor="audience">
+              Audience
+              <input
+                id="audience"
+                className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-sm font-normal outline-none transition focus:border-[var(--color-primary)]"
+                value={audience}
+                onChange={(event) => setAudience(event.target.value)}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium" htmlFor="tone">
+              Tone
+              <input
+                id="tone"
+                className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-sm font-normal outline-none transition focus:border-[var(--color-primary)]"
+                value={tone}
+                onChange={(event) => setTone(event.target.value)}
+              />
+            </label>
+          </div>
+
+          <label className="grid gap-2 text-sm font-medium" htmlFor="goal">
+            Goal
+            <input
+              id="goal"
+              className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-sm font-normal outline-none transition focus:border-[var(--color-primary)]"
+              value={goal}
+              onChange={(event) => setGoal(event.target.value)}
+            />
+          </label>
+
+          <label className="grid gap-2 text-sm font-medium" htmlFor="sources">
+            Sources
+            <textarea
+              id="sources"
+              className="min-h-24 resize-y rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 text-sm font-normal leading-6 outline-none transition focus:border-[var(--color-primary)]"
+              value={sources}
+              onChange={(event) => setSources(event.target.value)}
+            />
+          </label>
+
+          <fieldset>
+            <legend className="text-sm font-medium">Platforms</legend>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {platformOptions.map((platform) => {
+                const active = platforms.includes(platform.value);
+
+                return (
+                  <button
+                    key={platform.value}
+                    className={`h-9 rounded-[var(--radius-md)] border px-3 text-sm font-medium transition ${
+                      active
+                        ? "border-rose-200 bg-rose-50 text-[var(--color-primary)]"
+                        : "border-[var(--color-border)] bg-white text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]"
+                    }`}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => togglePlatform(platform.value)}
+                  >
+                    {platform.label}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+        </div>
+
+        {error ? (
+          <div className="mt-4 rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="font-mono text-xs text-[var(--color-text-muted)]">
+            {result ? result.run.id : "No run started"}
+          </p>
+          <Button className="min-w-36" disabled={loading} type="submit">
+            {loading ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}
+            {loading ? "Generating" : "Generate"}
+          </Button>
+        </div>
+      </form>
+
+      <div className="grid gap-5">
+        <GenerationTimeline run={result?.run ?? null} loading={loading} />
+        <DraftEditor contentPack={result?.contentPack ?? null} />
+        <PlatformTabs variants={result?.contentPack.variants ?? []} />
+      </div>
+    </div>
+  );
+}

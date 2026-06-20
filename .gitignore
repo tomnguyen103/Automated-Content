@@ -22,3 +22,6 @@ test-results/
 .ai-plans/
 .swarm/
 .codegraph/
+ruvector.db
+agentdb.rvf
+agentdb.rvf.lock

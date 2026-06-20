@@ -48,20 +48,46 @@ export async function POST(request: Request, routeContext: ApprovalRouteContext)
       );
     }
 
-    const provider = context.getProvider(pending.attempt.provider);
-    const providerReply = await provider.replyToComment({
+    const claimed = await context.repository.claimPendingApproval({
       workspaceId: context.workspace.id,
-      connectedAccountId: pending.attempt.connectedAccountId,
-      commentId: pending.comment.providerCommentId ?? pending.comment.id,
-      message: input.replyText
+      attemptId: id,
+      userId: context.user.id,
+      replyText: input.replyText
     });
+
+    if (!claimed) {
+      return NextResponse.json(
+        { error: "Reply approval was already claimed or resolved. Refresh the console before retrying." },
+        { status: 409 }
+      );
+    }
+
+    const provider = context.getProvider(claimed.attempt.provider);
+    let providerReply;
+
+    try {
+      providerReply = await provider.replyToComment({
+        workspaceId: context.workspace.id,
+        connectedAccountId: claimed.attempt.connectedAccountId,
+        commentId: claimed.comment.providerCommentId ?? claimed.comment.id,
+        message: claimed.attempt.replyText
+      });
+    } catch (error) {
+      await context.repository.failClaimedApproval({
+        workspaceId: context.workspace.id,
+        attemptId: id,
+        error: error instanceof Error ? error.message : "Provider reply failed before confirmation."
+      });
+
+      throw error;
+    }
     let usageRecordError: string | null = null;
 
     try {
       await context.usageRecorder({
         workspaceId: context.workspace.id,
-        commentId: pending.comment.id,
-        ruleId: pending.attempt.ruleId,
+        commentId: claimed.comment.id,
+        ruleId: claimed.attempt.ruleId,
         now: providerReply.sentAt
       });
     } catch (error) {

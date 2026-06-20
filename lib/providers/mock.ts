@@ -31,6 +31,7 @@ export const mockProvider: ProviderAdapter = {
   key: "mock",
   displayName: "Mock Provider",
   group: "social",
+  implementationStatus: "mock",
   capabilities: mockProviderCapabilities,
   async connect(input: ProviderConnectionInput) {
     const providerAccountId = input.providerAccountId ?? `mock_${input.workspaceId}`;

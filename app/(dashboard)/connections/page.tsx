@@ -10,6 +10,29 @@ const capabilityTone = {
   false: "neutral"
 } as const;
 
+function readinessLabel(provider: ReturnType<typeof getProviderCapabilityMatrix>[number]) {
+  if (provider.implementationStatus === "mock") {
+    return "Preview ready";
+  }
+
+  if (provider.implementationStatus === "stub") {
+    return "Scaffold only";
+  }
+
+  return "Live";
+}
+
+function capabilityLabel(
+  provider: ReturnType<typeof getProviderCapabilityMatrix>[number],
+  supported: boolean
+) {
+  if (!supported) {
+    return "No";
+  }
+
+  return provider.implementationStatus === "stub" ? "Planned" : "Yes";
+}
+
 export default function ConnectionsPage() {
   const providers = getProviderCapabilityMatrix();
   const socialProviders = providers.filter((provider) => provider.group === "social");
@@ -90,12 +113,14 @@ function ProviderSection({
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-base font-semibold">{provider.displayName}</h3>
-                  <Badge tone={provider.key === "mock" ? "success" : "premium"}>
-                    {provider.key === "mock" ? "Connected in preview" : "Credentials needed"}
+                  <Badge tone={provider.implementationStatus === "mock" ? "success" : "neutral"}>
+                    {readinessLabel(provider)}
                   </Badge>
                 </div>
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                  {provider.supportedCount} of {provider.totalCount} capabilities supported.
+                  {provider.implementationStatus === "stub"
+                    ? `${provider.supportedCount} planned capabilities. 0 live capabilities in this adapter.`
+                    : `${provider.liveSupportedCount} of ${provider.totalCount} live capabilities supported.`}
                 </p>
               </div>
               <Button variant="outline" size="sm" disabled title="Provider connection actions are not available yet">
@@ -112,7 +137,7 @@ function ProviderSection({
                 >
                   <span className="text-sm font-medium">{capability.label}</span>
                   <Badge tone={capabilityTone[String(capability.supported) as "true" | "false"]}>
-                    {capability.supported ? "Yes" : "No"}
+                    {capabilityLabel(provider, capability.supported)}
                   </Badge>
                 </div>
               ))}
@@ -120,7 +145,7 @@ function ProviderSection({
             {provider.key !== "mock" ? (
               <div className="flex items-start gap-2 border-t border-[var(--color-border)] px-5 py-4 text-sm text-[var(--color-text-muted)]">
                 <CircleAlert size={16} className="mt-0.5 shrink-0 text-[var(--color-warning)]" aria-hidden="true" />
-                Credentials are required before live publishing can run.
+                This adapter is scaffold-only. Add the provider implementation and credentials before live publishing can run.
               </div>
             ) : null}
           </article>

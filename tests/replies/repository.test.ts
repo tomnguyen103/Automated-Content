@@ -115,6 +115,24 @@ describe("reply repository", () => {
       logs: [expect.objectContaining({ id: "reply_attempt_approval", status: "awaiting_approval" })]
     });
 
+    const claimed = await repository.claimPendingApproval({
+      workspaceId,
+      attemptId: "reply_attempt_approval",
+      userId: "user_1",
+      replyText: "Thanks, Rina. A teammate will follow up.",
+      now: new Date("2026-06-20T12:01:00.000Z")
+    });
+    const duplicateClaim = await repository.claimPendingApproval({
+      workspaceId,
+      attemptId: "reply_attempt_approval",
+      userId: "user_1",
+      replyText: "Thanks again.",
+      now: new Date("2026-06-20T12:01:01.000Z")
+    });
+
+    expect(claimed?.attempt.status).toBe("approved");
+    expect(duplicateClaim).toBeNull();
+
     await repository.approvePendingAttempt({
       workspaceId,
       attemptId: "reply_attempt_approval",

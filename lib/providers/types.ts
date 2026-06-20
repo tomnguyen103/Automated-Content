@@ -32,6 +32,8 @@ export type ProviderConnectionStatus =
   | "unsupported"
   | "disconnected";
 
+export type ProviderImplementationStatus = "mock" | "stub" | "live";
+
 export type ProviderTokenSet = {
   accessToken?: string;
   refreshToken?: string;
@@ -138,6 +140,7 @@ export type ProviderAdapter = {
   key: ProviderKey;
   displayName: string;
   group: ProviderGroup;
+  implementationStatus: ProviderImplementationStatus;
   website?: string;
   capabilities: ProviderCapabilityMap;
   connect: (input: ProviderConnectionInput) => Promise<ProviderConnectionResult>;

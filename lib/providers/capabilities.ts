@@ -50,8 +50,13 @@ export function buildProviderCapabilityMatrix(adapters: ProviderAdapter[]) {
     key: adapter.key,
     displayName: adapter.displayName,
     group: adapter.group,
+    implementationStatus: adapter.implementationStatus,
     capabilities: summarizeCapabilities(adapter.capabilities),
     supportedCount: providerCapabilities.filter((capability) => adapter.capabilities[capability].supported).length,
+    liveSupportedCount:
+      adapter.implementationStatus === "stub"
+        ? 0
+        : providerCapabilities.filter((capability) => adapter.capabilities[capability].supported).length,
     totalCount: providerCapabilities.length
   }));
 }

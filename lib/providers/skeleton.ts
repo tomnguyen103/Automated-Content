@@ -52,6 +52,7 @@ export function createProviderSkeleton({
     key,
     displayName,
     group,
+    implementationStatus: "stub",
     website,
     capabilities,
     connect,

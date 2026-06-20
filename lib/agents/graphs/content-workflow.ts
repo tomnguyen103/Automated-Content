@@ -1,6 +1,11 @@
 import { END, MemorySaver, START, StateGraph } from "@langchain/langgraph";
 import { agentRunSchema, type AgentRun } from "@/lib/agents/schemas/agent-run";
-import { contentAgentInputSchema, contentPackSchema, type ContentAgentInput } from "@/lib/agents/schemas/content-pack";
+import {
+  contentAgentInputSchema,
+  contentPackSchema,
+  type ContentAgentInput,
+  type ContentPack
+} from "@/lib/agents/schemas/content-pack";
 import type { PlatformVariant } from "@/lib/agents/schemas/platform-variant";
 import { AgentRunRecorder, createTraceId } from "@/lib/agents/langchain/middleware";
 import { createContentModel, type ContentModel } from "@/lib/agents/langchain/model-factory";
@@ -46,6 +51,7 @@ export type ApplyContentWorkflowApprovalOptions = {
   workspaceId: string;
   action: ContentWorkflowApprovalAction;
   comment?: string;
+  contentPack?: ContentPack;
   storage?: AgentStorage;
   checkpoints?: ContentWorkflowCheckpointStore;
   tools?: Partial<ContentAgentToolset>;
@@ -82,6 +88,13 @@ export class WorkflowForbiddenError extends Error {
   constructor(message = "Workflow is not available to this user.") {
     super(message);
     this.name = "WorkflowForbiddenError";
+  }
+}
+
+export class WorkflowValidationError extends Error {
+  constructor(message = "Workflow request is invalid.") {
+    super(message);
+    this.name = "WorkflowValidationError";
   }
 }
 
@@ -205,6 +218,32 @@ async function createCurrentWorkflowResult(
   }
 
   return buildWorkflowResult(run, workflow);
+}
+
+function applyReviewedContentPack(
+  state: ContentWorkflowState,
+  contentPack: ContentPack | undefined,
+  now: () => Date
+) {
+  if (!contentPack) {
+    return state;
+  }
+
+  const parsed = contentPackSchema.parse(contentPack);
+
+  if (!state.contentPack) {
+    throw new WorkflowValidationError("Workflow has no content pack to update.");
+  }
+
+  if (parsed.id !== state.contentPack.id) {
+    throw new WorkflowValidationError("Edited content pack does not match this workflow.");
+  }
+
+  return markContentWorkflowNode(state, state.currentNode, now, {
+    contentPack: parsed,
+    variants: parsed.variants,
+    scheduleSuggestions: parsed.scheduleSuggestions
+  });
 }
 
 function createNode(
@@ -553,11 +592,12 @@ export async function applyContentWorkflowApproval(
     return buildWorkflowResult(run, state);
   }
 
+  const reviewState = applyReviewedContentPack(state, options.contentPack, now);
   const decidedState = applyContentWorkflowApprovalDecision({
     action,
     comment: options.comment,
     now,
-    state
+    state: reviewState
   });
 
   if (action !== "approve") {

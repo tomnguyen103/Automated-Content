@@ -36,13 +36,16 @@ test("create page generates a reviewable content workflow", async ({ page }, tes
   await expect(page.getByText("awaiting_review")).toBeVisible();
   await expect(page.getByText("Pending review")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Draft" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "LinkedIn Professional post" })).toBeVisible();
+  await expect(page.getByLabel("Title")).toHaveValue("LinkedIn Professional post");
   await expect(page.getByText("save_draft")).toHaveCount(0);
+
+  await page.getByLabel("Body").fill("Edited body from e2e");
 
   await page.getByRole("button", { name: "Approve" }).click();
 
   await expect(page.getByText("succeeded")).toHaveCount(2);
   await expect(page.getByText("save_draft")).toBeVisible();
+  await expect(page.getByLabel("Body")).toHaveValue("Edited body from e2e");
 
   await page.screenshot({
     path: testInfo.outputPath(`create-${testInfo.project.name}.png`),

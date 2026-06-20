@@ -34,6 +34,23 @@ type GenerateResponse = {
   } | null;
 };
 
+type WorkflowPayload = Partial<GenerateResponse> & {
+  error?: string;
+};
+
+function normalizeWorkflowPayload(payload: WorkflowPayload): GenerateResponse | null {
+  if (!payload.run || !payload.workflow) {
+    return null;
+  }
+
+  return {
+    run: payload.run,
+    workflow: payload.workflow,
+    contentPack: payload.contentPack ?? payload.workflow.contentPack,
+    draft: payload.draft ?? payload.workflow.savedDraft
+  };
+}
+
 export function BriefForm() {
   const [topic, setTopic] = useState("Turn a weekly founder lesson into a multi-platform content batch");
   const [audience, setAudience] = useState("founders and operators");
@@ -45,6 +62,23 @@ export function BriefForm() {
   const [decisionLoading, setDecisionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerateResponse | null>(null);
+
+  const updateContentPack = (contentPack: ContentPack) => {
+    setResult((current) =>
+      current
+        ? {
+            ...current,
+            contentPack,
+            workflow: {
+              ...current.workflow,
+              contentPack,
+              variants: contentPack.variants,
+              scheduleSuggestions: contentPack.scheduleSuggestions
+            }
+          }
+        : current
+    );
+  };
 
   const togglePlatform = (platform: SocialPlatform) => {
     setPlatforms((current) => {
@@ -80,16 +114,18 @@ export function BriefForm() {
           platforms
         })
       });
-      const payload = (await response.json()) as GenerateResponse | { error?: string };
+      const payload = (await response.json()) as WorkflowPayload;
+      const nextResult = normalizeWorkflowPayload(payload);
 
-      if (!response.ok || !("contentPack" in payload)) {
-        const message = "error" in payload ? payload.error : undefined;
-        throw new Error(message ?? "Generation failed.");
+      if (nextResult) {
+        setResult(nextResult);
       }
 
-      setResult(payload);
+      if (!response.ok || !nextResult) {
+        const message = payload.error;
+        throw new Error(message ?? "Generation failed.");
+      }
     } catch (caughtError) {
-      setResult(null);
       setError(caughtError instanceof Error ? caughtError.message : "Generation failed.");
     } finally {
       setLoading(false);
@@ -112,17 +148,21 @@ export function BriefForm() {
         },
         body: JSON.stringify({
           action,
-          comment
+          comment,
+          contentPack: result.contentPack ?? result.workflow.contentPack ?? undefined
         })
       });
-      const payload = (await response.json()) as GenerateResponse | { error?: string };
+      const payload = (await response.json()) as WorkflowPayload;
+      const nextResult = normalizeWorkflowPayload(payload);
 
-      if (!response.ok || !("workflow" in payload)) {
-        const message = "error" in payload ? payload.error : undefined;
-        throw new Error(message ?? "Approval update failed.");
+      if (nextResult) {
+        setResult(nextResult);
       }
 
-      setResult(payload);
+      if (!response.ok || !nextResult) {
+        const message = payload.error;
+        throw new Error(message ?? "Approval update failed.");
+      }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Approval update failed.");
     } finally {
@@ -238,8 +278,17 @@ export function BriefForm() {
 
       <div className="grid gap-5">
         <GenerationTimeline run={result?.run ?? null} loading={loading} />
-        <DraftEditor contentPack={result?.contentPack ?? null} />
-        <PlatformTabs variants={result?.contentPack?.variants ?? []} />
+        <DraftEditor contentPack={result?.contentPack ?? null} onChange={updateContentPack} />
+        <PlatformTabs
+          variants={result?.contentPack?.variants ?? []}
+          onChange={(variants) => {
+            const contentPack = result?.contentPack;
+
+            if (contentPack) {
+              updateContentPack({ ...contentPack, variants });
+            }
+          }}
+        />
         <ReviewStep
           disabled={decisionLoading}
           workflow={result?.workflow ?? null}

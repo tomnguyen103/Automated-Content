@@ -6,14 +6,57 @@ import { platformLabels, type PlatformVariant } from "@/lib/agents/schemas/platf
 
 type PlatformTabsProps = {
   variants: PlatformVariant[];
+  onChange?: (variants: PlatformVariant[]) => void;
 };
 
-export function PlatformTabs({ variants }: PlatformTabsProps) {
+export function PlatformTabs({ onChange, variants }: PlatformTabsProps) {
   const [activeId, setActiveId] = useState<string | null>(variants[0]?.id ?? null);
   const activeVariant = useMemo(
     () => variants.find((variant) => variant.id === activeId) ?? variants[0] ?? null,
     [activeId, variants]
   );
+  const activeHashtagsValue = activeVariant?.hashtags.join(" ") ?? "";
+  const [hashtagsDraft, setHashtagsDraft] = useState({
+    variantId: activeVariant?.id ?? null,
+    value: activeHashtagsValue
+  });
+  const hashtagsInput = hashtagsDraft.variantId === activeVariant?.id ? hashtagsDraft.value : activeHashtagsValue;
+
+  const updateActiveVariant = (updates: Partial<PlatformVariant>) => {
+    if (!activeVariant) {
+      return;
+    }
+
+    onChange?.(
+      variants.map((variant) =>
+        variant.id === activeVariant.id
+          ? {
+              ...variant,
+              ...updates
+            }
+          : variant
+      )
+    );
+  };
+
+  const parseHashtags = (value: string) =>
+    value
+      .split(/[\s,]+/)
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+
+  const updateHashtags = (value: string) => {
+    const hashtags = parseHashtags(value);
+
+    updateActiveVariant({
+      hashtags
+    });
+
+    setHashtagsDraft({
+      variantId: activeVariant?.id ?? null,
+      value: hashtags.join(" ")
+    });
+  };
 
   if (variants.length === 0 || !activeVariant) {
     return (
@@ -47,18 +90,65 @@ export function PlatformTabs({ variants }: PlatformTabsProps) {
 
       <div className="p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-base font-semibold">{activeVariant.title}</h2>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">{activeVariant.hook}</p>
+          <div className="grid flex-1 gap-3">
+            <label className="grid gap-2 text-sm font-medium" htmlFor={`variant-title-${activeVariant.id}`}>
+              Title
+              <input
+                id={`variant-title-${activeVariant.id}`}
+                className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-sm font-normal outline-none transition focus:border-[var(--color-primary)]"
+                value={activeVariant.title}
+                onChange={(event) => updateActiveVariant({ title: event.target.value })}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium" htmlFor={`variant-hook-${activeVariant.id}`}>
+              Hook
+              <textarea
+                id={`variant-hook-${activeVariant.id}`}
+                className="min-h-20 resize-y rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 text-sm font-normal leading-6 outline-none transition focus:border-[var(--color-primary)]"
+                value={activeVariant.hook}
+                onChange={(event) => updateActiveVariant({ hook: event.target.value })}
+              />
+            </label>
           </div>
           <Badge tone={activeVariant.policyStatus === "pass" ? "success" : "premium"}>
             {activeVariant.policyStatus}
           </Badge>
         </div>
 
-        <div className="mt-4 rounded-[var(--radius-md)] bg-[var(--color-surface)] p-4">
-          <p className="whitespace-pre-wrap text-sm leading-6">{activeVariant.body}</p>
-          <p className="mt-4 text-sm font-medium">{activeVariant.cta}</p>
+        <div className="mt-4 grid gap-3">
+          <label className="grid gap-2 text-sm font-medium" htmlFor={`variant-body-${activeVariant.id}`}>
+            Body
+            <textarea
+              id={`variant-body-${activeVariant.id}`}
+              className="min-h-40 resize-y rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-normal leading-6 outline-none transition focus:border-[var(--color-primary)]"
+              value={activeVariant.body}
+              onChange={(event) => updateActiveVariant({ body: event.target.value })}
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-medium" htmlFor={`variant-cta-${activeVariant.id}`}>
+            CTA
+            <input
+              id={`variant-cta-${activeVariant.id}`}
+              className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-sm font-normal outline-none transition focus:border-[var(--color-primary)]"
+              value={activeVariant.cta}
+              onChange={(event) => updateActiveVariant({ cta: event.target.value })}
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-medium" htmlFor={`variant-hashtags-${activeVariant.id}`}>
+            Hashtags
+            <input
+              id={`variant-hashtags-${activeVariant.id}`}
+              className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-sm font-normal outline-none transition focus:border-[var(--color-primary)]"
+              value={hashtagsInput}
+              onChange={(event) =>
+                setHashtagsDraft({
+                  variantId: activeVariant.id,
+                  value: event.target.value
+                })
+              }
+              onBlur={() => updateHashtags(hashtagsInput)}
+            />
+          </label>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">

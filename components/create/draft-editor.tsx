@@ -1,14 +1,14 @@
 "use client";
 
-import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { ContentPack } from "@/lib/agents/schemas/content-pack";
 
 type DraftEditorProps = {
   contentPack: ContentPack | null;
+  onChange?: (contentPack: ContentPack) => void;
 };
 
-export function DraftEditor({ contentPack }: DraftEditorProps) {
+export function DraftEditor({ contentPack, onChange }: DraftEditorProps) {
   if (!contentPack) {
     return (
       <section className="rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border)] bg-white p-5">
@@ -18,11 +18,24 @@ export function DraftEditor({ contentPack }: DraftEditorProps) {
     );
   }
 
-  return <EditableDraft key={contentPack.id} contentPack={contentPack} />;
+  return <EditableDraft key={contentPack.id} contentPack={contentPack} onChange={onChange} />;
 }
 
-function EditableDraft({ contentPack }: { contentPack: ContentPack }) {
-  const [caption, setCaption] = useState(contentPack.captions[0] ?? "");
+function EditableDraft({
+  contentPack,
+  onChange
+}: {
+  contentPack: ContentPack;
+  onChange?: (contentPack: ContentPack) => void;
+}) {
+  const caption = contentPack.captions[0] ?? "";
+
+  const updateCaption = (value: string) => {
+    onChange?.({
+      ...contentPack,
+      captions: contentPack.captions.length > 0 ? [value, ...contentPack.captions.slice(1)] : [value]
+    });
+  };
 
   return (
     <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-5">
@@ -43,7 +56,7 @@ function EditableDraft({ contentPack }: { contentPack: ContentPack }) {
         id="primary-caption"
         className="mt-2 min-h-36 w-full resize-y rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 py-2 text-sm leading-6 outline-none transition focus:border-[var(--color-primary)]"
         value={caption}
-        onChange={(event) => setCaption(event.target.value)}
+        onChange={(event) => updateCaption(event.target.value)}
       />
 
       <div className="mt-4 grid gap-3 md:grid-cols-2">

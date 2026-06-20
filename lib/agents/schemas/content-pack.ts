@@ -3,7 +3,10 @@ import {
   platformVariantSchema,
   socialPlatformSchema
 } from "@/lib/agents/schemas/platform-variant";
-import { scheduleSuggestionSchema } from "@/lib/agents/schemas/schedule-suggestion";
+import {
+  ianaTimeZoneSchema,
+  scheduleSuggestionSchema
+} from "@/lib/agents/schemas/schedule-suggestion";
 
 export const contentAgentInputSchema = z.object({
   topic: z.string().min(3).max(240),
@@ -11,7 +14,8 @@ export const contentAgentInputSchema = z.object({
   tone: z.string().min(2).max(80).default("clear, practical, confident"),
   goal: z.string().min(2).max(160).default("educate and drive engagement"),
   sources: z.array(z.string().min(1).max(1000)).max(8).default([]),
-  platforms: z.array(socialPlatformSchema).min(1).max(6).default(["linkedin", "x"])
+  platforms: z.array(socialPlatformSchema).min(1).max(6).default(["linkedin", "x"]),
+  timezone: ianaTimeZoneSchema.optional()
 });
 
 export const contentIdeaSchema = z.object({

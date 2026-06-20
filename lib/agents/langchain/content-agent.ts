@@ -154,7 +154,7 @@ export async function runContentAgent(
     const schedule = await recorder.execute(tools.suggestSchedule, {
       topic: input.topic,
       platforms: input.platforms,
-      timezone: "America/Chicago",
+      timezone: input.timezone ?? "America/Chicago",
       startDate: now().toISOString()
     });
     const policyWarnings = variants.flatMap((variant) => variant.policyWarnings);

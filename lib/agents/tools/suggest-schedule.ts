@@ -1,12 +1,15 @@
 import { z } from "zod";
-import { scheduleSuggestionSchema } from "@/lib/agents/schemas/schedule-suggestion";
+import {
+  ianaTimeZoneSchema,
+  scheduleSuggestionSchema
+} from "@/lib/agents/schemas/schedule-suggestion";
 import { socialPlatformSchema } from "@/lib/agents/schemas/platform-variant";
 import type { AgentTool } from "@/lib/agents/tools/types";
 
 export const suggestScheduleInputSchema = z.object({
   topic: z.string().min(1),
   platforms: z.array(socialPlatformSchema).min(1).max(6),
-  timezone: z.string().min(1).refine(isValidTimeZone, "Expected a valid IANA timezone.").default("America/Chicago"),
+  timezone: ianaTimeZoneSchema.default("America/Chicago"),
   startDate: z
     .string()
     .min(1)
@@ -31,15 +34,6 @@ type DateTimeParts = {
 };
 
 const timeZoneFormatters = new Map<string, Intl.DateTimeFormat>();
-
-function isValidTimeZone(timezone: string) {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function getTimeZoneFormatter(timezone: string) {
   const existing = timeZoneFormatters.get(timezone);

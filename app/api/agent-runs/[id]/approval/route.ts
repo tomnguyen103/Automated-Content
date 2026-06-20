@@ -1,18 +1,31 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createAgentStorage } from "@/lib/agents/langchain/storage";
-import {
-  ContentWorkflowExecutionError,
-  runContentWorkflow
-} from "@/lib/agents/graphs/content-workflow";
 import { createContentWorkflowCheckpointStore } from "@/lib/agents/graphs/checkpoints";
-import { contentAgentInputSchema } from "@/lib/agents/schemas/content-pack";
+import {
+  applyContentWorkflowApproval,
+  ContentWorkflowExecutionError,
+  WorkflowForbiddenError,
+  WorkflowNotFoundError
+} from "@/lib/agents/graphs/content-workflow";
+import { contentWorkflowApprovalActionSchema } from "@/lib/agents/graphs/state";
+import { createAgentStorage } from "@/lib/agents/langchain/storage";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
 
 export const runtime = "nodejs";
 
-export async function POST(request: NextRequest) {
+const approvalRequestSchema = z.object({
+  action: contentWorkflowApprovalActionSchema,
+  comment: z.string().max(1000).optional()
+});
+
+type ApprovalRouteContext = {
+  params: Promise<{
+    id: string;
+  }>;
+};
+
+export async function POST(request: Request, context: ApprovalRouteContext) {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -27,7 +40,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const input = contentAgentInputSchema.parse(body);
+    const { action, comment } = approvalRequestSchema.parse(body);
+    const { id } = await context.params;
     const workspace = await resolvePersonalWorkspaceForUser(user);
     const storage = createAgentStorage({
       allowMemoryFallback: workspace.isLocalPreview
@@ -35,7 +49,9 @@ export async function POST(request: NextRequest) {
     const checkpoints = createContentWorkflowCheckpointStore({
       allowMemoryFallback: workspace.isLocalPreview
     });
-    const result = await runContentWorkflow(input, {
+    const result = await applyContentWorkflowApproval(id, {
+      action,
+      comment,
       userId: user.id,
       workspaceId: workspace.id,
       storage,
@@ -52,7 +68,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         {
-          error: "Invalid generation brief.",
+          error: "Invalid approval request.",
           issues: error.issues
         },
         { status: 400 }
@@ -70,7 +86,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.error("Unexpected content generation error", error);
-    return NextResponse.json({ error: "Unable to generate content." }, { status: 500 });
+    if (error instanceof WorkflowForbiddenError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
+
+    if (error instanceof WorkflowNotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
+    }
+
+    console.error("Unexpected workflow approval error", error);
+    return NextResponse.json({ error: "Unable to update workflow approval." }, { status: 500 });
   }
 }

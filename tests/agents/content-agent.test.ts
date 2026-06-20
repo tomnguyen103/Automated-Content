@@ -13,7 +13,8 @@ describe("content agent integration", () => {
         tone: "direct",
         goal: "generate replies",
         sources: ["Manual approval remains required."],
-        platforms: ["linkedin", "x"]
+        platforms: ["linkedin", "x"],
+        timezone: "UTC"
       },
       {
         userId: "user_1",
@@ -49,6 +50,7 @@ describe("content agent integration", () => {
     expect(result.run.status).toBe("succeeded");
     expect(result.run.provider).toBe("gemini");
     expect(result.contentPack.variants).toHaveLength(2);
+    expect(result.contentPack.scheduleSuggestions.every((suggestion) => suggestion.timezone === "UTC")).toBe(true);
     expect(result.contentPack.metadata.toolCallCount).toBe(result.run.toolCalls.length - 1);
     expect(result.run.toolCalls.map((call) => call.name)).toContain("save_draft");
     await expect(storage.getRun(result.run.id, "workspace_1")).resolves.toMatchObject({

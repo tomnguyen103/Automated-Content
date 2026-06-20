@@ -25,17 +25,23 @@ test.afterEach(({ consoleIssues }) => {
   expect(consoleIssues).toEqual([]);
 });
 
-test("create page generates a structured content pack", async ({ page }, testInfo) => {
+test("create page generates a reviewable content workflow", async ({ page }, testInfo) => {
   await page.goto("/create");
 
   await expect(page.getByRole("heading", { name: "Create" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Content brief" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Generate" }).click();
+  await page.getByRole("button", { name: "Run workflow" }).click();
 
-  await expect(page.getByText("succeeded")).toBeVisible();
+  await expect(page.getByText("awaiting_review")).toBeVisible();
+  await expect(page.getByText("Pending review")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Draft" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "LinkedIn Professional post" })).toBeVisible();
+  await expect(page.getByText("save_draft")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Approve" }).click();
+
+  await expect(page.getByText("succeeded")).toHaveCount(2);
   await expect(page.getByText("save_draft")).toBeVisible();
 
   await page.screenshot({

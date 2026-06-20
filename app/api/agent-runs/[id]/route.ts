@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAgentStorage } from "@/lib/agents/langchain/storage";
+import { createContentWorkflowCheckpointStore } from "@/lib/agents/graphs/checkpoints";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
 
@@ -23,6 +24,9 @@ export async function GET(_request: Request, context: AgentRunRouteContext) {
   const storage = createAgentStorage({
     allowMemoryFallback: workspace.isLocalPreview
   });
+  const checkpoints = createContentWorkflowCheckpointStore({
+    allowMemoryFallback: workspace.isLocalPreview
+  });
   const run = await storage.getRun(id, workspace.id);
 
   if (!run) {
@@ -33,5 +37,7 @@ export async function GET(_request: Request, context: AgentRunRouteContext) {
     return NextResponse.json({ error: "Agent run is not available to this user." }, { status: 403 });
   }
 
-  return NextResponse.json({ run });
+  const workflow = await checkpoints.get(id, workspace.id);
+
+  return NextResponse.json({ run, workflow });
 }

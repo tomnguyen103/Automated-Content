@@ -29,6 +29,13 @@
       "when": 1781913836805,
       "tag": "0003_freezing_black_cat",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781922487576,
+      "tag": "0004_slow_junta",
+      "breakpoints": true
     }
   ]
 }

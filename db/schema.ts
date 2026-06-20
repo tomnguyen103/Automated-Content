@@ -34,6 +34,14 @@ export const usageEventTypeEnum = pgEnum("usage_event_type", [
 ]);
 export const aiProviderEnum = pgEnum("ai_provider", ["openai", "gemini"]);
 export const agentRunStatusEnum = pgEnum("agent_run_status", ["queued", "running", "succeeded", "failed"]);
+export const workflowCheckpointStatusEnum = pgEnum("workflow_checkpoint_status", [
+  "running",
+  "awaiting_review",
+  "paused",
+  "changes_requested",
+  "succeeded",
+  "failed"
+]);
 export const contentDraftStatusEnum = pgEnum("content_draft_status", ["draft", "ready", "archived"]);
 export const socialPlatformEnum = pgEnum("social_platform", [
   "linkedin",
@@ -270,6 +278,45 @@ export const platformVariants = pgTable(
   ]
 );
 
+export const workflowCheckpoints = pgTable(
+  "workflow_checkpoints",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    runId: text("run_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    traceId: text("trace_id").notNull(),
+    status: workflowCheckpointStatusEnum("status").notNull(),
+    approvalStatus: text("approval_status").notNull(),
+    currentNode: text("current_node").notNull(),
+    state: jsonb("state").$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex("workflow_checkpoints_workspace_run_idx").on(table.workspaceId, table.runId),
+    foreignKey({
+      columns: [table.workspaceId, table.runId],
+      foreignColumns: [agentRuns.workspaceId, agentRuns.id],
+      name: "workflow_checkpoints_workspace_run_fk"
+    }).onDelete("cascade"),
+    check(
+      "workflow_checkpoints_approval_status_check",
+      sql`${table.approvalStatus} in ('not_requested', 'pending', 'approved', 'changes_requested', 'paused')`
+    ),
+    check(
+      "workflow_checkpoints_current_node_check",
+      sql`${table.currentNode} in ('intake', 'research', 'strategy', 'draft', 'platform_adaptation', 'safety', 'schedule_suggestion', 'review', 'save')`
+    ),
+    index("workflow_checkpoints_workspace_status_idx").on(table.workspaceId, table.status),
+    index("workflow_checkpoints_user_idx").on(table.userId)
+  ]
+);
+
 export type User = typeof users.$inferSelect;
 export type Workspace = typeof workspaces.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
@@ -279,3 +326,4 @@ export type ContentTopic = typeof contentTopics.$inferSelect;
 export type AgentRunRow = typeof agentRuns.$inferSelect;
 export type ContentDraft = typeof contentDrafts.$inferSelect;
 export type PlatformVariantRow = typeof platformVariants.$inferSelect;
+export type WorkflowCheckpoint = typeof workflowCheckpoints.$inferSelect;

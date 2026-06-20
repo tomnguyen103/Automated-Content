@@ -3,6 +3,7 @@ import { z } from "zod";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/observability/logger";
 import { parseN8nCallbackPayload, verifyN8nSignature } from "@/lib/n8n/events";
+import { recordN8nEvent } from "@/lib/n8n/event-log";
 
 export const runtime = "nodejs";
 
@@ -25,6 +26,16 @@ export async function POST(request: NextRequest) {
 
   try {
     const payload = parseN8nCallbackPayload(JSON.parse(body));
+    await recordN8nEvent({
+      id: payload.eventId ? `${payload.eventId}:${payload.id}` : payload.id,
+      workspaceId: payload.workspaceId,
+      direction: "callback",
+      callbackId: payload.id,
+      workflow: payload.workflow,
+      status: payload.status,
+      payload,
+      occurredAt: new Date()
+    });
     logger.info("n8n callback accepted", {
       callbackId: payload.id,
       eventId: payload.eventId,

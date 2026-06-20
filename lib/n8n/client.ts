@@ -7,6 +7,7 @@ import {
   type N8nEventPayload,
   type N8nEventType
 } from "@/lib/n8n/events";
+import { recordN8nEvent } from "@/lib/n8n/event-log";
 
 type N8nFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -67,6 +68,16 @@ export function createN8nClient({
       const signature = createN8nSignature({ body, secret, timestamp });
       let response: Response;
 
+      await recordN8nEvent({
+        id: payload.id,
+        workspaceId: payload.workspaceId,
+        direction: "outbound",
+        eventType: payload.event,
+        status: "pending",
+        payload,
+        occurredAt
+      });
+
       try {
         response = await fetcher(webhookUrl, {
           method: "POST",
@@ -79,13 +90,46 @@ export function createN8nClient({
           body,
           signal: AbortSignal.timeout(10_000)
         });
-      } catch {
+      } catch (error) {
+        await recordN8nEvent({
+          id: payload.id,
+          workspaceId: payload.workspaceId,
+          direction: "outbound",
+          eventType: payload.event,
+          status: "failed",
+          payload,
+          responseStatus: 0,
+          error: error instanceof Error ? error.message : "Dispatch failed before response.",
+          occurredAt
+        });
         throw new N8nDispatchError("n8n event dispatch failed before receiving a response.", 0);
       }
 
       if (!response.ok) {
+        await recordN8nEvent({
+          id: payload.id,
+          workspaceId: payload.workspaceId,
+          direction: "outbound",
+          eventType: payload.event,
+          status: "failed",
+          payload,
+          responseStatus: response.status,
+          error: `Dispatch failed with status ${response.status}.`,
+          occurredAt
+        });
         throw new N8nDispatchError(`n8n event dispatch failed with status ${response.status}.`, response.status);
       }
+
+      await recordN8nEvent({
+        id: payload.id,
+        workspaceId: payload.workspaceId,
+        direction: "outbound",
+        eventType: payload.event,
+        status: "delivered",
+        payload,
+        responseStatus: response.status,
+        occurredAt
+      });
 
       return {
         eventId: payload.id,

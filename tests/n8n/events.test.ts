@@ -1,13 +1,23 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createN8nClient, N8nDispatchError } from "@/lib/n8n/client";
 import { createN8nSignature, verifyN8nSignature } from "@/lib/n8n/events";
+import type { N8nDispatchError } from "@/lib/n8n/client";
 
 const secret = "test-n8n-secret";
+
+async function loadN8nModules() {
+  const [{ createN8nClient }, eventLog] = await Promise.all([
+    import("@/lib/n8n/client"),
+    import("@/lib/n8n/event-log")
+  ]);
+
+  return { createN8nClient, eventLog };
+}
 
 describe("n8n event integration", () => {
   beforeEach(() => {
     vi.resetModules();
+    vi.stubEnv("DATABASE_URL", "");
   });
 
   afterEach(() => {
@@ -16,6 +26,8 @@ describe("n8n event integration", () => {
   });
 
   it("dispatches signed outbound workflow events", async () => {
+    const { createN8nClient, eventLog } = await loadN8nModules();
+    eventLog.clearN8nEventsForTests();
     const calls: Array<{ input: string | URL; init?: RequestInit }> = [];
     const fetcher = vi.fn(async (input: string | URL, init?: RequestInit) => {
       calls.push({ input, init });
@@ -65,9 +77,21 @@ describe("n8n event integration", () => {
       event: "publishing.post.failed",
       workspaceId: "workspace_1"
     });
+    expect(eventLog.listN8nEventsForTests()).toEqual([
+      expect.objectContaining({
+        id: "evt_test_1",
+        direction: "outbound",
+        eventType: "publishing.post.failed",
+        responseStatus: 202,
+        status: "delivered",
+        workspaceId: "workspace_1"
+      })
+    ]);
   });
 
   it("normalizes outbound transport failures", async () => {
+    const { createN8nClient, eventLog } = await loadN8nModules();
+    eventLog.clearN8nEventsForTests();
     const client = createN8nClient({
       fetcher: vi.fn(async () => {
         throw new Error("Network unavailable");
@@ -87,11 +111,24 @@ describe("n8n event integration", () => {
       name: "N8nDispatchError",
       status: 0
     } satisfies Partial<N8nDispatchError>);
+    expect(eventLog.listN8nEventsForTests()).toEqual([
+      expect.objectContaining({
+        id: "evt_network_error",
+        direction: "outbound",
+        responseStatus: 0,
+        status: "failed",
+        workspaceId: "workspace_1"
+      })
+    ]);
   });
 
   it("validates signed n8n callbacks", async () => {
     vi.stubEnv("N8N_WEBHOOK_SECRET", secret);
-    const { POST } = await import("@/app/api/webhooks/n8n/route");
+    const [{ POST }, eventLog] = await Promise.all([
+      import("@/app/api/webhooks/n8n/route"),
+      import("@/lib/n8n/event-log")
+    ]);
+    eventLog.clearN8nEventsForTests();
     const body = JSON.stringify({
       id: "callback_1",
       workflow: "publish-failure-alert",
@@ -125,6 +162,16 @@ describe("n8n event integration", () => {
         workflow: "publish-failure-alert"
       }
     });
+    expect(eventLog.listN8nEventsForTests()).toEqual([
+      expect.objectContaining({
+        id: "evt_test_1:callback_1",
+        callbackId: "callback_1",
+        direction: "callback",
+        status: "completed",
+        workflow: "publish-failure-alert",
+        workspaceId: "workspace_1"
+      })
+    ]);
   });
 
   it("rejects unsigned n8n callbacks before parsing payloads", async () => {

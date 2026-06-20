@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { localPreviewWorkspaceId } from "@/lib/workspaces/personal-workspace";
 
 async function loadRoute() {
@@ -22,6 +22,15 @@ describe("media upload auth API", () => {
     vi.stubEnv("IMAGEKIT_PUBLIC_KEY", "");
     vi.stubEnv("IMAGEKIT_PRIVATE_KEY", "");
     vi.stubEnv("IMAGEKIT_URL_ENDPOINT", "");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.doUnmock("@/lib/auth/current-user");
+    vi.doUnmock("@/lib/billing/usage");
+    vi.doUnmock("@/lib/media/imagekit");
+    vi.doUnmock("@/lib/workspaces/personal-workspace");
+    vi.resetModules();
   });
 
   it("returns mock upload auth for authenticated local preview users", async () => {
@@ -54,5 +63,125 @@ describe("media upload auth API", () => {
     expect(payload.urlEndpoint).toBe("https://ik.imagekit.io/test-account");
     expect(payload.metadata.provider).toBe("imagekit");
     expect(payload.signature).toBe(signUploadToken("private_test_key", payload.token, payload.expire));
+  });
+
+  it("enforces and records media usage for workspace-backed upload auth", async () => {
+    vi.resetModules();
+    vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
+    vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "");
+    vi.stubEnv("IMAGEKIT_PUBLIC_KEY", "public_test_key");
+    vi.stubEnv("IMAGEKIT_PRIVATE_KEY", "private_test_key");
+    vi.stubEnv("IMAGEKIT_URL_ENDPOINT", "https://ik.imagekit.io/test-account");
+
+    const ensureUsageAllowed = vi.fn(async () => null);
+    const recordUsageForLimit = vi.fn(async () => undefined);
+
+    vi.doMock("@/lib/auth/current-user", () => ({
+      getCurrentUser: vi.fn(async () => ({
+        id: "user_usage_1",
+        email: "user@example.com",
+        name: "User Usage",
+        imageUrl: null,
+        initials: "UU",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/workspaces/personal-workspace", () => ({
+      resolvePersonalWorkspaceForUser: vi.fn(async () => ({
+        id: "workspace_usage_1",
+        role: "owner",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/billing/usage", () => ({
+      UsageLimitExceededError: class UsageLimitExceededError extends Error {},
+      ensureUsageAllowed,
+      recordUsageForLimit
+    }));
+
+    const { GET } = await loadRoute();
+    const response = await GET();
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.metadata.provider).toBe("imagekit");
+    expect(ensureUsageAllowed).toHaveBeenCalledWith({
+      workspaceId: "workspace_usage_1",
+      key: "mediaTransformsPerMonth",
+      skip: false
+    });
+    expect(recordUsageForLimit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "workspace_usage_1",
+        key: "mediaTransformsPerMonth",
+        sourceId: payload.token,
+        skip: false
+      })
+    );
+  });
+
+  it("does not create upload auth when media usage is exhausted", async () => {
+    vi.resetModules();
+    vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
+    vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "");
+
+    const metric = {
+      key: "mediaTransformsPerMonth",
+      label: "Media transforms",
+      used: 10,
+      limit: 10,
+      remaining: 0,
+      allowed: false,
+      cadence: "monthly"
+    };
+    class UsageLimitExceededError extends Error {
+      readonly metric = metric;
+
+      constructor() {
+        super("Media transforms limit reached for the current plan.");
+      }
+    }
+    const ensureUsageAllowed = vi.fn(async () => {
+      throw new UsageLimitExceededError();
+    });
+    const recordUsageForLimit = vi.fn();
+    const createImageKitUploadAuth = vi.fn();
+
+    vi.doMock("@/lib/auth/current-user", () => ({
+      getCurrentUser: vi.fn(async () => ({
+        id: "user_usage_1",
+        email: "user@example.com",
+        name: "User Usage",
+        imageUrl: null,
+        initials: "UU",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/workspaces/personal-workspace", () => ({
+      resolvePersonalWorkspaceForUser: vi.fn(async () => ({
+        id: "workspace_usage_1",
+        role: "owner",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/billing/usage", () => ({
+      UsageLimitExceededError,
+      ensureUsageAllowed,
+      recordUsageForLimit
+    }));
+    vi.doMock("@/lib/media/imagekit", () => ({
+      ImageKitConfigurationError: class ImageKitConfigurationError extends Error {},
+      createImageKitUploadAuth
+    }));
+
+    const { GET } = await loadRoute();
+    const response = await GET();
+    const payload = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(payload.error).toBe("Media transforms limit reached for the current plan.");
+    expect(payload.usage).toEqual(metric);
+    expect(createImageKitUploadAuth).not.toHaveBeenCalled();
+    expect(recordUsageForLimit).not.toHaveBeenCalled();
   });
 });

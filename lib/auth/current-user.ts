@@ -1,7 +1,7 @@
 import "server-only";
 
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { isClerkConfigured } from "@/lib/env";
+import { isClerkConfigured, isLocalPreviewAuthEnabled } from "@/lib/env";
 
 export type CurrentAppUser = {
   id: string;
@@ -36,8 +36,12 @@ function getInitials(name: string, email: string | null) {
 }
 
 export async function getCurrentUser(): Promise<CurrentAppUser | null> {
-  if (!isClerkConfigured) {
+  if (isLocalPreviewAuthEnabled) {
     return localPreviewUser;
+  }
+
+  if (!isClerkConfigured) {
+    return null;
   }
 
   const authState = await auth();

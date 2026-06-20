@@ -29,6 +29,7 @@ describe("schedule post API", () => {
     vi.unstubAllEnvs();
     vi.doUnmock("@/db");
     vi.doUnmock("@/lib/auth/current-user");
+    vi.doUnmock("@/lib/billing/usage");
     vi.doUnmock("@/lib/env");
     vi.doUnmock("@/lib/scheduler/create-scheduled-post");
     vi.doUnmock("@/lib/workspaces/personal-workspace");
@@ -167,5 +168,162 @@ describe("schedule post API", () => {
     expect(response.status).toBe(404);
     expect(payload.error).toBe("Connected account not found.");
     expect(createScheduledPost).not.toHaveBeenCalled();
+  });
+
+  it("enforces and records scheduled post usage for workspace-backed users", async () => {
+    vi.resetModules();
+    vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
+    vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "");
+
+    const ensureUsageAllowed = vi.fn(async () => null);
+    const recordUsageForLimit = vi.fn(async () => undefined);
+    const createScheduledPost = vi.fn(async () => ({
+      scheduledJob: {
+        id: "scheduled_usage_1",
+        workspaceId: "workspace_usage_1",
+        platformVariantId: "variant_1",
+        provider: "mock",
+        enqueueStatus: "queued"
+      },
+      enqueue: { status: "queued" }
+    }));
+
+    vi.doMock("@/lib/auth/current-user", () => ({
+      getCurrentUser: vi.fn(async () => ({
+        id: "user_usage_1",
+        email: "user@example.com",
+        name: "User Usage",
+        imageUrl: null,
+        initials: "UU",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/workspaces/personal-workspace", () => ({
+      resolvePersonalWorkspaceForUser: vi.fn(async () => ({
+        id: "workspace_usage_1",
+        role: "owner",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/env", () => ({
+      isDatabaseConfigured: false
+    }));
+    vi.doMock("@/lib/billing/usage", () => ({
+      UsageLimitExceededError: class UsageLimitExceededError extends Error {},
+      ensureUsageAllowed,
+      recordUsageForLimit
+    }));
+    vi.doMock("@/lib/scheduler/create-scheduled-post", () => ({
+      createScheduledPost,
+      createSchedulerRepository: vi.fn(() => ({ mocked: true }))
+    }));
+
+    const { POST } = await import("@/app/api/posts/[id]/schedule/route");
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/posts/variant_1/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "mock",
+          scheduledFor: futureIsoDate()
+        })
+      }),
+      {
+        params: Promise.resolve({ id: "variant_1" })
+      }
+    );
+
+    expect(response.status).toBe(201);
+    expect(ensureUsageAllowed).toHaveBeenCalledWith({
+      workspaceId: "workspace_usage_1",
+      key: "scheduledPostsPerDay",
+      skip: false
+    });
+    expect(recordUsageForLimit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "workspace_usage_1",
+        key: "scheduledPostsPerDay",
+        sourceId: "scheduled_usage_1",
+        skip: false
+      })
+    );
+  });
+
+  it("does not schedule when scheduled post usage is exhausted", async () => {
+    vi.resetModules();
+    vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
+    vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "");
+
+    const metric = {
+      key: "scheduledPostsPerDay",
+      label: "Scheduled posts",
+      used: 1,
+      limit: 1,
+      remaining: 0,
+      allowed: false,
+      cadence: "daily"
+    };
+    class UsageLimitExceededError extends Error {
+      readonly metric = metric;
+
+      constructor() {
+        super("Scheduled posts limit reached for the current plan.");
+      }
+    }
+    const ensureUsageAllowed = vi.fn(async () => {
+      throw new UsageLimitExceededError();
+    });
+    const recordUsageForLimit = vi.fn();
+    const createScheduledPost = vi.fn();
+
+    vi.doMock("@/lib/auth/current-user", () => ({
+      getCurrentUser: vi.fn(async () => ({
+        id: "user_usage_1",
+        email: "user@example.com",
+        name: "User Usage",
+        imageUrl: null,
+        initials: "UU",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/workspaces/personal-workspace", () => ({
+      resolvePersonalWorkspaceForUser: vi.fn(async () => ({
+        id: "workspace_usage_1",
+        role: "owner",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/env", () => ({
+      isDatabaseConfigured: false
+    }));
+    vi.doMock("@/lib/billing/usage", () => ({
+      UsageLimitExceededError,
+      ensureUsageAllowed,
+      recordUsageForLimit
+    }));
+    vi.doMock("@/lib/scheduler/create-scheduled-post", () => ({
+      createScheduledPost,
+      createSchedulerRepository: vi.fn()
+    }));
+
+    const { POST } = await import("@/app/api/posts/[id]/schedule/route");
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/posts/variant_1/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "mock",
+          scheduledFor: futureIsoDate()
+        })
+      }),
+      {
+        params: Promise.resolve({ id: "variant_1" })
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(payload.error).toBe("Scheduled posts limit reached for the current plan.");
+    expect(payload.usage).toEqual(metric);
+    expect(createScheduledPost).not.toHaveBeenCalled();
+    expect(recordUsageForLimit).not.toHaveBeenCalled();
   });
 });

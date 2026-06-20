@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import {
+  ensureUsageAllowed,
+  recordUsageForLimit,
+  UsageLimitExceededError
+} from "@/lib/billing/usage";
+import {
   createImageKitUploadAuth,
   ImageKitConfigurationError
 } from "@/lib/media/imagekit";
@@ -18,10 +23,18 @@ export async function GET() {
   try {
     const workspace = await resolvePersonalWorkspaceForUser(user);
     const forceMockUpload = process.env.PLAYWRIGHT_AUTH_LOCAL_PREVIEW === "1";
+    const skipUsage = workspace.isLocalPreview || forceMockUpload;
+
+    await ensureUsageAllowed({
+      workspaceId: workspace.id,
+      key: "mediaTransformsPerMonth",
+      skip: skipUsage
+    });
+
     const uploadAuth = createImageKitUploadAuth({
       workspaceId: workspace.id,
       userId: user.id,
-      allowMock: workspace.isLocalPreview || forceMockUpload,
+      allowMock: skipUsage,
       config: forceMockUpload
         ? {
             IMAGEKIT_PRIVATE_KEY: undefined,
@@ -30,11 +43,31 @@ export async function GET() {
           }
         : undefined
     });
+    await recordUsageForLimit({
+      workspaceId: workspace.id,
+      key: "mediaTransformsPerMonth",
+      sourceId: uploadAuth.token,
+      metadata: {
+        userId: user.id,
+        provider: uploadAuth.metadata.provider
+      },
+      skip: skipUsage
+    });
 
     return NextResponse.json(uploadAuth);
   } catch (error) {
     if (error instanceof ImageKitConfigurationError) {
       return NextResponse.json({ error: error.message }, { status: 503 });
+    }
+
+    if (error instanceof UsageLimitExceededError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          usage: error.metric
+        },
+        { status: 429 }
+      );
     }
 
     console.error("Unexpected media upload auth error", error);

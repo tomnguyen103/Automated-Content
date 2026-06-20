@@ -4,6 +4,11 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { connectedAccounts, platformVariants } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import {
+  ensureUsageAllowed,
+  recordUsageForLimit,
+  UsageLimitExceededError
+} from "@/lib/billing/usage";
 import { isDatabaseConfigured } from "@/lib/env";
 import { providerKeys, type ProviderKey } from "@/lib/providers/types";
 import {
@@ -120,6 +125,12 @@ export async function POST(
       return NextResponse.json({ error: "Connected account not found." }, { status: 404 });
     }
 
+    await ensureUsageAllowed({
+      workspaceId: workspace.id,
+      key: "scheduledPostsPerDay",
+      skip: workspace.isLocalPreview
+    });
+
     const result = await createScheduledPost({
       input: {
         workspaceId: workspace.id,
@@ -132,6 +143,18 @@ export async function POST(
       repository: createSchedulerRepository({
         allowMemoryFallback: workspace.isLocalPreview
       })
+    });
+    await recordUsageForLimit({
+      workspaceId: workspace.id,
+      key: "scheduledPostsPerDay",
+      sourceId: result.scheduledJob.id,
+      metadata: {
+        platformVariantId,
+        provider: input.provider,
+        scheduledFor: input.scheduledFor,
+        userId: user.id
+      },
+      skip: workspace.isLocalPreview
     });
 
     return NextResponse.json(
@@ -151,6 +174,16 @@ export async function POST(
           issues: error.issues
         },
         { status: 400 }
+      );
+    }
+
+    if (error instanceof UsageLimitExceededError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          usage: error.metric
+        },
+        { status: 429 }
       );
     }
 

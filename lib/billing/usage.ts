@@ -24,6 +24,16 @@ export type UsageMetric = {
   cadence: "daily" | "monthly" | "current";
 };
 
+export class UsageLimitExceededError extends Error {
+  readonly metric: UsageMetric;
+
+  constructor(metric: UsageMetric) {
+    super(`${metric.label} limit reached for the current plan.`);
+    this.name = "UsageLimitExceededError";
+    this.metric = metric;
+  }
+}
+
 export const usageLimitToLedgerType: Record<UsageLimitKey, UsageEventType | null> = {
   aiGenerationsPerMonth: "ai_generation",
   scheduledPostsPerDay: "scheduled_post",
@@ -64,6 +74,69 @@ export function buildUsageMetrics(plan: BillingPlan, used: Partial<Record<UsageL
   return (Object.keys(usageMetricLabels) as UsageLimitKey[]).map((key) =>
     buildUsageMetric(plan, key, used[key] ?? 0)
   );
+}
+
+export async function ensureUsageAllowed({
+  workspaceId,
+  key,
+  now = new Date(),
+  skip = false
+}: {
+  workspaceId: string;
+  key: UsageLimitKey;
+  now?: Date;
+  skip?: boolean;
+}) {
+  if (skip) {
+    return null;
+  }
+
+  const billingState = await getWorkspaceBillingState({ workspaceId, now });
+  const metric = billingState.usageMetrics.find((candidate) => candidate.key === key);
+
+  if (!metric) {
+    throw new Error(`Usage metric ${key} is not configured.`);
+  }
+
+  if (!metric.allowed) {
+    throw new UsageLimitExceededError(metric);
+  }
+
+  return metric;
+}
+
+export async function recordUsageForLimit({
+  workspaceId,
+  key,
+  quantity = 1,
+  sourceId,
+  metadata,
+  skip = false
+}: {
+  workspaceId: string;
+  key: UsageLimitKey;
+  quantity?: number;
+  sourceId?: string;
+  metadata?: Record<string, unknown>;
+  skip?: boolean;
+}) {
+  if (skip) {
+    return;
+  }
+
+  const type = usageLimitToLedgerType[key];
+
+  if (!type) {
+    throw new Error(`Usage metric ${key} does not map to a ledger event type.`);
+  }
+
+  await recordUsage({
+    workspaceId,
+    type,
+    quantity,
+    sourceId,
+    metadata
+  });
 }
 
 export async function getWorkspaceBillingState({

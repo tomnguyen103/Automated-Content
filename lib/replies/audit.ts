@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ReplyPlatform } from "@/lib/replies/rules";
+import { replyPlatformSchema, type ReplyPlatform } from "@/lib/replies/rules";
 import type { ReplyRuleMatch } from "@/lib/replies/matcher";
 
 export const replyAuditActionSchema = z.enum([
@@ -15,7 +15,7 @@ export const replyAuditEntrySchema = z.object({
   id: z.string().min(1),
   action: replyAuditActionSchema,
   commentId: z.string().min(1),
-  platform: z.string().min(1),
+  platform: replyPlatformSchema,
   ruleId: z.string().min(1).optional(),
   keyword: z.string().min(1).optional(),
   replyPreview: z.string().min(1).optional(),

@@ -136,4 +136,26 @@ describe("reply rule matching", () => {
     expect(exact.selected?.rule.id).toBe("rule_exact");
     expect(regex.selected?.rule.id).toBe("rule_regex");
   });
+
+  it("ignores unsafe regex keywords", () => {
+    const evaluation = evaluateReplyRules({
+      comment: {
+        id: "comment_regex_unsafe",
+        text: "aaaaaaaaaaaaaaaaaaaa!",
+        platform: "x"
+      },
+      rules: [
+        {
+          ...baseRule,
+          id: "rule_regex_unsafe",
+          platformScope: "x",
+          matchType: "regex",
+          keywords: ["(a+)+$"]
+        }
+      ]
+    });
+
+    expect(evaluation.selected).toBeNull();
+    expect(evaluation.matches).toHaveLength(0);
+  });
 });

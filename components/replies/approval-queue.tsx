@@ -63,7 +63,7 @@ function ApprovalQueueCard({
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-semibold">{item.authorName ?? "Unknown commenter"}</h3>
         <Badge tone="neutral">{item.platform}</Badge>
-        <Badge tone="premium">{Math.round(item.confidence * 100)} confidence</Badge>
+        <Badge tone="premium">{Math.round(item.confidence * 100)}% confidence</Badge>
       </div>
       <p className="mt-2 rounded-[var(--radius-sm)] bg-[var(--color-surface)] p-3 text-sm leading-6">
         {item.commentText}

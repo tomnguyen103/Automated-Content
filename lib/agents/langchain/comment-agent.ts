@@ -46,6 +46,7 @@ export class CommentAgentExecutionError extends Error {
 
 const keywordMatchInputSchema = z.object({
   comment: commentReplyCommentSchema,
+  postTitle: z.string().min(1).optional(),
   rules: z.array(autoReplyRuleSchema),
   recentAttempts: z.array(recentReplyAttemptSchema)
 });
@@ -121,7 +122,7 @@ function createKeywordMatchTool(now: () => Date, evaluationRef: { current: Reply
           text: input.comment.text,
           platform: input.comment.platform,
           authorName: input.comment.authorName,
-          postTitle: input.comment.providerPostId
+          postTitle: input.postTitle
         },
         now: now(),
         recentAttempts: input.recentAttempts,
@@ -206,6 +207,7 @@ export async function runCommentAgent(
   try {
     const keywordMatch = await recorder.execute(createKeywordMatchTool(now, evaluationRef), {
       comment: input.comment,
+      postTitle: input.postContext.title,
       rules: input.rules,
       recentAttempts: input.recentAttempts
     });

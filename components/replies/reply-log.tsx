@@ -70,7 +70,9 @@ export function ReplyLog({ entries }: { entries: ReplyLogEntry[] }) {
                 </div>
                 <div>
                   <p className="text-sm font-semibold">{entry.ruleName ?? "Manual approval"}</p>
-                  <p className="mt-1 text-sm leading-6">{entry.replyText ?? entry.auditNotes[0]}</p>
+                  <p className="mt-1 text-sm leading-6">
+                    {entry.replyText ?? entry.auditNotes[0] ?? "No reply text recorded."}
+                  </p>
                 </div>
               </article>
             ))}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Inbox, Play, ShieldCheck } from "lucide-react";
 import { ApprovalQueue } from "@/components/replies/approval-queue";
 import { ReplyLog } from "@/components/replies/reply-log";
@@ -38,6 +38,7 @@ export function AutoRepliesConsole({ initialState }: AutoRepliesConsoleProps) {
   const [previewSessionId] = useState(() => crypto.randomUUID());
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [error, setError] = useState<string | null>(null);
+  const mutationInFlightRef = useRef(false);
   const stats = useMemo(
     () => ({
       enabledRules: state.rules.filter((rule) => rule.enabled).length,
@@ -81,6 +82,13 @@ export function AutoRepliesConsole({ initialState }: AutoRepliesConsoleProps) {
   }, [previewSessionId]);
 
   async function updateState(action: BusyAction, request: () => Promise<Response>) {
+    if (mutationInFlightRef.current) {
+      const message = "Another auto reply update is already running.";
+      setError(message);
+      return { ok: false as const, error: message };
+    }
+
+    mutationInFlightRef.current = true;
     setBusyAction(action);
     setError(null);
 
@@ -92,6 +100,7 @@ export function AutoRepliesConsole({ initialState }: AutoRepliesConsoleProps) {
       setError(message);
       return { ok: false as const, error: message };
     } finally {
+      mutationInFlightRef.current = false;
       setBusyAction(null);
     }
   }

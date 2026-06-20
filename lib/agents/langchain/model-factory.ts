@@ -133,13 +133,29 @@ function getFirstName(name: string | undefined) {
   return name?.trim().split(/\s+/)[0] ?? "";
 }
 
+function truncateText(value: string, maxLength: number) {
+  const normalized = value.trim().replace(/\s+/g, " ");
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
+function clampReplyDraft(value: string) {
+  return value.length <= 500 ? value : `${value.slice(0, 497).trimEnd()}...`;
+}
+
 function buildLocalCommentDraft(input: CommentReplyInput): CommentModelDraft {
   const name = getFirstName(input.comment.authorName);
   const greeting = name ? `Thanks, ${name}.` : "Thanks for the note.";
-  const postContext = input.postContext.title ? ` On ${input.postContext.title},` : "";
+  const postContext = input.postContext.title ? ` On ${truncateText(input.postContext.title, 80)},` : "";
 
   return {
-    replyDraft: `${greeting}${postContext} we can help with that. I will flag this for a human review so the reply stays accurate.`,
+    replyDraft: clampReplyDraft(
+      `${greeting}${postContext} we can help with that. I will flag this for a human review so the reply stays accurate.`
+    ),
     confidence: 0.72,
     auditNotes: ["No keyword rule matched. Created a model-backed suggestion for human approval."]
   };

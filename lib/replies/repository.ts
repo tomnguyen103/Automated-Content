@@ -83,7 +83,7 @@ export type ReplyRepository = {
     replyText: string;
     providerReply: ProviderReplyResult;
     now?: Date;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
 };
 
 type StoredReplyAttempt = {
@@ -498,7 +498,7 @@ function createMemoryReplyRepository({ seedLocalPreview = false } = {}): ReplyRe
       const attempt = attempts.get(key(workspaceId, attemptId));
 
       if (!attempt || attempt.status !== "awaiting_approval") {
-        return;
+        return false;
       }
 
       attempts.set(key(workspaceId, attemptId), {
@@ -524,6 +524,8 @@ function createMemoryReplyRepository({ seedLocalPreview = false } = {}): ReplyRe
           status: "replied"
         });
       }
+
+      return true;
     },
     clear() {
       rules.clear();
@@ -576,7 +578,13 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
           eq(replyAttempts.commentEventId, commentEvents.id)
         )
       )
-      .leftJoin(autoReplyRules, eq(replyAttempts.ruleId, autoReplyRules.id))
+      .leftJoin(
+        autoReplyRules,
+        and(
+          eq(replyAttempts.workspaceId, autoReplyRules.workspaceId),
+          eq(replyAttempts.ruleId, autoReplyRules.id)
+        )
+      )
       .where(eq(replyAttempts.workspaceId, workspaceId))
       .orderBy(desc(replyAttempts.createdAt));
     const approvals: ReplyApprovalItem[] = [];
@@ -691,7 +699,7 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
       const storedAttempt = createStoredAttempt({ input: persist.input, persist });
 
       await db.transaction(async (tx) => {
-        await tx
+        const [savedComment] = await tx
           .insert(commentEvents)
           .values({
             id: comment.id,
@@ -728,14 +736,16 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
               },
               updatedAt: timestamp
             }
-          });
+          })
+          .returning({ id: commentEvents.id });
+        const commentEventId = savedComment?.id ?? storedAttempt.commentId;
 
         await tx
           .insert(replyAttempts)
           .values({
             id: storedAttempt.id,
             workspaceId: storedAttempt.workspaceId,
-            commentEventId: storedAttempt.commentId,
+            commentEventId,
             ruleId: storedAttempt.ruleId ?? null,
             provider: storedAttempt.provider,
             connectedAccountId: storedAttempt.connectedAccountId ?? null,
@@ -885,7 +895,7 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
       const pending = await repository.getPendingApproval(workspaceId, attemptId);
 
       if (!pending) {
-        return;
+        return false;
       }
 
       const approved = approveReplySuggestion({
@@ -900,8 +910,8 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
         notes: [...pending.attempt.audit.notes, "Suggestion was approved by a user before sending."]
       };
 
-      await db.transaction(async (tx) => {
-        await tx
+      return db.transaction(async (tx) => {
+        const [updated] = await tx
           .update(replyAttempts)
           .set({
             status: "sent",
@@ -913,7 +923,18 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
             sentAt: providerReply.sentAt,
             updatedAt: now
           })
-          .where(and(eq(replyAttempts.workspaceId, workspaceId), eq(replyAttempts.id, attemptId)));
+          .where(
+            and(
+              eq(replyAttempts.workspaceId, workspaceId),
+              eq(replyAttempts.id, attemptId),
+              eq(replyAttempts.status, "awaiting_approval")
+            )
+          )
+          .returning({ id: replyAttempts.id });
+
+        if (!updated) {
+          return false;
+        }
 
         await tx
           .update(commentEvents)
@@ -922,6 +943,8 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
             updatedAt: now
           })
           .where(and(eq(commentEvents.workspaceId, workspaceId), eq(commentEvents.id, pending.comment.id)));
+
+        return true;
       });
     }
   };

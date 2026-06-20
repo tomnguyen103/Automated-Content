@@ -65,6 +65,7 @@ export function approveReplySuggestion({
     status: "approved",
     approvedAt: timestamp,
     approvedByUserId: userId,
+    changeRequest: undefined,
     updatedAt: timestamp
   });
 }
@@ -81,6 +82,8 @@ export function requestReplyChanges({
   return replyApprovalItemSchema.parse({
     ...item,
     status: "changes_requested",
+    approvedAt: undefined,
+    approvedByUserId: undefined,
     changeRequest: comment.trim(),
     updatedAt: now.toISOString()
   });

@@ -55,14 +55,61 @@ export async function POST(request: Request, routeContext: ApprovalRouteContext)
       commentId: pending.comment.providerCommentId ?? pending.comment.id,
       message: input.replyText
     });
+    let usageRecordError: string | null = null;
 
-    await context.repository.approvePendingAttempt({
-      workspaceId: context.workspace.id,
-      attemptId: id,
-      userId: context.user.id,
-      replyText: input.replyText,
-      providerReply
-    });
+    try {
+      await context.usageRecorder({
+        workspaceId: context.workspace.id,
+        commentId: pending.comment.id,
+        ruleId: pending.attempt.ruleId,
+        now: providerReply.sentAt
+      });
+    } catch (error) {
+      usageRecordError = error instanceof Error ? error.message : "Unknown auto reply usage recording error";
+      console.error("Reply approval usage recording failed after provider send", {
+        workspaceId: context.workspace.id,
+        approvalId: id,
+        providerReplyId: providerReply.providerReplyId,
+        error
+      });
+    }
+
+    try {
+      const persisted = await context.repository.approvePendingAttempt({
+        workspaceId: context.workspace.id,
+        attemptId: id,
+        userId: context.user.id,
+        replyText: input.replyText,
+        providerReply
+      });
+
+      if (!persisted) {
+        console.error("Reply provider send succeeded but pending approval was already resolved", {
+          workspaceId: context.workspace.id,
+          approvalId: id,
+          providerReplyId: providerReply.providerReplyId,
+          usageRecordError
+        });
+
+        return NextResponse.json(
+          { error: "Reply was sent, but the approval was already resolved. Refresh the console before retrying." },
+          { status: 409 }
+        );
+      }
+    } catch (error) {
+      console.error("Reply provider send succeeded but approval persistence failed", {
+        workspaceId: context.workspace.id,
+        approvalId: id,
+        providerReplyId: providerReply.providerReplyId,
+        usageRecordError,
+        error
+      });
+
+      return NextResponse.json(
+        { error: "Reply was sent, but saving the approval state failed. Refresh the console before retrying." },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json(await context.repository.getConsoleState(context.workspace.id));
   } catch (error) {

@@ -5,7 +5,14 @@ import { getCurrentUser, type CurrentAppUser } from "@/lib/auth/current-user";
 import { getProviderAdapter } from "@/lib/providers/registry";
 import type { ProviderAdapter } from "@/lib/providers/types";
 import { createReplyRepository, type ReplyRepository } from "@/lib/replies/repository";
-import { allowLocalPreviewAutoReplyUsage, enforceAutoReplyUsage, type AutoReplyUsageEnforcer } from "@/lib/replies/usage";
+import {
+  allowLocalPreviewAutoReplyUsage,
+  enforceAutoReplyUsage,
+  recordAutoReplyUsage,
+  recordLocalPreviewAutoReplyUsage,
+  type AutoReplyUsageEnforcer,
+  type AutoReplyUsageRecorder
+} from "@/lib/replies/usage";
 import { resolvePersonalWorkspaceForUser, type WorkspaceAccess } from "@/lib/workspaces/personal-workspace";
 
 export type ReplyServerContext = {
@@ -14,6 +21,7 @@ export type ReplyServerContext = {
   repository: ReplyRepository;
   storage: ReturnType<typeof createAgentStorage>;
   usageEnforcer: AutoReplyUsageEnforcer;
+  usageRecorder: AutoReplyUsageRecorder;
   getProvider: (provider: Parameters<typeof getProviderAdapter>[0]) => ProviderAdapter;
 };
 
@@ -54,6 +62,7 @@ export async function resolveReplyServerContext(request?: Request): Promise<Repl
       allowMemoryFallback: workspace.isLocalPreview
     }),
     usageEnforcer: workspace.isLocalPreview ? allowLocalPreviewAutoReplyUsage : enforceAutoReplyUsage,
+    usageRecorder: workspace.isLocalPreview ? recordLocalPreviewAutoReplyUsage : recordAutoReplyUsage,
     getProvider: getProviderAdapter
   };
 }

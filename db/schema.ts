@@ -567,7 +567,7 @@ export const replyAttempts = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
     commentEventId: text("comment_event_id").notNull(),
-    ruleId: text("rule_id").references(() => autoReplyRules.id, { onDelete: "set null" }),
+    ruleId: text("rule_id"),
     provider: providerKeyEnum("provider").notNull(),
     connectedAccountId: uuid("connected_account_id").references(() => connectedAccounts.id, { onDelete: "set null" }),
     status: replyAttemptStatusEnum("status").notNull(),
@@ -589,6 +589,11 @@ export const replyAttempts = pgTable(
       foreignColumns: [commentEvents.workspaceId, commentEvents.id],
       name: "reply_attempts_workspace_comment_fk"
     }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.ruleId],
+      foreignColumns: [autoReplyRules.workspaceId, autoReplyRules.id],
+      name: "reply_attempts_workspace_rule_fk"
+    }),
     index("reply_attempts_workspace_status_idx").on(table.workspaceId, table.status),
     index("reply_attempts_comment_event_idx").on(table.commentEventId),
     index("reply_attempts_rule_idx").on(table.ruleId),

@@ -2220,19 +2220,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "reply_attempts_rule_id_auto_reply_rules_id_fk": {
-          "name": "reply_attempts_rule_id_auto_reply_rules_id_fk",
-          "tableFrom": "reply_attempts",
-          "tableTo": "auto_reply_rules",
-          "columnsFrom": [
-            "rule_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
         "reply_attempts_connected_account_id_connected_accounts_id_fk": {
           "name": "reply_attempts_connected_account_id_connected_accounts_id_fk",
           "tableFrom": "reply_attempts",
@@ -2272,6 +2259,21 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "reply_attempts_workspace_rule_fk": {
+          "name": "reply_attempts_workspace_rule_fk",
+          "tableFrom": "reply_attempts",
+          "tableTo": "auto_reply_rules",
+          "columnsFrom": [
+            "workspace_id",
+            "rule_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "id"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },

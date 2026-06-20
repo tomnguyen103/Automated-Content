@@ -17,11 +17,10 @@ export type AutoReplyUsageDecision = {
 };
 
 export type AutoReplyUsageEnforcer = (input: AutoReplyUsageInput) => Promise<AutoReplyUsageDecision>;
+export type AutoReplyUsageRecorder = (input: AutoReplyUsageInput) => Promise<void>;
 
 export async function enforceAutoReplyUsage({
-  commentId,
   now = new Date(),
-  ruleId,
   workspaceId
 }: AutoReplyUsageInput): Promise<AutoReplyUsageDecision> {
   const billingState = await getWorkspaceBillingState({ workspaceId, now });
@@ -35,6 +34,13 @@ export async function enforceAutoReplyUsage({
     };
   }
 
+  return {
+    allowed: true,
+    metric
+  };
+}
+
+export async function recordAutoReplyUsage({ commentId, ruleId, workspaceId }: AutoReplyUsageInput) {
   await recordUsage({
     workspaceId,
     type: "auto_reply",
@@ -44,11 +50,6 @@ export async function enforceAutoReplyUsage({
       ruleId
     }
   });
-
-  return {
-    allowed: true,
-    metric
-  };
 }
 
 export async function allowLocalPreviewAutoReplyUsage(): Promise<AutoReplyUsageDecision> {
@@ -57,3 +58,5 @@ export async function allowLocalPreviewAutoReplyUsage(): Promise<AutoReplyUsageD
     reason: "Local preview auto replies use a non-billed in-memory enforcer."
   };
 }
+
+export async function recordLocalPreviewAutoReplyUsage() {}

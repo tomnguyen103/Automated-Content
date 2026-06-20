@@ -51,6 +51,7 @@ describe("comment reply workflow", () => {
     const storage = createMemoryAgentStorage();
     const repository = createMemoryReplyRepositoryForTests();
     const usageEnforcer = vi.fn(async () => ({ allowed: true }));
+    const usageRecorder = vi.fn(async () => {});
 
     const result = await runCommentReplyWorkflow(createInput(), {
       userId,
@@ -59,6 +60,7 @@ describe("comment reply workflow", () => {
       repository,
       provider: mockProvider,
       usageEnforcer,
+      usageRecorder,
       now: () => new Date("2026-06-20T12:00:00.000Z")
     });
 
@@ -71,6 +73,13 @@ describe("comment reply workflow", () => {
     expect(result.run.status).toBe("succeeded");
     expect(result.run.toolCalls.map((call) => call.name)).toEqual(["match_reply_rules", "check_reply_safety"]);
     expect(usageEnforcer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId,
+        commentId: "comment_1",
+        ruleId: "rule_pricing"
+      })
+    );
+    expect(usageRecorder).toHaveBeenCalledWith(
       expect.objectContaining({
         workspaceId,
         commentId: "comment_1",

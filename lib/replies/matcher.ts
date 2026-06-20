@@ -62,6 +62,22 @@ function toDate(value: string | Date) {
   return value instanceof Date ? value : new Date(value);
 }
 
+const unsafeRegexPatterns = [
+  /\([^)]*[+*][^)]*\)[+*?{]/,
+  /(\.\*){2,}/,
+  /\([^)]*\|[^)]*\)[+*{]/
+];
+
+export function isSafeReplyRegex(keyword: string) {
+  const pattern = keyword.trim();
+
+  if (!pattern || pattern.length > 160 || /\\[1-9]/.test(pattern)) {
+    return false;
+  }
+
+  return !unsafeRegexPatterns.some((unsafePattern) => unsafePattern.test(pattern));
+}
+
 function keywordMatches(text: string, keyword: string, matchType: ReplyMatchType) {
   const normalizedText = normalizeText(text);
   const normalizedKeyword = normalizeKeyword(keyword);
@@ -75,6 +91,10 @@ function keywordMatches(text: string, keyword: string, matchType: ReplyMatchType
   }
 
   if (matchType === "regex") {
+    if (!isSafeReplyRegex(keyword)) {
+      return false;
+    }
+
     try {
       return new RegExp(keyword, "i").test(text);
     } catch {

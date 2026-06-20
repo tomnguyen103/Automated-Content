@@ -15,7 +15,12 @@ import type { ProviderAdapter, ProviderReplyResult } from "@/lib/providers/types
 import { createReplyApprovalItem, type ReplyApprovalItem } from "@/lib/replies/approval";
 import { createReplyAuditEntry, type ReplyAuditEntry } from "@/lib/replies/audit";
 import { createReplyRepository, type ReplyRepository } from "@/lib/replies/repository";
-import { enforceAutoReplyUsage, type AutoReplyUsageEnforcer } from "@/lib/replies/usage";
+import {
+  enforceAutoReplyUsage,
+  recordAutoReplyUsage,
+  type AutoReplyUsageEnforcer,
+  type AutoReplyUsageRecorder
+} from "@/lib/replies/usage";
 
 export const commentReplyWorkflowStatusSchema = z.enum([
   "sent",
@@ -54,6 +59,7 @@ export type RunCommentReplyWorkflowOptions = Omit<RunCommentAgentOptions, "works
   provider?: ProviderAdapter;
   repository?: ReplyRepository;
   usageEnforcer?: AutoReplyUsageEnforcer;
+  usageRecorder?: AutoReplyUsageRecorder;
 };
 
 function createAttemptId() {
@@ -106,6 +112,7 @@ export async function runCommentReplyWorkflow(
   const now = options.now ?? (() => new Date());
   const repository = options.repository ?? createReplyRepository();
   const usageEnforcer = options.usageEnforcer ?? enforceAutoReplyUsage;
+  const usageRecorder = options.usageRecorder ?? recordAutoReplyUsage;
   const agent = await runCommentAgent(input, {
     userId: options.userId,
     workspaceId: options.workspaceId,
@@ -226,11 +233,29 @@ export async function runCommentReplyWorkflow(
         commentId: getProviderCommentId(input),
         message: reply.replyDraft
       });
+      let usageRecordError: string | null = null;
+
+      try {
+        await usageRecorder({
+          workspaceId: options.workspaceId,
+          commentId: input.comment.id,
+          ruleId: reply.matchedRuleId,
+          now: providerReply.sentAt
+        });
+      } catch (error) {
+        usageRecordError = error instanceof Error ? error.message : "Unknown auto reply usage recording error";
+        console.error("Auto reply usage recording failed after provider send", {
+          workspaceId: options.workspaceId,
+          commentId: input.comment.id,
+          error
+        });
+      }
 
       const audit = createReplyAuditEntry({
         action: "sent",
         commentId: input.comment.id,
         match: matchedRule,
+        notes: usageRecordError ? [`Usage recording failed after provider send: ${usageRecordError}`] : [],
         platform: input.comment.platform,
         providerReplyId: providerReply.providerReplyId,
         replyText: reply.replyDraft,

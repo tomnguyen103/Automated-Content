@@ -16,6 +16,7 @@ import { createSuggestScheduleTool } from "@/lib/agents/tools/suggest-schedule";
 import { AgentRunRecorder, createTraceId } from "@/lib/agents/langchain/middleware";
 import { createContentModel, type ContentModel } from "@/lib/agents/langchain/model-factory";
 import { createAgentStorage, type AgentStorage } from "@/lib/agents/langchain/storage";
+import { createAgentTraceMetadata, recordAgentEvent } from "@/lib/observability/agent-events";
 
 export type ContentAgentToolset = {
   researchTopic: ReturnType<typeof createResearchTopicTool>;
@@ -111,6 +112,19 @@ export async function runContentAgent(
   });
   const recorder = new AgentRunRecorder(traceId, now);
   const startedRun = await storage.saveRun(createStartedRun(input, model, { ...options, now }, traceId));
+  const traceMetadata = createAgentTraceMetadata({
+    agentType: "content",
+    model: model.model,
+    provider: model.provider,
+    runId: startedRun.id,
+    runtime: model.mode,
+    traceId,
+    userId: options.userId,
+    workflow: "content_agent",
+    workspaceId: options.workspaceId
+  });
+
+  recordAgentEvent("content_agent.started", traceMetadata);
 
   try {
     const research = await recorder.execute(tools.researchTopic, {
@@ -132,7 +146,8 @@ export async function runContentAgent(
       traceId,
       research,
       brandProfile,
-      pastPosts
+      pastPosts,
+      metadata: traceMetadata
     });
     const variants = await Promise.all(
       input.platforms.map(async (platform) => {
@@ -196,6 +211,11 @@ export async function runContentAgent(
       completedAt: now().toISOString()
     });
 
+    recordAgentEvent("content_agent.succeeded", {
+      ...traceMetadata,
+      toolCallCount: recorder.calls.length
+    });
+
     return {
       run: completedRun,
       contentPack,
@@ -208,6 +228,12 @@ export async function runContentAgent(
       toolCalls: recorder.calls,
       error: error instanceof Error ? error.message : "Unknown content agent error",
       completedAt: now().toISOString()
+    });
+
+    recordAgentEvent("content_agent.failed", {
+      ...traceMetadata,
+      error: failedRun.error,
+      toolCallCount: recorder.calls.length
     });
 
     throw new ContentAgentExecutionError(failedRun.error ?? "Content agent failed", failedRun);

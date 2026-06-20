@@ -28,6 +28,8 @@ import {
   createContentWorkflowCheckpointStore,
   type ContentWorkflowCheckpointStore
 } from "@/lib/agents/graphs/checkpoints";
+import { createAgentTraceMetadata, recordAgentEvent } from "@/lib/observability/agent-events";
+import { createLangSmithRunConfig } from "@/lib/observability/langsmith";
 
 export type RunContentWorkflowOptions = {
   userId: string;
@@ -64,6 +66,7 @@ type ContentWorkflowRuntime = {
   recorder: AgentRunRecorder;
   now: () => Date;
   priorToolCalls: AgentRun["toolCalls"];
+  traceMetadata: Record<string, unknown>;
 };
 
 export class ContentWorkflowExecutionError extends Error {
@@ -135,6 +138,7 @@ function createWorkflowRuntime({
   storage,
   tools,
   traceId,
+  traceMetadata,
   priorToolCalls = []
 }: {
   model: ContentModel;
@@ -143,12 +147,14 @@ function createWorkflowRuntime({
   tools?: Partial<ContentAgentToolset>;
   traceId: string;
   priorToolCalls?: AgentRun["toolCalls"];
+  traceMetadata: Record<string, unknown>;
 }): ContentWorkflowRuntime {
   return {
     model,
     now,
     priorToolCalls,
     recorder: new AgentRunRecorder(traceId, now),
+    traceMetadata,
     tools: createContentAgentTools({
       ...tools,
       saveDraft:
@@ -323,7 +329,8 @@ function createContentWorkflowGraph(runtime: ContentWorkflowRuntime, remember?: 
           traceId: state.traceId,
           research,
           brandProfile,
-          pastPosts
+          pastPosts,
+          metadata: runtime.traceMetadata
         });
 
         return { plan };
@@ -502,6 +509,17 @@ export async function runContentWorkflow(
       workspaceId: options.workspaceId
     })
   );
+  const traceMetadata = createAgentTraceMetadata({
+    agentType: "content",
+    model: model.model,
+    provider: model.provider,
+    runId,
+    runtime: model.mode,
+    traceId,
+    userId: options.userId,
+    workflow: "content_workflow",
+    workspaceId: options.workspaceId
+  });
   const initialState = createInitialContentWorkflowState({
     input,
     model: model.model,
@@ -517,7 +535,8 @@ export async function runContentWorkflow(
     now,
     storage,
     tools: options.tools,
-    traceId
+    traceId,
+    traceMetadata
   });
   let latestState = initialState;
   const graph = createContentWorkflowGraph(runtime, (state) => {
@@ -528,10 +547,18 @@ export async function runContentWorkflow(
     name: "content-workflow",
     description: "Generate a review-ready content pack and stop before saving until approval."
   });
+  const graphRunConfig = createLangSmithRunConfig({
+    runName: "content-workflow",
+    traceId,
+    tags: ["langgraph", "content-workflow", model.provider, model.model],
+    metadata: traceMetadata
+  });
 
   try {
+    recordAgentEvent("content_workflow.started", traceMetadata);
     const graphState = parseContentWorkflowState(
       await graph.invoke(initialState, {
+        ...graphRunConfig,
         configurable: {
           thread_id: runId
         }
@@ -539,6 +566,13 @@ export async function runContentWorkflow(
     );
     const workflow = await checkpoints.save(graphState);
     const run = await saveRunFromWorkflow(storage, startedRun, workflow);
+
+    recordAgentEvent("content_workflow.paused_for_review", {
+      ...traceMetadata,
+      currentNode: workflow.currentNode,
+      status: workflow.status,
+      toolCallCount: workflow.toolCalls.length
+    });
 
     return {
       run,
@@ -551,6 +585,13 @@ export async function runContentWorkflow(
       failContentWorkflowState(latestState, latestState.currentNode, error, now)
     );
     const failedRun = await saveRunFromWorkflow(storage, startedRun, failedWorkflow);
+
+    recordAgentEvent("content_workflow.failed", {
+      ...traceMetadata,
+      currentNode: failedWorkflow.currentNode,
+      error: failedRun.error,
+      toolCallCount: failedWorkflow.toolCalls.length
+    });
 
     throw new ContentWorkflowExecutionError(failedWorkflow.errors.at(-1)?.message ?? "Content workflow failed.", failedRun, failedWorkflow);
   }
@@ -638,13 +679,25 @@ export async function applyContentWorkflowApproval(
       throw new Error("Approval resume does not invoke the strategy model.");
     }
   };
+  const traceMetadata = createAgentTraceMetadata({
+    agentType: "content",
+    model: approvalClaim.state.model,
+    provider: approvalClaim.state.provider,
+    runId: approvalClaim.state.runId,
+    runtime: model.mode,
+    traceId: approvalClaim.state.traceId,
+    userId: options.userId,
+    workflow: "content_workflow",
+    workspaceId: options.workspaceId
+  });
   const runtime = createWorkflowRuntime({
     model,
     now,
     storage,
     tools: options.tools,
     traceId: approvalClaim.state.traceId,
-    priorToolCalls: approvalClaim.state.toolCalls
+    priorToolCalls: approvalClaim.state.toolCalls,
+    traceMetadata
   });
   let latestState = approvalClaim.state;
   const saveOnly = createNode(

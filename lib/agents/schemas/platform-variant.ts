@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { mediaAttachmentSchema } from "@/lib/media/types";
 
 export const socialPlatformSchema = z.enum([
   "linkedin",
@@ -19,6 +20,7 @@ export const platformVariantSchema = z.object({
   body: z.string().min(1).max(5000),
   cta: z.string().min(1).max(220),
   hashtags: z.array(z.string().min(2).max(64)).max(12),
+  media: z.array(mediaAttachmentSchema).max(10).default([]),
   mediaPrompt: z.string().max(500).optional(),
   characterCount: z.number().int().nonnegative(),
   policyStatus: platformPolicyStatusSchema,

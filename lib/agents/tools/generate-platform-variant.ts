@@ -6,6 +6,8 @@ import {
   type PlatformVariant
 } from "@/lib/agents/schemas/platform-variant";
 import type { AgentTool } from "@/lib/agents/tools/types";
+import { getPlatformMediaWarnings, getPolicyStatusForWarnings } from "@/lib/media/platform-constraints";
+import { mediaAttachmentSchema } from "@/lib/media/types";
 
 export const generatePlatformVariantInputSchema = z.object({
   topic: z.string().min(1),
@@ -15,7 +17,8 @@ export const generatePlatformVariantInputSchema = z.object({
   audience: z.string().min(1),
   tone: z.string().min(1),
   goal: z.string().min(1),
-  hashtags: z.array(z.string().min(2)).max(12)
+  hashtags: z.array(z.string().min(2)).max(12),
+  media: z.array(mediaAttachmentSchema).max(10).default([])
 });
 
 export type GeneratePlatformVariantInput = z.infer<typeof generatePlatformVariantInputSchema>;
@@ -37,7 +40,8 @@ function truncateText(value: string, limit: number) {
   return `${value.slice(0, Math.max(0, limit - 3)).trim()}...`;
 }
 
-export function buildPlatformVariant(input: GeneratePlatformVariantInput): PlatformVariant {
+export function buildPlatformVariant(rawInput: GeneratePlatformVariantInput): PlatformVariant {
+  const input = generatePlatformVariantInputSchema.parse(rawInput);
   const guidance = platformGuidance[input.platform];
   const hook = truncateText(`${input.ideaTitle}: ${input.angle}`, input.platform === "x" ? 180 : 260);
   const body = truncateText(
@@ -54,6 +58,7 @@ export function buildPlatformVariant(input: GeneratePlatformVariantInput): Platf
   const cta = input.platform === "x" ? "What would you test first?" : "Save this as a starting point for your next content batch.";
   const hashtags = input.hashtags.slice(0, input.platform === "x" ? 4 : 8);
   const characterCount = [hook, body, cta, hashtags.join(" ")].join(" ").length;
+  const mediaWarnings = getPlatformMediaWarnings(input.platform, input.media);
 
   return {
     id: `${input.platform}_${crypto.randomUUID()}`,
@@ -63,13 +68,14 @@ export function buildPlatformVariant(input: GeneratePlatformVariantInput): Platf
     body,
     cta,
     hashtags,
+    media: input.media,
     mediaPrompt:
       input.platform === "tiktok"
         ? `Creator-facing short video storyboard about ${input.topic}`
         : `Clean product workflow visual for ${input.topic}`,
     characterCount,
-    policyStatus: "pass",
-    policyWarnings: []
+    policyStatus: getPolicyStatusForWarnings(mediaWarnings),
+    policyWarnings: mediaWarnings
   };
 }
 
@@ -82,11 +88,13 @@ export function createGeneratePlatformVariantTool(
     inputSchema: generatePlatformVariantInputSchema,
     outputSchema: platformVariantSchema,
     async execute(input) {
+      const parsedInput = generatePlatformVariantInputSchema.parse(input);
+
       if (generateVariant) {
-        return generateVariant(input);
+        return generateVariant(parsedInput);
       }
 
-      return buildPlatformVariant(input);
+      return buildPlatformVariant(parsedInput);
     }
   };
 }

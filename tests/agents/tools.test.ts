@@ -62,7 +62,8 @@ describe("Phase 3 LangChain tools", () => {
         audience: "founders",
         tone: "clear",
         goal: "educate",
-        hashtags: ["#content"]
+        hashtags: ["#content"],
+        media: []
       },
       context
     );
@@ -70,6 +71,38 @@ describe("Phase 3 LangChain tools", () => {
     expect(output.platform).toBe("linkedin");
     expect(output.body).toContain("content systems");
     expect(output.characterCount).toBe([output.hook, output.body, output.cta, output.hashtags.join(" ")].join(" ").length);
+  });
+
+  it("adds media constraint warnings to platform variants", async () => {
+    const output = await createGeneratePlatformVariantTool().execute(
+      {
+        topic: "content systems",
+        platform: "tiktok",
+        ideaTitle: "Make the workflow visible",
+        angle: "Show the system",
+        audience: "founders",
+        tone: "clear",
+        goal: "educate",
+        hashtags: ["#content"],
+        media: [
+          {
+            assetId: "asset_1",
+            provider: "mock",
+            name: "Square image",
+            url: "https://example.com/square.png",
+            mediaType: "image",
+            mimeType: "image/png",
+            width: 1080,
+            height: 1080,
+            sizeBytes: 1_000_000
+          }
+        ]
+      },
+      context
+    );
+
+    expect(output.policyStatus).toBe("warn");
+    expect(output.policyWarnings).toContain("Media: Square image is an image, which is not supported for tiktok.");
   });
 
   it("checks platform policy warnings", async () => {
@@ -82,7 +115,8 @@ describe("Phase 3 LangChain tools", () => {
         audience: "founders",
         tone: "clear",
         goal: "educate",
-        hashtags: ["#content"]
+        hashtags: ["#content"],
+        media: []
       },
       context
     );
@@ -133,7 +167,8 @@ describe("Phase 3 LangChain tools", () => {
         audience: "founders",
         tone: "clear",
         goal: "educate",
-        hashtags: ["#content"]
+        hashtags: ["#content"],
+        media: []
       },
       context
     );

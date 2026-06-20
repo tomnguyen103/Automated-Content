@@ -1,12 +1,22 @@
-import { PlaceholderPage } from "@/components/layout/placeholder-page";
+import { MediaLibrary } from "@/components/media/media-library";
+import { PageShell } from "@/components/layout/page-shell";
+import { SubNav } from "@/components/layout/sub-nav";
 
 export default function MediaPage() {
   return (
-    <PlaceholderPage
-      title="Media"
-      description="Manage uploaded assets, ImageKit transformations, crops, and platform-ready media variants."
-      phase="Phase 5"
-      tabs={["Library", "Uploads", "AI Transforms", "Platform Crops"]}
-    />
+    <>
+      <SubNav
+        items={["Library", "Uploads", "AI Transforms", "Platform Crops"].map((label, index) => ({
+          label,
+          active: index === 0
+        }))}
+      />
+      <PageShell
+        title="Media"
+        description="Manage uploaded assets, ImageKit transformations, crops, and platform-ready media variants."
+      >
+        <MediaLibrary />
+      </PageShell>
+    </>
   );
 }

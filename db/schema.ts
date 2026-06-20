@@ -43,6 +43,7 @@ export const workflowCheckpointStatusEnum = pgEnum("workflow_checkpoint_status",
   "failed"
 ]);
 export const contentDraftStatusEnum = pgEnum("content_draft_status", ["draft", "ready", "archived"]);
+export const mediaAssetTypeEnum = pgEnum("media_asset_type", ["image", "video"]);
 export const socialPlatformEnum = pgEnum("social_platform", [
   "linkedin",
   "x",
@@ -176,6 +177,43 @@ export const contentTopics = pgTable(
   ]
 );
 
+export const mediaAssets = pgTable(
+  "media_assets",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    uploadedByUserId: text("uploaded_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").default("imagekit").notNull(),
+    imagekitFileId: text("imagekit_file_id"),
+    name: text("name").notNull(),
+    fileName: text("file_name").notNull(),
+    mediaType: mediaAssetTypeEnum("media_type").notNull(),
+    mimeType: text("mime_type").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    thumbnailUrl: text("thumbnail_url"),
+    width: integer("width"),
+    height: integer("height"),
+    sizeBytes: integer("size_bytes"),
+    folder: text("folder"),
+    tags: jsonb("tags").$type<string[]>().default([]).notNull(),
+    transformationDefaults: jsonb("transformation_defaults").$type<Record<string, unknown>>().default({}).notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    check("media_assets_size_bytes_nonnegative_check", sql`${table.sizeBytes} is null or ${table.sizeBytes} >= 0`),
+    index("media_assets_workspace_idx").on(table.workspaceId),
+    index("media_assets_uploaded_by_user_idx").on(table.uploadedByUserId),
+    index("media_assets_media_type_idx").on(table.mediaType),
+    uniqueIndex("media_assets_workspace_imagekit_file_idx").on(table.workspaceId, table.imagekitFileId)
+  ]
+);
+
 export const agentRuns = pgTable(
   "agent_runs",
   {
@@ -259,6 +297,7 @@ export const platformVariants = pgTable(
     body: text("body").notNull(),
     cta: text("cta").notNull(),
     hashtags: jsonb("hashtags").$type<string[]>().default([]).notNull(),
+    media: jsonb("media").$type<Array<Record<string, unknown>>>().default([]).notNull(),
     mediaPrompt: text("media_prompt"),
     characterCount: integer("character_count").notNull(),
     policyStatus: text("policy_status").notNull(),
@@ -323,6 +362,7 @@ export type Membership = typeof memberships.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;
 export type UsageLedgerEntry = typeof usageLedger.$inferSelect;
 export type ContentTopic = typeof contentTopics.$inferSelect;
+export type MediaAssetRow = typeof mediaAssets.$inferSelect;
 export type AgentRunRow = typeof agentRuns.$inferSelect;
 export type ContentDraft = typeof contentDrafts.$inferSelect;
 export type PlatformVariantRow = typeof platformVariants.$inferSelect;

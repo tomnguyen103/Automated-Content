@@ -11,6 +11,7 @@ import {
 import { AgentRunRecorder, createTraceId } from "@/lib/agents/langchain/middleware";
 import { createAgentStorage, type AgentStorage } from "@/lib/agents/langchain/storage";
 import type { AgentTool } from "@/lib/agents/tools/types";
+import { createAgentTraceMetadata, recordAgentEvent } from "@/lib/observability/agent-events";
 import { autoReplyRuleSchema } from "@/lib/replies/rules";
 import {
   evaluateReplyRules,
@@ -135,14 +136,14 @@ function createKeywordMatchTool(now: () => Date, evaluationRef: { current: Reply
   } satisfies AgentTool<typeof keywordMatchInputSchema, typeof keywordMatchOutputSchema>;
 }
 
-function createDraftReplyTool(model: CommentModel, traceId: string) {
+function createDraftReplyTool(model: CommentModel, traceId: string, metadata: Record<string, unknown>) {
   return {
     name: "draft_reply_suggestion",
     description: "Draft a safe reply suggestion when keyword automation does not apply.",
     inputSchema: draftReplyInputSchema,
     outputSchema: draftReplyOutputSchema,
     execute(input) {
-      return model.draftReply(input, { traceId });
+      return model.draftReply(input, { traceId, metadata });
     }
   } satisfies AgentTool<typeof draftReplyInputSchema, typeof draftReplyOutputSchema>;
 }
@@ -203,6 +204,19 @@ export async function runCommentAgent(
   const evaluationRef: { current: ReplyRuleEvaluation | null } = { current: null };
   const recorder = new AgentRunRecorder(traceId, now);
   const startedRun = await storage.saveRun(createStartedRun(input, model, { ...options, now }, traceId));
+  const traceMetadata = createAgentTraceMetadata({
+    agentType: "comment",
+    model: model.model,
+    provider: model.provider,
+    runId: startedRun.id,
+    runtime: model.mode,
+    traceId,
+    userId: options.userId,
+    workflow: "comment_agent",
+    workspaceId: options.workspaceId
+  });
+
+  recordAgentEvent("comment_agent.started", traceMetadata);
 
   try {
     const keywordMatch = await recorder.execute(createKeywordMatchTool(now, evaluationRef), {
@@ -253,7 +267,7 @@ export async function runCommentAgent(
         }
       });
     } else {
-      const draft = await recorder.execute(createDraftReplyTool(model, traceId), input);
+      const draft = await recorder.execute(createDraftReplyTool(model, traceId, traceMetadata), input);
       const safety = await recorder.execute(createSafetyCheckTool(), {
         replyText: draft.replyDraft,
         source: "suggestion"
@@ -277,6 +291,11 @@ export async function runCommentAgent(
       completedAt: now().toISOString()
     });
 
+    recordAgentEvent("comment_agent.succeeded", {
+      ...traceMetadata,
+      toolCallCount: recorder.calls.length
+    });
+
     return {
       run: completedRun,
       reply,
@@ -293,6 +312,12 @@ export async function runCommentAgent(
       toolCalls: recorder.calls,
       error: error instanceof Error ? error.message : "Unknown comment agent error",
       completedAt: now().toISOString()
+    });
+
+    recordAgentEvent("comment_agent.failed", {
+      ...traceMetadata,
+      error: failedRun.error,
+      toolCallCount: recorder.calls.length
     });
 
     throw new CommentAgentExecutionError(failedRun.error ?? "Comment agent failed", failedRun);

@@ -9,6 +9,7 @@ import { env, type AppEnv } from "@/lib/env";
 import type { BrandProfileOutput } from "@/lib/agents/tools/read-brand-profile";
 import type { ResearchTopicOutput } from "@/lib/agents/tools/research-topic";
 import type { RetrievePastPostsOutput } from "@/lib/agents/tools/retrieve-past-posts";
+import { createLangSmithRunConfig } from "@/lib/observability/langsmith";
 
 export const contentModelPlanSchema = z.object({
   summary: z.string().min(1),
@@ -33,6 +34,7 @@ export type ContentModelContext = {
   research: ResearchTopicOutput;
   brandProfile: BrandProfileOutput;
   pastPosts: RetrievePastPostsOutput;
+  metadata?: Record<string, unknown>;
 };
 
 export type ContentModel = {
@@ -52,6 +54,7 @@ export type CommentModelDraft = z.infer<typeof commentModelDraftSchema>;
 
 export type CommentModelContext = {
   traceId: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type CommentModel = {
@@ -286,9 +289,20 @@ async function generateRemotePlan({
   const structuredModel = chatModel.withStructuredOutput(contentModelPlanSchema, {
     name: "content_model_plan"
   });
+  const runConfig = createLangSmithRunConfig({
+    runName: "content_model_plan",
+    traceId: context.traceId,
+    tags: ["langchain", "content-plan", provider, model],
+    metadata: {
+      ...context.metadata,
+      model,
+      provider
+    }
+  });
 
   return withTimeout(
     structuredModel.invoke(buildModelMessages(input, context), {
+      ...runConfig,
       timeout: remoteModelTimeoutMs
     }),
     remoteModelTimeoutMs
@@ -312,9 +326,20 @@ async function generateRemoteCommentDraft({
   const structuredModel = chatModel.withStructuredOutput(commentModelDraftSchema, {
     name: "comment_reply_draft"
   });
+  const runConfig = createLangSmithRunConfig({
+    runName: "comment_reply_draft",
+    traceId: context.traceId,
+    tags: ["langchain", "comment-reply", provider, model],
+    metadata: {
+      ...context.metadata,
+      model,
+      provider
+    }
+  });
 
   return withTimeout(
     structuredModel.invoke(buildCommentModelMessages(input, context), {
+      ...runConfig,
       timeout: remoteModelTimeoutMs
     }),
     remoteModelTimeoutMs

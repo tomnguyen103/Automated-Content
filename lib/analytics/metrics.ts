@@ -1,12 +1,11 @@
 import "server-only";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   agentRuns,
   commentEvents,
   platformVariants,
-  publishAttempts,
   replyAttempts,
   scheduledJobs,
   usageLedger
@@ -34,15 +33,6 @@ export type PostingMetricRow = {
   publishedAt?: Date | null;
   failedAt?: Date | null;
   createdAt: Date;
-};
-
-export type PublishAttemptMetricRow = {
-  id: string;
-  provider: string;
-  status: "queued" | "publishing" | "succeeded" | "failed";
-  errorCode?: string | null;
-  createdAt: Date;
-  completedAt?: Date | null;
 };
 
 export type CommentMetricRow = {
@@ -83,11 +73,11 @@ export type AgentRunMetricRow = {
 
 export type AnalyticsAggregationInput = {
   posts: PostingMetricRow[];
-  publishAttempts: PublishAttemptMetricRow[];
   comments: CommentMetricRow[];
   replies: ReplyAttemptMetricRow[];
   usage: UsageMetricRow[];
   agentRuns: AgentRunMetricRow[];
+  summary?: AnalyticsAggregateSummary;
   now?: Date;
 };
 
@@ -171,6 +161,16 @@ export type AnalyticsSnapshot = {
   platformBreakdown: PlatformBreakdownItem[];
 };
 
+type AnalyticsAgentOverview = Omit<AnalyticsSnapshot["agents"], "recent">;
+
+type AnalyticsAggregateSummary = {
+  posting: AnalyticsSnapshot["posting"];
+  replies: AnalyticsSnapshot["replies"];
+  usage: AnalyticsSnapshot["usage"];
+  agents: AnalyticsAgentOverview;
+  platformBreakdown: PlatformBreakdownItem[];
+};
+
 const usageTypeLabels: Record<UsageMetricRow["type"], string> = {
   ai_generation: "AI generations",
   scheduled_post: "Scheduled posts",
@@ -199,7 +199,8 @@ function dateKey(date: Date) {
 function formatDateLabel(key: string) {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
-    day: "numeric"
+    day: "numeric",
+    timeZone: "UTC"
   }).format(new Date(`${key}T00:00:00.000Z`));
 }
 
@@ -239,6 +240,40 @@ function countByStatus<T extends string>(rows: Array<{ status: T }>, status: T) 
   return rows.filter((row) => row.status === status).length;
 }
 
+function numberOrZero(value: number | string | null | undefined) {
+  return Number(value ?? 0);
+}
+
+function startOfUtcDate(date: Date) {
+  return new Date(`${dateKey(date)}T00:00:00.000Z`);
+}
+
+function buildPostingSummary(posts: PostingMetricRow[]): AnalyticsSnapshot["posting"] {
+  return {
+    total: posts.length,
+    scheduled: countByStatus(posts, "scheduled"),
+    queued: countByStatus(posts, "queued"),
+    publishing: countByStatus(posts, "publishing"),
+    published: countByStatus(posts, "published"),
+    failed: countByStatus(posts, "failed"),
+    canceled: countByStatus(posts, "canceled")
+  };
+}
+
+function buildReplySummary(
+  comments: CommentMetricRow[],
+  replies: ReplyAttemptMetricRow[]
+): AnalyticsSnapshot["replies"] {
+  return {
+    comments: comments.length,
+    matched: countByStatus(comments, "matched"),
+    awaitingApproval:
+      countByStatus(comments, "awaiting_approval") + countByStatus(replies, "awaiting_approval"),
+    sent: countByStatus(replies, "sent") + countByStatus(replies, "approved"),
+    failed: countByStatus(replies, "failed")
+  };
+}
+
 function buildUsageBreakdown(usageRows: UsageMetricRow[]): UsageBreakdownItem[] {
   const totals = new Map<UsageMetricRow["type"], number>();
 
@@ -276,6 +311,30 @@ function buildDailyUsage(usageRows: UsageMetricRow[], now: Date, days = 14): Usa
     label: formatDateLabel(date),
     quantity
   }));
+}
+
+function buildDailyUsageFromTotals(totals: Map<string, number>, now: Date, days = 14): UsageChartPoint[] {
+  const start = addDays(now, -(days - 1));
+  const points: UsageChartPoint[] = [];
+
+  for (let index = 0; index < days; index += 1) {
+    const date = dateKey(addDays(start, index));
+    points.push({
+      date,
+      label: formatDateLabel(date),
+      quantity: totals.get(date) ?? 0
+    });
+  }
+
+  return points;
+}
+
+function buildUsageSummary(usageRows: UsageMetricRow[], now: Date): AnalyticsSnapshot["usage"] {
+  return {
+    totalQuantity: usageRows.reduce((sum, row) => sum + row.quantity, 0),
+    byType: buildUsageBreakdown(usageRows),
+    daily: buildDailyUsage(usageRows, now)
+  };
 }
 
 function buildPlatformBreakdown({
@@ -321,6 +380,48 @@ function buildPlatformBreakdown({
   );
 }
 
+function buildPlatformBreakdownFromAggregates({
+  comments,
+  posts,
+  replies
+}: {
+  comments: Array<{ platform: AnalyticsPlatformKey; comments: number | string; failures: number | string }>;
+  posts: Array<{
+    platform: AnalyticsPlatformKey;
+    posts: number | string;
+    published: number | string;
+    failures: number | string;
+  }>;
+  replies: Array<{ platform: AnalyticsPlatformKey; replies: number | string; failures: number | string }>;
+}) {
+  const platforms = new Map<AnalyticsPlatformKey, PlatformBreakdownItem>();
+
+  for (const row of posts) {
+    const item = getPlatformItem(platforms, row.platform);
+    item.posts += numberOrZero(row.posts);
+    item.published += numberOrZero(row.published);
+    item.failures += numberOrZero(row.failures);
+  }
+
+  for (const row of comments) {
+    const item = getPlatformItem(platforms, row.platform);
+    item.comments += numberOrZero(row.comments);
+    item.failures += numberOrZero(row.failures);
+  }
+
+  for (const row of replies) {
+    const item = getPlatformItem(platforms, row.platform);
+    item.replies += numberOrZero(row.replies);
+    item.failures += numberOrZero(row.failures);
+  }
+
+  return [...platforms.values()].sort(
+    (a, b) =>
+      b.posts + b.comments + b.replies - (a.posts + a.comments + a.replies) ||
+      a.platform.localeCompare(b.platform)
+  );
+}
+
 function summarizeAgentRun(row: AgentRunMetricRow): AgentRunSummary {
   const completedAt = row.completedAt ?? null;
 
@@ -338,62 +439,54 @@ function summarizeAgentRun(row: AgentRunMetricRow): AgentRunSummary {
   };
 }
 
+function buildAgentOverview(agentRunRows: AgentRunMetricRow[]): AnalyticsAgentOverview {
+  const totalToolCalls = agentRunRows.reduce((sum, run) => sum + run.toolCalls.length, 0);
+
+  return {
+    total: agentRunRows.length,
+    running: countByStatus(agentRunRows, "running") + countByStatus(agentRunRows, "queued"),
+    succeeded: countByStatus(agentRunRows, "succeeded"),
+    failed: countByStatus(agentRunRows, "failed"),
+    averageToolCalls: agentRunRows.length > 0 ? Math.round((totalToolCalls / agentRunRows.length) * 10) / 10 : 0
+  };
+}
+
 export function aggregateAnalyticsMetrics({
   agentRuns: agentRunRows,
   comments,
   now = new Date(),
   posts,
   replies,
+  summary,
   usage
 }: AnalyticsAggregationInput): AnalyticsSnapshot {
-  const publishingFailures = countByStatus(posts, "failed");
-  const replyFailures = countByStatus(replies, "failed");
-  const agentFailures = countByStatus(agentRunRows, "failed");
-  const totalToolCalls = agentRunRows.reduce((sum, run) => sum + run.toolCalls.length, 0);
+  const posting = summary?.posting ?? buildPostingSummary(posts);
+  const repliesSummary = summary?.replies ?? buildReplySummary(comments, replies);
+  const usageSummary = summary?.usage ?? buildUsageSummary(usage, now);
+  const agentOverview = summary?.agents ?? buildAgentOverview(agentRunRows);
+  const publishingFailures = posting.failed;
+  const replyFailures = repliesSummary.failed;
+  const agentFailures = agentOverview.failed;
 
   return {
     generatedAt: now.toISOString(),
-    posting: {
-      total: posts.length,
-      scheduled: countByStatus(posts, "scheduled"),
-      queued: countByStatus(posts, "queued"),
-      publishing: countByStatus(posts, "publishing"),
-      published: countByStatus(posts, "published"),
-      failed: countByStatus(posts, "failed"),
-      canceled: countByStatus(posts, "canceled")
-    },
+    posting,
     failures: {
       total: publishingFailures + replyFailures + agentFailures,
       publishing: publishingFailures,
       replies: replyFailures,
       agents: agentFailures
     },
-    replies: {
-      comments: comments.length,
-      matched: countByStatus(comments, "matched"),
-      awaitingApproval:
-        countByStatus(comments, "awaiting_approval") +
-        countByStatus(replies, "awaiting_approval"),
-      sent: countByStatus(replies, "sent") + countByStatus(replies, "approved"),
-      failed: replyFailures
-    },
-    usage: {
-      totalQuantity: usage.reduce((sum, row) => sum + row.quantity, 0),
-      byType: buildUsageBreakdown(usage),
-      daily: buildDailyUsage(usage, now)
-    },
+    replies: repliesSummary,
+    usage: usageSummary,
     agents: {
-      total: agentRunRows.length,
-      running: countByStatus(agentRunRows, "running") + countByStatus(agentRunRows, "queued"),
-      succeeded: countByStatus(agentRunRows, "succeeded"),
-      failed: agentFailures,
-      averageToolCalls: agentRunRows.length > 0 ? Math.round((totalToolCalls / agentRunRows.length) * 10) / 10 : 0,
+      ...agentOverview,
       recent: [...agentRunRows]
         .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())
         .slice(0, 8)
         .map(summarizeAgentRun)
     },
-    platformBreakdown: buildPlatformBreakdown({ comments, posts, replies })
+    platformBreakdown: summary?.platformBreakdown ?? buildPlatformBreakdown({ comments, posts, replies })
   };
 }
 
@@ -438,23 +531,6 @@ function createPreviewAnalyticsSnapshot(now = new Date()) {
       publishedAt: null,
       failedAt: addDays(now, -1),
       createdAt: addDays(now, -2)
-    }
-  ];
-  const publishAttemptsRows: PublishAttemptMetricRow[] = [
-    {
-      id: "preview-attempt-1",
-      provider: "linkedin",
-      status: "succeeded",
-      createdAt: addDays(now, -3),
-      completedAt: addDays(now, -3)
-    },
-    {
-      id: "preview-attempt-2",
-      provider: "meta",
-      status: "failed",
-      errorCode: "provider_rate_limited",
-      createdAt: addDays(now, -1),
-      completedAt: addDays(now, -1)
     }
   ];
   const comments: CommentMetricRow[] = [
@@ -554,13 +630,187 @@ function createPreviewAnalyticsSnapshot(now = new Date()) {
 
   return aggregateAnalyticsMetrics({
     posts,
-    publishAttempts: publishAttemptsRows,
     comments,
     replies,
     usage,
     agentRuns: agentRunRows,
     now
   });
+}
+
+async function getWorkspaceAnalyticsSummary(
+  db: ReturnType<typeof getDb>,
+  workspaceId: string,
+  now: Date
+): Promise<AnalyticsAggregateSummary> {
+  const usageStart = startOfUtcDate(addDays(now, -13));
+  const usageDay = sql<string>`to_char(${usageLedger.occurredAt} at time zone 'UTC', 'YYYY-MM-DD')`;
+  const replyPlatform = sql<AnalyticsPlatformKey>`coalesce(${commentEvents.platform}::text, ${replyAttempts.provider}::text)`;
+
+  const [
+    postTotalsRow,
+    commentTotalsRow,
+    replyTotalsRow,
+    usageTotalsRow,
+    agentTotalsRow,
+    usageByTypeRows,
+    usageDailyRows,
+    postPlatformRows,
+    commentPlatformRows,
+    replyPlatformRows
+  ] = await Promise.all([
+    db
+      .select({
+        total: sql<number>`count(*)::int`,
+        scheduled: sql<number>`count(*) filter (where ${scheduledJobs.status} = 'scheduled')::int`,
+        queued: sql<number>`count(*) filter (where ${scheduledJobs.status} = 'queued')::int`,
+        publishing: sql<number>`count(*) filter (where ${scheduledJobs.status} = 'publishing')::int`,
+        published: sql<number>`count(*) filter (where ${scheduledJobs.status} = 'published')::int`,
+        failed: sql<number>`count(*) filter (where ${scheduledJobs.status} = 'failed')::int`,
+        canceled: sql<number>`count(*) filter (where ${scheduledJobs.status} = 'canceled')::int`
+      })
+      .from(scheduledJobs)
+      .where(eq(scheduledJobs.workspaceId, workspaceId)),
+    db
+      .select({
+        total: sql<number>`count(*)::int`,
+        matched: sql<number>`count(*) filter (where ${commentEvents.status} = 'matched')::int`,
+        awaitingApproval: sql<number>`count(*) filter (where ${commentEvents.status} = 'awaiting_approval')::int`
+      })
+      .from(commentEvents)
+      .where(eq(commentEvents.workspaceId, workspaceId)),
+    db
+      .select({
+        awaitingApproval: sql<number>`count(*) filter (where ${replyAttempts.status} = 'awaiting_approval')::int`,
+        sent: sql<number>`count(*) filter (where ${replyAttempts.status} = 'sent')::int`,
+        approved: sql<number>`count(*) filter (where ${replyAttempts.status} = 'approved')::int`,
+        failed: sql<number>`count(*) filter (where ${replyAttempts.status} = 'failed')::int`
+      })
+      .from(replyAttempts)
+      .where(eq(replyAttempts.workspaceId, workspaceId)),
+    db
+      .select({ totalQuantity: sql<number>`coalesce(sum(${usageLedger.quantity}), 0)::int` })
+      .from(usageLedger)
+      .where(eq(usageLedger.workspaceId, workspaceId)),
+    db
+      .select({
+        total: sql<number>`count(*)::int`,
+        running: sql<number>`count(*) filter (where ${agentRuns.status} in ('queued', 'running'))::int`,
+        succeeded: sql<number>`count(*) filter (where ${agentRuns.status} = 'succeeded')::int`,
+        failed: sql<number>`count(*) filter (where ${agentRuns.status} = 'failed')::int`,
+        totalToolCalls: sql<number>`coalesce(sum(jsonb_array_length(${agentRuns.toolCalls})), 0)::int`
+      })
+      .from(agentRuns)
+      .where(eq(agentRuns.workspaceId, workspaceId)),
+    db
+      .select({
+        type: usageLedger.type,
+        quantity: sql<number>`coalesce(sum(${usageLedger.quantity}), 0)::int`
+      })
+      .from(usageLedger)
+      .where(eq(usageLedger.workspaceId, workspaceId))
+      .groupBy(usageLedger.type),
+    db
+      .select({
+        date: usageDay,
+        quantity: sql<number>`coalesce(sum(${usageLedger.quantity}), 0)::int`
+      })
+      .from(usageLedger)
+      .where(and(eq(usageLedger.workspaceId, workspaceId), gte(usageLedger.occurredAt, usageStart)))
+      .groupBy(usageDay),
+    db
+      .select({
+        platform: platformVariants.platform,
+        posts: sql<number>`count(*)::int`,
+        published: sql<number>`count(*) filter (where ${scheduledJobs.status} = 'published')::int`,
+        failures: sql<number>`count(*) filter (where ${scheduledJobs.status} = 'failed')::int`
+      })
+      .from(scheduledJobs)
+      .innerJoin(
+        platformVariants,
+        and(
+          eq(scheduledJobs.workspaceId, platformVariants.workspaceId),
+          eq(scheduledJobs.platformVariantId, platformVariants.id)
+        )
+      )
+      .where(eq(scheduledJobs.workspaceId, workspaceId))
+      .groupBy(platformVariants.platform),
+    db
+      .select({
+        platform: commentEvents.platform,
+        comments: sql<number>`count(*)::int`,
+        failures: sql<number>`count(*) filter (where ${commentEvents.status} = 'failed')::int`
+      })
+      .from(commentEvents)
+      .where(eq(commentEvents.workspaceId, workspaceId))
+      .groupBy(commentEvents.platform),
+    db
+      .select({
+        platform: replyPlatform,
+        replies: sql<number>`count(*) filter (where ${replyAttempts.status} in ('sent', 'approved'))::int`,
+        failures: sql<number>`count(*) filter (where ${replyAttempts.status} = 'failed')::int`
+      })
+      .from(replyAttempts)
+      .leftJoin(
+        commentEvents,
+        and(
+          eq(replyAttempts.workspaceId, commentEvents.workspaceId),
+          eq(replyAttempts.commentEventId, commentEvents.id)
+        )
+      )
+      .where(eq(replyAttempts.workspaceId, workspaceId))
+      .groupBy(replyPlatform)
+  ]);
+
+  const posting = {
+    total: numberOrZero(postTotalsRow[0]?.total),
+    scheduled: numberOrZero(postTotalsRow[0]?.scheduled),
+    queued: numberOrZero(postTotalsRow[0]?.queued),
+    publishing: numberOrZero(postTotalsRow[0]?.publishing),
+    published: numberOrZero(postTotalsRow[0]?.published),
+    failed: numberOrZero(postTotalsRow[0]?.failed),
+    canceled: numberOrZero(postTotalsRow[0]?.canceled)
+  };
+  const totalAgents = numberOrZero(agentTotalsRow[0]?.total);
+  const totalToolCalls = numberOrZero(agentTotalsRow[0]?.totalToolCalls);
+  const usageDailyTotals = new Map(
+    usageDailyRows.map((row) => [row.date, numberOrZero(row.quantity)] as const)
+  );
+
+  return {
+    posting,
+    replies: {
+      comments: numberOrZero(commentTotalsRow[0]?.total),
+      matched: numberOrZero(commentTotalsRow[0]?.matched),
+      awaitingApproval:
+        numberOrZero(commentTotalsRow[0]?.awaitingApproval) + numberOrZero(replyTotalsRow[0]?.awaitingApproval),
+      sent: numberOrZero(replyTotalsRow[0]?.sent) + numberOrZero(replyTotalsRow[0]?.approved),
+      failed: numberOrZero(replyTotalsRow[0]?.failed)
+    },
+    usage: {
+      totalQuantity: numberOrZero(usageTotalsRow[0]?.totalQuantity),
+      byType: usageByTypeRows
+        .map((row) => ({
+          type: row.type,
+          label: usageTypeLabels[row.type],
+          quantity: numberOrZero(row.quantity)
+        }))
+        .sort((a, b) => b.quantity - a.quantity || a.label.localeCompare(b.label)),
+      daily: buildDailyUsageFromTotals(usageDailyTotals, now)
+    },
+    agents: {
+      total: totalAgents,
+      running: numberOrZero(agentTotalsRow[0]?.running),
+      succeeded: numberOrZero(agentTotalsRow[0]?.succeeded),
+      failed: numberOrZero(agentTotalsRow[0]?.failed),
+      averageToolCalls: totalAgents > 0 ? Math.round((totalToolCalls / totalAgents) * 10) / 10 : 0
+    },
+    platformBreakdown: buildPlatformBreakdownFromAggregates({
+      comments: commentPlatformRows,
+      posts: postPlatformRows,
+      replies: replyPlatformRows
+    })
+  };
 }
 
 export async function getWorkspaceAnalyticsSnapshot({
@@ -577,92 +827,8 @@ export async function getWorkspaceAnalyticsSnapshot({
   }
 
   const db = getDb();
-  const [
-    postRows,
-    publishAttemptRows,
-    commentRows,
-    replyRows,
-    usageRows,
-    agentRunRows
-  ] = await Promise.all([
-    db
-      .select({
-        id: scheduledJobs.id,
-        platform: platformVariants.platform,
-        provider: scheduledJobs.provider,
-        status: scheduledJobs.status,
-        scheduledFor: scheduledJobs.scheduledFor,
-        publishedAt: scheduledJobs.publishedAt,
-        failedAt: scheduledJobs.failedAt,
-        createdAt: scheduledJobs.createdAt
-      })
-      .from(scheduledJobs)
-      .innerJoin(
-        platformVariants,
-        and(
-          eq(scheduledJobs.workspaceId, platformVariants.workspaceId),
-          eq(scheduledJobs.platformVariantId, platformVariants.id)
-        )
-      )
-      .where(eq(scheduledJobs.workspaceId, workspaceId))
-      .orderBy(desc(scheduledJobs.createdAt))
-      .limit(200),
-    db
-      .select({
-        id: publishAttempts.id,
-        provider: publishAttempts.provider,
-        status: publishAttempts.status,
-        errorCode: publishAttempts.errorCode,
-        createdAt: publishAttempts.createdAt,
-        completedAt: publishAttempts.completedAt
-      })
-      .from(publishAttempts)
-      .where(eq(publishAttempts.workspaceId, workspaceId))
-      .orderBy(desc(publishAttempts.createdAt))
-      .limit(200),
-    db
-      .select({
-        id: commentEvents.id,
-        platform: commentEvents.platform,
-        status: commentEvents.status,
-        receivedAt: commentEvents.receivedAt
-      })
-      .from(commentEvents)
-      .where(eq(commentEvents.workspaceId, workspaceId))
-      .orderBy(desc(commentEvents.receivedAt))
-      .limit(200),
-    db
-      .select({
-        id: replyAttempts.id,
-        provider: replyAttempts.provider,
-        platform: commentEvents.platform,
-        status: replyAttempts.status,
-        error: replyAttempts.error,
-        createdAt: replyAttempts.createdAt,
-        sentAt: replyAttempts.sentAt
-      })
-      .from(replyAttempts)
-      .leftJoin(
-        commentEvents,
-        and(
-          eq(replyAttempts.workspaceId, commentEvents.workspaceId),
-          eq(replyAttempts.commentEventId, commentEvents.id)
-        )
-      )
-      .where(eq(replyAttempts.workspaceId, workspaceId))
-      .orderBy(desc(replyAttempts.createdAt))
-      .limit(200),
-    db
-      .select({
-        id: usageLedger.id,
-        type: usageLedger.type,
-        quantity: usageLedger.quantity,
-        occurredAt: usageLedger.occurredAt
-      })
-      .from(usageLedger)
-      .where(eq(usageLedger.workspaceId, workspaceId))
-      .orderBy(desc(usageLedger.occurredAt))
-      .limit(500),
+  const [summary, agentRunRows] = await Promise.all([
+    getWorkspaceAnalyticsSummary(db, workspaceId, now),
     db
       .select({
         id: agentRuns.id,
@@ -682,15 +848,12 @@ export async function getWorkspaceAnalyticsSnapshot({
   ]);
 
   return aggregateAnalyticsMetrics({
-    posts: postRows,
-    publishAttempts: publishAttemptRows,
-    comments: commentRows,
-    replies: replyRows.map((row) => ({
-      ...row,
-      platform: row.platform ?? row.provider
-    })),
-    usage: usageRows,
+    posts: [],
+    comments: [],
+    replies: [],
+    usage: [],
     agentRuns: agentRunRows,
+    summary,
     now
   });
 }

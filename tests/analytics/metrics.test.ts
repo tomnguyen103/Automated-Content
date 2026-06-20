@@ -42,23 +42,6 @@ describe("aggregateAnalyticsMetrics", () => {
           createdAt: new Date("2026-06-17T12:00:00.000Z")
         }
       ],
-      publishAttempts: [
-        {
-          id: "attempt_1",
-          provider: "linkedin",
-          status: "succeeded",
-          createdAt: new Date("2026-06-19T12:00:00.000Z"),
-          completedAt: new Date("2026-06-19T12:02:00.000Z")
-        },
-        {
-          id: "attempt_2",
-          provider: "meta",
-          status: "failed",
-          errorCode: "provider_error",
-          createdAt: new Date("2026-06-18T12:00:00.000Z"),
-          completedAt: new Date("2026-06-18T12:02:00.000Z")
-        }
-      ],
       comments: [
         {
           id: "comment_1",
@@ -195,5 +178,91 @@ describe("aggregateAnalyticsMetrics", () => {
         })
       ])
     );
+  });
+
+  it("uses explicit aggregate summaries for totals while keeping recent agent rows", () => {
+    const snapshot = aggregateAnalyticsMetrics({
+      now,
+      posts: [],
+      comments: [],
+      replies: [],
+      usage: [],
+      agentRuns: [
+        {
+          id: "recent_run",
+          traceId: "trace_recent",
+          status: "succeeded",
+          provider: "gemini",
+          model: "gemini-2.5-flash",
+          toolCalls: [{ name: "save_draft" }],
+          startedAt: new Date("2026-06-20T11:00:00.000Z"),
+          completedAt: new Date("2026-06-20T11:00:03.000Z"),
+          error: null
+        }
+      ],
+      summary: {
+        posting: {
+          total: 250,
+          scheduled: 40,
+          queued: 20,
+          publishing: 5,
+          published: 180,
+          failed: 4,
+          canceled: 1
+        },
+        replies: {
+          comments: 320,
+          matched: 140,
+          awaitingApproval: 12,
+          sent: 96,
+          failed: 3
+        },
+        usage: {
+          totalQuantity: 900,
+          byType: [
+            {
+              type: "ai_generation",
+              label: "AI generations",
+              quantity: 600
+            }
+          ],
+          daily: [
+            {
+              date: "2026-06-20",
+              label: "Jun 20",
+              quantity: 12
+            }
+          ]
+        },
+        agents: {
+          total: 150,
+          running: 2,
+          succeeded: 143,
+          failed: 5,
+          averageToolCalls: 2.4
+        },
+        platformBreakdown: [
+          {
+            platform: "LinkedIn",
+            posts: 120,
+            published: 110,
+            comments: 80,
+            replies: 60,
+            failures: 2
+          }
+        ]
+      }
+    });
+
+    expect(snapshot.posting.total).toBe(250);
+    expect(snapshot.failures).toEqual({
+      total: 12,
+      publishing: 4,
+      replies: 3,
+      agents: 5
+    });
+    expect(snapshot.usage.totalQuantity).toBe(900);
+    expect(snapshot.agents.total).toBe(150);
+    expect(snapshot.agents.recent).toHaveLength(1);
   });
 });

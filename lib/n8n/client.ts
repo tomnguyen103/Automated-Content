@@ -65,16 +65,23 @@ export function createN8nClient({
       const body = JSON.stringify(payload);
       const timestamp = String(now().getTime());
       const signature = createN8nSignature({ body, secret, timestamp });
-      const response = await fetcher(webhookUrl, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-automated-content-event": payload.event,
-          "x-automated-content-signature": signature,
-          "x-automated-content-timestamp": timestamp
-        },
-        body
-      });
+      let response: Response;
+
+      try {
+        response = await fetcher(webhookUrl, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-automated-content-event": payload.event,
+            "x-automated-content-signature": signature,
+            "x-automated-content-timestamp": timestamp
+          },
+          body,
+          signal: AbortSignal.timeout(10_000)
+        });
+      } catch {
+        throw new N8nDispatchError("n8n event dispatch failed before receiving a response.", 0);
+      }
 
       if (!response.ok) {
         throw new N8nDispatchError(`n8n event dispatch failed with status ${response.status}.`, response.status);

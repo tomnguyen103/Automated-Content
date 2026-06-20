@@ -30,7 +30,7 @@ export function createAgentTraceMetadata(input: AgentTraceMetadataInput): Record
 
 export function recordAgentEvent(event: string, fields: LogFields) {
   logger.info("agent event", {
-    event,
-    ...fields
+    ...fields,
+    event
   });
 }

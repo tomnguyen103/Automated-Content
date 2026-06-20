@@ -15,6 +15,12 @@ export function PlatformTabs({ onChange, variants }: PlatformTabsProps) {
     () => variants.find((variant) => variant.id === activeId) ?? variants[0] ?? null,
     [activeId, variants]
   );
+  const activeHashtagsValue = activeVariant?.hashtags.join(" ") ?? "";
+  const [hashtagsDraft, setHashtagsDraft] = useState({
+    variantId: activeVariant?.id ?? null,
+    value: activeHashtagsValue
+  });
+  const hashtagsInput = hashtagsDraft.variantId === activeVariant?.id ? hashtagsDraft.value : activeHashtagsValue;
 
   const updateActiveVariant = (updates: Partial<PlatformVariant>) => {
     if (!activeVariant) {
@@ -33,12 +39,22 @@ export function PlatformTabs({ onChange, variants }: PlatformTabsProps) {
     );
   };
 
+  const parseHashtags = (value: string) =>
+    value
+      .split(/[\s,]+/)
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+
   const updateHashtags = (value: string) => {
+    const hashtags = parseHashtags(value);
+
     updateActiveVariant({
-      hashtags: value
-        .split(/[\s,]+/)
-        .map((tag) => tag.trim())
-        .filter(Boolean)
+      hashtags
+    });
+
+    setHashtagsDraft({
+      variantId: activeVariant?.id ?? null,
+      value: hashtags.join(" ")
     });
   };
 
@@ -123,8 +139,14 @@ export function PlatformTabs({ onChange, variants }: PlatformTabsProps) {
             <input
               id={`variant-hashtags-${activeVariant.id}`}
               className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-sm font-normal outline-none transition focus:border-[var(--color-primary)]"
-              value={activeVariant.hashtags.join(" ")}
-              onChange={(event) => updateHashtags(event.target.value)}
+              value={hashtagsInput}
+              onChange={(event) =>
+                setHashtagsDraft({
+                  variantId: activeVariant.id,
+                  value: event.target.value
+                })
+              }
+              onBlur={() => updateHashtags(hashtagsInput)}
             />
           </label>
         </div>

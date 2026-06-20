@@ -5,7 +5,8 @@ import {
   applyContentWorkflowApproval,
   ContentWorkflowExecutionError,
   WorkflowForbiddenError,
-  WorkflowNotFoundError
+  WorkflowNotFoundError,
+  WorkflowValidationError
 } from "@/lib/agents/graphs/content-workflow";
 import { contentWorkflowApprovalActionSchema } from "@/lib/agents/graphs/state";
 import { contentPackSchema } from "@/lib/agents/schemas/content-pack";
@@ -87,6 +88,10 @@ export async function POST(request: Request, context: ApprovalRouteContext) {
         },
         { status: 500 }
       );
+    }
+
+    if (error instanceof WorkflowValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
     if (error instanceof WorkflowForbiddenError) {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   applyContentWorkflowApproval,
-  runContentWorkflow
+  runContentWorkflow,
+  WorkflowValidationError
 } from "@/lib/agents/graphs/content-workflow";
 import { createMemoryContentWorkflowCheckpointStore } from "@/lib/agents/graphs/checkpoints";
 import { createContentModel } from "@/lib/agents/langchain/model-factory";
@@ -174,6 +175,49 @@ describe("content workflow integration", () => {
     expect(approved.contentPack?.variants[0].body).toBe("Edited platform body");
     expect(savedDraft?.contentPack.captions[0]).toBe("Edited primary caption");
     expect(savedDraft?.contentPack.variants[0].cta).toBe("Edited CTA");
+  });
+
+  it("rejects approval edits for a different content pack", async () => {
+    const storage = createMemoryAgentStorage();
+    const checkpoints = createMemoryContentWorkflowCheckpointStore();
+    const result = await runContentWorkflow(
+      {
+        topic: "Approval checkpoints",
+        audience: "operators",
+        tone: "clear",
+        goal: "educate",
+        sources: ["Approval checkpoints build trust."],
+        platforms: ["linkedin"]
+      },
+      {
+        userId: "user_1",
+        workspaceId: "workspace_1",
+        storage,
+        checkpoints,
+        now: () => new Date("2026-06-19T12:00:00.000Z"),
+        model: createMockModel()
+      }
+    );
+    const editedPack = {
+      ...result.contentPack!,
+      id: "different_content_pack"
+    };
+
+    await expect(
+      applyContentWorkflowApproval(result.run.id, {
+        action: "approve",
+        contentPack: editedPack,
+        userId: "user_1",
+        workspaceId: "workspace_1",
+        storage,
+        checkpoints,
+        now: () => new Date("2026-06-19T12:05:00.000Z")
+      })
+    ).rejects.toThrow(WorkflowValidationError);
+    await expect(checkpoints.get(result.run.id, "workspace_1")).resolves.toMatchObject({
+      status: "awaiting_review",
+      approvalStatus: "pending"
+    });
   });
 
   it("saves only one draft for duplicate approve requests", async () => {

@@ -91,6 +91,46 @@ describe("AI generate API", () => {
     expect(approvePayload.draft.status).toBe("saved");
   });
 
+  it("returns a 400 when approval edits target another content pack", async () => {
+    const { generate, approve, clearAgentStorageForTests, clearContentWorkflowCheckpointsForTests } = await loadApiModules();
+    clearAgentStorageForTests();
+    clearContentWorkflowCheckpointsForTests();
+
+    const response = await generate(
+      new NextRequest("http://localhost:3000/api/ai/generate", {
+        method: "POST",
+        body: JSON.stringify({
+          topic: "AI content calendars",
+          audience: "founders",
+          tone: "clear",
+          goal: "educate",
+          sources: ["Manual review before publishing."],
+          platforms: ["linkedin"]
+        })
+      })
+    );
+    const payload = await response.json();
+    const approveResponse = await approve(
+      new Request(`http://localhost:3000/api/agent-runs/${payload.run.id}/approval`, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "approve",
+          contentPack: {
+            ...payload.contentPack,
+            id: "different_content_pack"
+          }
+        })
+      }),
+      {
+        params: Promise.resolve({ id: payload.run.id })
+      }
+    );
+    const approvePayload = await approveResponse.json();
+
+    expect(approveResponse.status).toBe(400);
+    expect(approvePayload.error).toBe("Edited content pack does not match this workflow.");
+  });
+
   it("returns a 400 for malformed JSON", async () => {
     const { generate, clearAgentStorageForTests, clearContentWorkflowCheckpointsForTests } = await loadApiModules();
     clearAgentStorageForTests();

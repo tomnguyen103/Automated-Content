@@ -91,6 +91,13 @@ export class WorkflowForbiddenError extends Error {
   }
 }
 
+export class WorkflowValidationError extends Error {
+  constructor(message = "Workflow request is invalid.") {
+    super(message);
+    this.name = "WorkflowValidationError";
+  }
+}
+
 function createStartedRun({
   input,
   model,
@@ -225,11 +232,11 @@ function applyReviewedContentPack(
   const parsed = contentPackSchema.parse(contentPack);
 
   if (!state.contentPack) {
-    throw new Error("Workflow has no content pack to update.");
+    throw new WorkflowValidationError("Workflow has no content pack to update.");
   }
 
   if (parsed.id !== state.contentPack.id) {
-    throw new Error("Edited content pack does not match this workflow.");
+    throw new WorkflowValidationError("Edited content pack does not match this workflow.");
   }
 
   return markContentWorkflowNode(state, state.currentNode, now, {

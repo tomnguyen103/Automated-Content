@@ -60,6 +60,11 @@ function loadAssets() {
   return mediaAssets;
 }
 
+function reloadAssets() {
+  mediaAssets = uniqueAssets([...readStoredAssets(), ...mockMediaAssets]);
+  return mediaAssets;
+}
+
 function notifyUpdated() {
   if (isBrowser()) {
     window.dispatchEvent(new Event(updateEventName));
@@ -81,13 +86,20 @@ export function useMediaLibraryAssets() {
 
   useEffect(() => {
     const handleUpdate = () => setAssets([...getMediaLibraryAssets()]);
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== storageKey) {
+        return;
+      }
+
+      setAssets([...reloadAssets()]);
+    };
 
     window.addEventListener(updateEventName, handleUpdate);
-    window.addEventListener("storage", handleUpdate);
+    window.addEventListener("storage", handleStorage);
 
     return () => {
       window.removeEventListener(updateEventName, handleUpdate);
-      window.removeEventListener("storage", handleUpdate);
+      window.removeEventListener("storage", handleStorage);
     };
   }, []);
 

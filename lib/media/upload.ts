@@ -16,7 +16,9 @@ const imageKitUploadResponseSchema = z
   .passthrough();
 
 function getMediaType(file: File, fileType?: string): MediaAssetType {
-  if (fileType?.toLowerCase() === "video" || file.type.startsWith("video/")) {
+  const normalizedFileType = fileType?.toLowerCase() ?? "";
+
+  if (normalizedFileType === "video" || normalizedFileType.startsWith("video/") || file.type.startsWith("video/")) {
     return "video";
   }
 

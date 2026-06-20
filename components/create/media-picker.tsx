@@ -66,7 +66,8 @@ export function MediaPicker({ media, onChange }: MediaPickerProps) {
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">{asset.name}</span>
                 <span className="mt-1 block text-xs text-[var(--color-text-muted)]">
-                  {asset.mediaType} / {asset.width} x {asset.height}
+                  {asset.mediaType}
+                  {asset.width != null && asset.height != null ? ` / ${asset.width} x ${asset.height}` : ""}
                 </span>
               </span>
             </button>

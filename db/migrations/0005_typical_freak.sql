@@ -1,9 +1,10 @@
 CREATE TYPE "public"."media_asset_type" AS ENUM('image', 'video');--> statement-breakpoint
+CREATE TYPE "public"."media_provider" AS ENUM('imagekit', 'mock');--> statement-breakpoint
 CREATE TABLE "media_assets" (
 	"id" text PRIMARY KEY NOT NULL,
 	"workspace_id" uuid NOT NULL,
 	"uploaded_by_user_id" text NOT NULL,
-	"provider" text DEFAULT 'imagekit' NOT NULL,
+	"provider" "media_provider" DEFAULT 'imagekit' NOT NULL,
 	"imagekit_file_id" text,
 	"name" text NOT NULL,
 	"file_name" text NOT NULL,
@@ -20,7 +21,9 @@ CREATE TABLE "media_assets" (
 	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "media_assets_size_bytes_nonnegative_check" CHECK ("media_assets"."size_bytes" is null or "media_assets"."size_bytes" >= 0)
+	CONSTRAINT "media_assets_size_bytes_nonnegative_check" CHECK ("media_assets"."size_bytes" is null or "media_assets"."size_bytes" >= 0),
+	CONSTRAINT "media_assets_width_positive_check" CHECK ("media_assets"."width" is null or "media_assets"."width" > 0),
+	CONSTRAINT "media_assets_height_positive_check" CHECK ("media_assets"."height" is null or "media_assets"."height" > 0)
 );
 --> statement-breakpoint
 ALTER TABLE "platform_variants" ADD COLUMN "media" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint

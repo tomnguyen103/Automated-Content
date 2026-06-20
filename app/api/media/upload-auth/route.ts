@@ -21,7 +21,7 @@ export async function GET() {
     const uploadAuth = createImageKitUploadAuth({
       workspaceId: workspace.id,
       userId: user.id,
-      allowMock: workspace.isLocalPreview,
+      allowMock: workspace.isLocalPreview || forceMockUpload,
       config: forceMockUpload
         ? {
             IMAGEKIT_PRIVATE_KEY: undefined,

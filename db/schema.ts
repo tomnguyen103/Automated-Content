@@ -44,6 +44,7 @@ export const workflowCheckpointStatusEnum = pgEnum("workflow_checkpoint_status",
 ]);
 export const contentDraftStatusEnum = pgEnum("content_draft_status", ["draft", "ready", "archived"]);
 export const mediaAssetTypeEnum = pgEnum("media_asset_type", ["image", "video"]);
+export const mediaProviderEnum = pgEnum("media_provider", ["imagekit", "mock"]);
 export const socialPlatformEnum = pgEnum("social_platform", [
   "linkedin",
   "x",
@@ -187,7 +188,7 @@ export const mediaAssets = pgTable(
     uploadedByUserId: text("uploaded_by_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    provider: text("provider").default("imagekit").notNull(),
+    provider: mediaProviderEnum("provider").default("imagekit").notNull(),
     imagekitFileId: text("imagekit_file_id"),
     name: text("name").notNull(),
     fileName: text("file_name").notNull(),
@@ -207,6 +208,8 @@ export const mediaAssets = pgTable(
   },
   (table) => [
     check("media_assets_size_bytes_nonnegative_check", sql`${table.sizeBytes} is null or ${table.sizeBytes} >= 0`),
+    check("media_assets_width_positive_check", sql`${table.width} is null or ${table.width} > 0`),
+    check("media_assets_height_positive_check", sql`${table.height} is null or ${table.height} > 0`),
     index("media_assets_workspace_idx").on(table.workspaceId),
     index("media_assets_uploaded_by_user_idx").on(table.uploadedByUserId),
     index("media_assets_media_type_idx").on(table.mediaType),

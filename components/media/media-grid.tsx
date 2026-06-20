@@ -11,8 +11,12 @@ type MediaGridProps = {
 };
 
 function formatBytes(bytes: number | undefined) {
-  if (!bytes) {
+  if (bytes === undefined) {
     return "Unknown size";
+  }
+
+  if (bytes < 1024) {
+    return `${bytes} B`;
   }
 
   if (bytes < 1024 * 1024) {

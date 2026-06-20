@@ -40,11 +40,23 @@ export function MediaLibrary() {
       }
 
       const uploadAuth = imageKitUploadAuthSchema.parse(payload);
-      const uploadedAssets = await Promise.all(files.map((file) => uploadMediaFile(file, uploadAuth)));
+      const results = await Promise.allSettled(files.map((file) => uploadMediaFile(file, uploadAuth)));
+      const uploadedAssets = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+
+      if (uploadedAssets.length === 0) {
+        const rejected = results.find((result) => result.status === "rejected");
+        throw new Error(rejected?.reason instanceof Error ? rejected.reason.message : "Upload failed.");
+      }
+
       objectUrlsRef.current.push(...uploadedAssets.map((asset) => asset.url).filter((url) => url.startsWith("blob:")));
 
       addMediaLibraryAssets(uploadedAssets);
       setSelectedId(uploadedAssets[0]?.id ?? selectedId);
+
+      const failedUploads = results.length - uploadedAssets.length;
+      if (failedUploads > 0) {
+        setError(`${failedUploads} upload${failedUploads === 1 ? "" : "s"} failed. Added ${uploadedAssets.length} successful file${uploadedAssets.length === 1 ? "" : "s"}.`);
+      }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Upload failed.");
     } finally {

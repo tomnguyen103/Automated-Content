@@ -1,5 +1,5 @@
 {
-  "id": "606d6205-44b8-45ab-af55-7a72ddd6362e",
+  "id": "a264fc01-6e4b-4118-a305-ff82a55f1d23",
   "prevId": "5b72a053-7cad-4778-bb53-60826604b809",
   "version": "7",
   "dialect": "postgresql",
@@ -605,7 +605,8 @@
         },
         "provider": {
           "name": "provider",
-          "type": "text",
+          "type": "media_provider",
+          "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
           "default": "'imagekit'"
@@ -816,6 +817,14 @@
         "media_assets_size_bytes_nonnegative_check": {
           "name": "media_assets_size_bytes_nonnegative_check",
           "value": "\"media_assets\".\"size_bytes\" is null or \"media_assets\".\"size_bytes\" >= 0"
+        },
+        "media_assets_width_positive_check": {
+          "name": "media_assets_width_positive_check",
+          "value": "\"media_assets\".\"width\" is null or \"media_assets\".\"width\" > 0"
+        },
+        "media_assets_height_positive_check": {
+          "name": "media_assets_height_positive_check",
+          "value": "\"media_assets\".\"height\" is null or \"media_assets\".\"height\" > 0"
         }
       },
       "isRLSEnabled": false
@@ -1817,6 +1826,14 @@
       "values": [
         "image",
         "video"
+      ]
+    },
+    "public.media_provider": {
+      "name": "media_provider",
+      "schema": "public",
+      "values": [
+        "imagekit",
+        "mock"
       ]
     },
     "public.membership_role": {

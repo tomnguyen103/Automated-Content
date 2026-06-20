@@ -3,6 +3,7 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { ChatGoogle } from "@langchain/google";
 import { ChatOpenAI } from "@langchain/openai";
 import type { AiProvider } from "@/lib/agents/schemas/agent-run";
+import type { CommentReplyInput } from "@/lib/agents/schemas/comment-reply";
 import type { ContentAgentInput, ContentIdea } from "@/lib/agents/schemas/content-pack";
 import { env, type AppEnv } from "@/lib/env";
 import type { BrandProfileOutput } from "@/lib/agents/tools/read-brand-profile";
@@ -41,12 +42,37 @@ export type ContentModel = {
   generatePlan: (input: ContentAgentInput, context: ContentModelContext) => Promise<ContentModelPlan>;
 };
 
+export const commentModelDraftSchema = z.object({
+  replyDraft: z.string().min(1).max(500),
+  confidence: z.number().min(0).max(1),
+  auditNotes: z.array(z.string().min(1))
+});
+
+export type CommentModelDraft = z.infer<typeof commentModelDraftSchema>;
+
+export type CommentModelContext = {
+  traceId: string;
+};
+
+export type CommentModel = {
+  provider: AiProvider;
+  model: string;
+  mode: "local" | "remote";
+  draftReply: (input: CommentReplyInput, context: CommentModelContext) => Promise<CommentModelDraft>;
+};
+
 type ModelFactoryEnv = Pick<AppEnv, "AI_PROVIDER" | "OPENAI_API_KEY" | "GEMINI_API_KEY">;
 
-type ModelFactoryOptions = {
+type ContentModelFactoryOptions = {
   env?: ModelFactoryEnv;
   model?: string;
   generatePlan?: ContentModel["generatePlan"];
+};
+
+type CommentModelFactoryOptions = {
+  env?: ModelFactoryEnv;
+  model?: string;
+  draftReply?: CommentModel["draftReply"];
 };
 
 const providerModels: Record<AiProvider, string> = {
@@ -103,6 +129,38 @@ function buildLocalPlan(input: ContentAgentInput, context: ContentModelContext):
   };
 }
 
+function getFirstName(name: string | undefined) {
+  return name?.trim().split(/\s+/)[0] ?? "";
+}
+
+function truncateText(value: string, maxLength: number) {
+  const normalized = value.trim().replace(/\s+/g, " ");
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
+function clampReplyDraft(value: string) {
+  return value.length <= 500 ? value : `${value.slice(0, 497).trimEnd()}...`;
+}
+
+function buildLocalCommentDraft(input: CommentReplyInput): CommentModelDraft {
+  const name = getFirstName(input.comment.authorName);
+  const greeting = name ? `Thanks, ${name}.` : "Thanks for the note.";
+  const postContext = input.postContext.title ? ` On ${truncateText(input.postContext.title, 80)},` : "";
+
+  return {
+    replyDraft: clampReplyDraft(
+      `${greeting}${postContext} we can help with that. I will flag this for a human review so the reply stays accurate.`
+    ),
+    confidence: 0.72,
+    auditNotes: ["No keyword rule matched. Created a model-backed suggestion for human approval."]
+  };
+}
+
 function buildModelMessages(input: ContentAgentInput, context: ContentModelContext) {
   return [
     new SystemMessage(
@@ -119,6 +177,30 @@ function buildModelMessages(input: ContentAgentInput, context: ContentModelConte
           research: context.research,
           brandProfile: context.brandProfile,
           pastPosts: context.pastPosts,
+          traceId: context.traceId
+        },
+        null,
+        2
+      )
+    )
+  ];
+}
+
+function buildCommentModelMessages(input: CommentReplyInput, context: CommentModelContext) {
+  return [
+    new SystemMessage(
+      [
+        "You are drafting a short social reply suggestion inside an approval-gated SaaS workflow.",
+        "Do not claim the reply has been sent. Avoid guarantees, pricing commitments, legal advice, or support promises.",
+        "Return only a concise structured draft that a human can approve before sending."
+      ].join(" ")
+    ),
+    new HumanMessage(
+      JSON.stringify(
+        {
+          comment: input.comment,
+          postContext: input.postContext,
+          brandVoice: input.brandVoice,
           traceId: context.traceId
         },
         null,
@@ -145,6 +227,48 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
   }
 }
 
+function resolveProviderConfig(runtimeEnv: ModelFactoryEnv, modelOverride: string | undefined) {
+  const provider = runtimeEnv.AI_PROVIDER;
+  const model = modelOverride ?? providerModels[provider];
+  const forceLocalModel = process.env.PLAYWRIGHT_AUTH_LOCAL_PREVIEW === "1";
+  const providerKey = forceLocalModel
+    ? undefined
+    : provider === "openai"
+      ? runtimeEnv.OPENAI_API_KEY
+      : runtimeEnv.GEMINI_API_KEY;
+
+  return {
+    provider,
+    model,
+    providerKey
+  };
+}
+
+function createStructuredChatModel({
+  apiKey,
+  model,
+  provider
+}: {
+  apiKey: string;
+  model: string;
+  provider: AiProvider;
+}) {
+  return provider === "openai"
+    ? new ChatOpenAI({
+        apiKey,
+        model,
+        temperature: 0.2,
+        timeout: remoteModelTimeoutMs,
+        maxRetries: remoteModelMaxRetries
+      })
+    : new ChatGoogle({
+        apiKey,
+        model,
+        temperature: 0.2,
+        maxRetries: remoteModelMaxRetries
+      });
+}
+
 async function generateRemotePlan({
   provider,
   model,
@@ -158,21 +282,7 @@ async function generateRemotePlan({
   input: ContentAgentInput;
   context: ContentModelContext;
 }) {
-  const chatModel =
-    provider === "openai"
-      ? new ChatOpenAI({
-          apiKey,
-          model,
-          temperature: 0.2,
-          timeout: remoteModelTimeoutMs,
-          maxRetries: remoteModelMaxRetries
-        })
-      : new ChatGoogle({
-          apiKey,
-          model,
-          temperature: 0.2,
-          maxRetries: remoteModelMaxRetries
-        });
+  const chatModel = createStructuredChatModel({ apiKey, model, provider });
   const structuredModel = chatModel.withStructuredOutput(contentModelPlanSchema, {
     name: "content_model_plan"
   });
@@ -185,16 +295,35 @@ async function generateRemotePlan({
   );
 }
 
-export function createContentModel(options: ModelFactoryOptions = {}): ContentModel {
+async function generateRemoteCommentDraft({
+  provider,
+  model,
+  apiKey,
+  input,
+  context
+}: {
+  provider: AiProvider;
+  model: string;
+  apiKey: string;
+  input: CommentReplyInput;
+  context: CommentModelContext;
+}) {
+  const chatModel = createStructuredChatModel({ apiKey, model, provider });
+  const structuredModel = chatModel.withStructuredOutput(commentModelDraftSchema, {
+    name: "comment_reply_draft"
+  });
+
+  return withTimeout(
+    structuredModel.invoke(buildCommentModelMessages(input, context), {
+      timeout: remoteModelTimeoutMs
+    }),
+    remoteModelTimeoutMs
+  );
+}
+
+export function createContentModel(options: ContentModelFactoryOptions = {}): ContentModel {
   const runtimeEnv = options.env ?? env;
-  const provider = runtimeEnv.AI_PROVIDER;
-  const model = options.model ?? providerModels[provider];
-  const forceLocalModel = process.env.PLAYWRIGHT_AUTH_LOCAL_PREVIEW === "1";
-  const providerKey = forceLocalModel
-    ? undefined
-    : provider === "openai"
-      ? runtimeEnv.OPENAI_API_KEY
-      : runtimeEnv.GEMINI_API_KEY;
+  const { provider, model, providerKey } = resolveProviderConfig(runtimeEnv, options.model);
 
   return {
     provider,
@@ -214,6 +343,32 @@ export function createContentModel(options: ModelFactoryOptions = {}): ContentMo
           : buildLocalPlan(input, context);
 
       return contentModelPlanSchema.parse(plan);
+    }
+  };
+}
+
+export function createCommentModel(options: CommentModelFactoryOptions = {}): CommentModel {
+  const runtimeEnv = options.env ?? env;
+  const { provider, model, providerKey } = resolveProviderConfig(runtimeEnv, options.model);
+
+  return {
+    provider,
+    model,
+    mode: providerKey ? "remote" : "local",
+    async draftReply(input, context) {
+      const draft = options.draftReply
+        ? await options.draftReply(input, context)
+        : providerKey
+          ? await generateRemoteCommentDraft({
+              provider,
+              model,
+              apiKey: providerKey,
+              input,
+              context
+            })
+          : buildLocalCommentDraft(input);
+
+      return commentModelDraftSchema.parse(draft);
     }
   };
 }

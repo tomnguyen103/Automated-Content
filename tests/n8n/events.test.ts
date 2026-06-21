@@ -22,6 +22,7 @@ describe("n8n event integration", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.doUnmock("@/lib/n8n/event-log");
     vi.resetModules();
   });
 
@@ -87,6 +88,37 @@ describe("n8n event integration", () => {
         workspaceId: "workspace_1"
       })
     ]);
+  });
+
+  it("keeps dispatching when audit logging fails", async () => {
+    vi.resetModules();
+    vi.doMock("@/lib/n8n/event-log", () => ({
+      recordN8nEvent: vi.fn(async () => {
+        throw new Error("audit unavailable");
+      })
+    }));
+
+    const { createN8nClient } = await import("@/lib/n8n/client");
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 202 }));
+    const client = createN8nClient({
+      fetcher,
+      secret,
+      webhookUrl: "https://n8n.example.test/webhook/app-events",
+      now: () => new Date("2026-06-20T12:00:00.000Z")
+    });
+
+    await expect(
+      client.emit({
+        id: "evt_audit_error",
+        event: "publishing.post.failed",
+        workspaceId: "workspace_1"
+      })
+    ).resolves.toMatchObject({
+      eventId: "evt_audit_error",
+      responseStatus: 202,
+      status: "delivered"
+    });
+    expect(fetcher).toHaveBeenCalledOnce();
   });
 
   it("normalizes outbound transport failures", async () => {

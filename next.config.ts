@@ -10,7 +10,7 @@ export function parseAllowedDevOrigins(value = process.env.NEXT_ALLOWED_DEV_ORIG
 }
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["127.0.0.1", ...parseAllowedDevOrigins()],
+  allowedDevOrigins: [...new Set(["127.0.0.1", ...parseAllowedDevOrigins()])],
   turbopack: {
     root: process.cwd()
   }

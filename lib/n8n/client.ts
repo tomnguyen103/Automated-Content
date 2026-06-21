@@ -43,6 +43,10 @@ export class N8nDispatchError extends Error {
   }
 }
 
+function recordN8nEventBestEffort(input: Parameters<typeof recordN8nEvent>[0]) {
+  void recordN8nEvent(input).catch(() => undefined);
+}
+
 export function createN8nClient({
   fetcher = fetch,
   now = () => new Date(),
@@ -68,7 +72,7 @@ export function createN8nClient({
       const signature = createN8nSignature({ body, secret, timestamp });
       let response: Response;
 
-      await recordN8nEvent({
+      recordN8nEventBestEffort({
         id: payload.id,
         workspaceId: payload.workspaceId,
         direction: "outbound",
@@ -91,7 +95,7 @@ export function createN8nClient({
           signal: AbortSignal.timeout(10_000)
         });
       } catch (error) {
-        await recordN8nEvent({
+        recordN8nEventBestEffort({
           id: payload.id,
           workspaceId: payload.workspaceId,
           direction: "outbound",
@@ -106,7 +110,7 @@ export function createN8nClient({
       }
 
       if (!response.ok) {
-        await recordN8nEvent({
+        recordN8nEventBestEffort({
           id: payload.id,
           workspaceId: payload.workspaceId,
           direction: "outbound",
@@ -120,7 +124,7 @@ export function createN8nClient({
         throw new N8nDispatchError(`n8n event dispatch failed with status ${response.status}.`, response.status);
       }
 
-      await recordN8nEvent({
+      recordN8nEventBestEffort({
         id: payload.id,
         workspaceId: payload.workspaceId,
         direction: "outbound",

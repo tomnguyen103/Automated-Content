@@ -5,8 +5,7 @@ import { getDb } from "@/db";
 import { connectedAccounts, platformVariants } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import {
-  ensureUsageAllowed,
-  recordUsageForLimit,
+  consumeUsageForLimit,
   UsageLimitExceededError
 } from "@/lib/billing/usage";
 import { isDatabaseConfigured } from "@/lib/env";
@@ -125,9 +124,15 @@ export async function POST(
       return NextResponse.json({ error: "Connected account not found." }, { status: 404 });
     }
 
-    await ensureUsageAllowed({
+    await consumeUsageForLimit({
       workspaceId: workspace.id,
       key: "scheduledPostsPerDay",
+      metadata: {
+        platformVariantId,
+        provider: input.provider,
+        scheduledFor: input.scheduledFor,
+        userId: user.id
+      },
       skip: workspace.isLocalPreview
     });
 
@@ -143,18 +148,6 @@ export async function POST(
       repository: createSchedulerRepository({
         allowMemoryFallback: workspace.isLocalPreview
       })
-    });
-    await recordUsageForLimit({
-      workspaceId: workspace.id,
-      key: "scheduledPostsPerDay",
-      sourceId: result.scheduledJob.id,
-      metadata: {
-        platformVariantId,
-        provider: input.provider,
-        scheduledFor: input.scheduledFor,
-        userId: user.id
-      },
-      skip: workspace.isLocalPreview
     });
 
     return NextResponse.json(

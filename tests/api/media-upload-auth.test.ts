@@ -65,7 +65,7 @@ describe("media upload auth API", () => {
     expect(payload.signature).toBe(signUploadToken("private_test_key", payload.token, payload.expire));
   });
 
-  it("enforces and records media usage for workspace-backed upload auth", async () => {
+  it("atomically consumes media usage for workspace-backed upload auth", async () => {
     vi.resetModules();
     vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
     vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "1");
@@ -73,8 +73,7 @@ describe("media upload auth API", () => {
     vi.stubEnv("IMAGEKIT_PRIVATE_KEY", "private_test_key");
     vi.stubEnv("IMAGEKIT_URL_ENDPOINT", "https://ik.imagekit.io/test-account");
 
-    const ensureUsageAllowed = vi.fn(async () => null);
-    const recordUsageForLimit = vi.fn(async () => undefined);
+    const consumeUsageForLimit = vi.fn(async () => null);
 
     vi.doMock("@/lib/auth/current-user", () => ({
       getCurrentUser: vi.fn(async () => ({
@@ -95,8 +94,7 @@ describe("media upload auth API", () => {
     }));
     vi.doMock("@/lib/billing/usage", () => ({
       UsageLimitExceededError: class UsageLimitExceededError extends Error {},
-      ensureUsageAllowed,
-      recordUsageForLimit
+      consumeUsageForLimit
     }));
 
     const { GET } = await loadRoute();
@@ -105,19 +103,14 @@ describe("media upload auth API", () => {
 
     expect(response.status).toBe(200);
     expect(payload.metadata.provider).toBe("imagekit");
-    expect(ensureUsageAllowed).toHaveBeenCalledWith({
+    expect(consumeUsageForLimit).toHaveBeenCalledWith({
       workspaceId: "workspace_usage_1",
       key: "mediaTransformsPerMonth",
+      metadata: {
+        userId: "user_usage_1"
+      },
       skip: false
     });
-    expect(recordUsageForLimit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workspaceId: "workspace_usage_1",
-        key: "mediaTransformsPerMonth",
-        sourceId: payload.token,
-        skip: false
-      })
-    );
   });
 
   it("does not create upload auth when media usage is exhausted", async () => {
@@ -141,10 +134,9 @@ describe("media upload auth API", () => {
         super("Media transforms limit reached for the current plan.");
       }
     }
-    const ensureUsageAllowed = vi.fn(async () => {
+    const consumeUsageForLimit = vi.fn(async () => {
       throw new UsageLimitExceededError();
     });
-    const recordUsageForLimit = vi.fn();
     const createImageKitUploadAuth = vi.fn();
 
     vi.doMock("@/lib/auth/current-user", () => ({
@@ -166,8 +158,7 @@ describe("media upload auth API", () => {
     }));
     vi.doMock("@/lib/billing/usage", () => ({
       UsageLimitExceededError,
-      ensureUsageAllowed,
-      recordUsageForLimit
+      consumeUsageForLimit
     }));
     vi.doMock("@/lib/media/imagekit", () => ({
       ImageKitConfigurationError: class ImageKitConfigurationError extends Error {},
@@ -182,6 +173,5 @@ describe("media upload auth API", () => {
     expect(payload.error).toBe("Media transforms limit reached for the current plan.");
     expect(payload.usage).toEqual(metric);
     expect(createImageKitUploadAuth).not.toHaveBeenCalled();
-    expect(recordUsageForLimit).not.toHaveBeenCalled();
   });
 });

@@ -170,13 +170,12 @@ describe("schedule post API", () => {
     expect(createScheduledPost).not.toHaveBeenCalled();
   });
 
-  it("enforces and records scheduled post usage for workspace-backed users", async () => {
+  it("atomically consumes scheduled post usage for workspace-backed users", async () => {
     vi.resetModules();
     vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
     vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "");
 
-    const ensureUsageAllowed = vi.fn(async () => null);
-    const recordUsageForLimit = vi.fn(async () => undefined);
+    const consumeUsageForLimit = vi.fn(async () => null);
     const createScheduledPost = vi.fn(async () => ({
       scheduledJob: {
         id: "scheduled_usage_1",
@@ -210,8 +209,7 @@ describe("schedule post API", () => {
     }));
     vi.doMock("@/lib/billing/usage", () => ({
       UsageLimitExceededError: class UsageLimitExceededError extends Error {},
-      ensureUsageAllowed,
-      recordUsageForLimit
+      consumeUsageForLimit
     }));
     vi.doMock("@/lib/scheduler/create-scheduled-post", () => ({
       createScheduledPost,
@@ -233,19 +231,17 @@ describe("schedule post API", () => {
     );
 
     expect(response.status).toBe(201);
-    expect(ensureUsageAllowed).toHaveBeenCalledWith({
+    expect(consumeUsageForLimit).toHaveBeenCalledWith({
       workspaceId: "workspace_usage_1",
       key: "scheduledPostsPerDay",
+      metadata: {
+        platformVariantId: "variant_1",
+        provider: "mock",
+        scheduledFor: expect.any(String),
+        userId: "user_usage_1"
+      },
       skip: false
     });
-    expect(recordUsageForLimit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workspaceId: "workspace_usage_1",
-        key: "scheduledPostsPerDay",
-        sourceId: "scheduled_usage_1",
-        skip: false
-      })
-    );
   });
 
   it("does not schedule when scheduled post usage is exhausted", async () => {
@@ -269,10 +265,9 @@ describe("schedule post API", () => {
         super("Scheduled posts limit reached for the current plan.");
       }
     }
-    const ensureUsageAllowed = vi.fn(async () => {
+    const consumeUsageForLimit = vi.fn(async () => {
       throw new UsageLimitExceededError();
     });
-    const recordUsageForLimit = vi.fn();
     const createScheduledPost = vi.fn();
 
     vi.doMock("@/lib/auth/current-user", () => ({
@@ -297,8 +292,7 @@ describe("schedule post API", () => {
     }));
     vi.doMock("@/lib/billing/usage", () => ({
       UsageLimitExceededError,
-      ensureUsageAllowed,
-      recordUsageForLimit
+      consumeUsageForLimit
     }));
     vi.doMock("@/lib/scheduler/create-scheduled-post", () => ({
       createScheduledPost,
@@ -324,6 +318,5 @@ describe("schedule post API", () => {
     expect(payload.error).toBe("Scheduled posts limit reached for the current plan.");
     expect(payload.usage).toEqual(metric);
     expect(createScheduledPost).not.toHaveBeenCalled();
-    expect(recordUsageForLimit).not.toHaveBeenCalled();
   });
 });

@@ -13,7 +13,7 @@ const toneAccent = {
   community: "bg-[var(--color-community)]",
   premium: "bg-[var(--color-premium)]",
   success: "bg-[var(--color-success)]",
-  neutral: "bg-gray-300"
+  neutral: "bg-[var(--color-neutral)]"
 };
 
 export function StatCard({ label, value, detail, tone = "primary" }: StatCardProps) {

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { mockMediaAssets } from "@/lib/media/mock-assets";
 import type { MediaAsset } from "@/lib/media/types";
 
 const updateEventName = "automated-content:media-library-updated";
@@ -28,7 +27,7 @@ function uniqueAssets(assets: MediaAsset[]) {
 
 function loadAssets() {
   if (!mediaAssets) {
-    mediaAssets = mockMediaAssets;
+    mediaAssets = [];
   }
 
   return mediaAssets;

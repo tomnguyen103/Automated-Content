@@ -124,6 +124,28 @@ describe("media assets API", () => {
     expect(payload.error).toBe("Invalid media asset payload.");
   });
 
+  it("deduplicates repeated asset ids before saving", async () => {
+    const { POST, clearMediaAssetsForTests } = await loadMediaAssetRoute();
+    clearMediaAssetsForTests();
+
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/media/assets", {
+        method: "POST",
+        body: JSON.stringify({
+          assets: [sampleAsset, { ...sampleAsset, name: "Duplicate route asset" }]
+        })
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(payload.assets).toHaveLength(1);
+    expect(payload.assets[0]).toMatchObject({
+      id: sampleAsset.id,
+      name: sampleAsset.name
+    });
+  });
+
   it("returns a conflict when an asset id belongs to another workspace", async () => {
     vi.resetModules();
     vi.stubEnv("AUTH_LOCAL_PREVIEW", "1");

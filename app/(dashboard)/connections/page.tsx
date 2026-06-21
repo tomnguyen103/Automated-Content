@@ -142,7 +142,7 @@ function ProviderSection({
                 </div>
               ))}
             </div>
-            {provider.key !== "mock" ? (
+            {provider.implementationStatus === "stub" ? (
               <div className="flex items-start gap-2 border-t border-[var(--color-border)] px-5 py-4 text-sm text-[var(--color-text-muted)]">
                 <CircleAlert size={16} className="mt-0.5 shrink-0 text-[var(--color-warning)]" aria-hidden="true" />
                 This adapter is scaffold-only. Add the provider implementation and credentials before live publishing can run.

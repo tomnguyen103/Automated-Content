@@ -25,4 +25,11 @@ describe("next config", () => {
 
     expect(nextConfig.allowedDevOrigins).toEqual(["127.0.0.1"]);
   });
+
+  it("deduplicates configured dev origins", async () => {
+    vi.stubEnv("NEXT_ALLOWED_DEV_ORIGINS", "127.0.0.1,preview.local");
+    const { default: nextConfig } = await import("@/next.config");
+
+    expect(nextConfig.allowedDevOrigins).toEqual(["127.0.0.1", "preview.local"]);
+  });
 });

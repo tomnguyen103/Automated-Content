@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import {
-  ensureUsageAllowed,
-  recordUsageForLimit,
+  consumeUsageForLimit,
   UsageLimitExceededError
 } from "@/lib/billing/usage";
 import {
@@ -25,9 +24,12 @@ export async function GET() {
     const skipUsage = workspace.isLocalPreview;
     const forceLocalPreviewMock = workspace.isLocalPreview && process.env.PLAYWRIGHT_AUTH_LOCAL_PREVIEW === "1";
 
-    await ensureUsageAllowed({
+    await consumeUsageForLimit({
       workspaceId: workspace.id,
       key: "mediaTransformsPerMonth",
+      metadata: {
+        userId: user.id
+      },
       skip: skipUsage
     });
 
@@ -42,16 +44,6 @@ export async function GET() {
             IMAGEKIT_URL_ENDPOINT: undefined
           }
         : undefined
-    });
-    await recordUsageForLimit({
-      workspaceId: workspace.id,
-      key: "mediaTransformsPerMonth",
-      sourceId: uploadAuth.token,
-      metadata: {
-        userId: user.id,
-        provider: uploadAuth.metadata.provider
-      },
-      skip: skipUsage
     });
 
     return NextResponse.json(uploadAuth);

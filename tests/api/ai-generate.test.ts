@@ -154,13 +154,12 @@ describe("AI generate API", () => {
     expect(payload.error).toBe("Invalid JSON payload.");
   });
 
-  it("enforces and records AI generation usage for workspace-backed users", async () => {
+  it("atomically consumes AI generation usage for workspace-backed users", async () => {
     vi.resetModules();
     vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
     vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "");
 
-    const ensureUsageAllowed = vi.fn(async () => null);
-    const recordUsageForLimit = vi.fn(async () => undefined);
+    const consumeUsageForLimit = vi.fn(async () => null);
     const runContentWorkflow = vi.fn(async () => ({
       run: { id: "run_usage_1", status: "succeeded" },
       workflow: { runId: "run_usage_1", status: "succeeded" },
@@ -187,8 +186,7 @@ describe("AI generate API", () => {
     }));
     vi.doMock("@/lib/billing/usage", () => ({
       UsageLimitExceededError: class UsageLimitExceededError extends Error {},
-      ensureUsageAllowed,
-      recordUsageForLimit
+      consumeUsageForLimit
     }));
     vi.doMock("@/lib/agents/langchain/storage", () => ({
       createAgentStorage: vi.fn(() => ({ mocked: "storage" }))
@@ -216,19 +214,15 @@ describe("AI generate API", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(ensureUsageAllowed).toHaveBeenCalledWith({
+    expect(consumeUsageForLimit).toHaveBeenCalledWith({
       workspaceId: "workspace_usage_1",
       key: "aiGenerationsPerMonth",
+      metadata: {
+        platforms: ["linkedin"],
+        userId: "user_usage_1"
+      },
       skip: false
     });
-    expect(recordUsageForLimit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workspaceId: "workspace_usage_1",
-        key: "aiGenerationsPerMonth",
-        sourceId: "run_usage_1",
-        skip: false
-      })
-    );
     expect(runContentWorkflow).toHaveBeenCalledOnce();
   });
 
@@ -253,10 +247,9 @@ describe("AI generate API", () => {
         super("AI generations limit reached for the current plan.");
       }
     }
-    const ensureUsageAllowed = vi.fn(async () => {
+    const consumeUsageForLimit = vi.fn(async () => {
       throw new UsageLimitExceededError();
     });
-    const recordUsageForLimit = vi.fn();
     const runContentWorkflow = vi.fn();
 
     vi.doMock("@/lib/auth/current-user", () => ({
@@ -278,8 +271,7 @@ describe("AI generate API", () => {
     }));
     vi.doMock("@/lib/billing/usage", () => ({
       UsageLimitExceededError,
-      ensureUsageAllowed,
-      recordUsageForLimit
+      consumeUsageForLimit
     }));
     vi.doMock("@/lib/agents/graphs/content-workflow", () => ({
       ContentWorkflowExecutionError: class ContentWorkflowExecutionError extends Error {},
@@ -305,7 +297,6 @@ describe("AI generate API", () => {
     expect(payload.error).toBe("AI generations limit reached for the current plan.");
     expect(payload.usage).toEqual(metric);
     expect(runContentWorkflow).not.toHaveBeenCalled();
-    expect(recordUsageForLimit).not.toHaveBeenCalled();
   });
 
   it("returns a 404 when an approval checkpoint is missing", async () => {

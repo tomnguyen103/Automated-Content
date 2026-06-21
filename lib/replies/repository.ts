@@ -1128,33 +1128,61 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
       });
     },
     async failClaimedApproval({ workspaceId, attemptId, error, now = new Date() }) {
-      const [updated] = await db
-        .update(replyAttempts)
-        .set({
-          status: "failed",
-          error,
-          updatedAt: now
-        })
-        .where(
-          and(
-            eq(replyAttempts.workspaceId, workspaceId),
-            eq(replyAttempts.id, attemptId),
-            eq(replyAttempts.status, "approved")
+      await db.transaction(async (tx) => {
+        const [existing] = await tx
+          .select({
+            audit: replyAttempts.audit,
+            commentEventId: replyAttempts.commentEventId
+          })
+          .from(replyAttempts)
+          .where(
+            and(
+              eq(replyAttempts.workspaceId, workspaceId),
+              eq(replyAttempts.id, attemptId),
+              eq(replyAttempts.status, "approved")
+            )
           )
-        )
-        .returning({ commentEventId: replyAttempts.commentEventId });
+          .limit(1);
 
-      if (!updated) {
-        return;
-      }
+        if (!existing) {
+          return;
+        }
 
-      await db
-        .update(commentEvents)
-        .set({
-          status: "failed",
-          updatedAt: now
-        })
-        .where(and(eq(commentEvents.workspaceId, workspaceId), eq(commentEvents.id, updated.commentEventId)));
+        const currentAudit = existing.audit as ReplyAuditEntry;
+        const audit: ReplyAuditEntry = {
+          ...currentAudit,
+          notes: [...currentAudit.notes, `Approved reply failed before provider confirmation: ${error}`]
+        };
+
+        const [updated] = await tx
+          .update(replyAttempts)
+          .set({
+            status: "failed",
+            error,
+            audit,
+            updatedAt: now
+          })
+          .where(
+            and(
+              eq(replyAttempts.workspaceId, workspaceId),
+              eq(replyAttempts.id, attemptId),
+              eq(replyAttempts.status, "approved")
+            )
+          )
+          .returning({ commentEventId: replyAttempts.commentEventId });
+
+        if (!updated) {
+          return;
+        }
+
+        await tx
+          .update(commentEvents)
+          .set({
+            status: "failed",
+            updatedAt: now
+          })
+          .where(and(eq(commentEvents.workspaceId, workspaceId), eq(commentEvents.id, updated.commentEventId)));
+      });
     }
   };
 

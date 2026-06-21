@@ -9,8 +9,7 @@ import { createContentWorkflowCheckpointStore } from "@/lib/agents/graphs/checkp
 import { contentAgentInputSchema } from "@/lib/agents/schemas/content-pack";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import {
-  ensureUsageAllowed,
-  recordUsageForLimit,
+  consumeUsageForLimit,
   UsageLimitExceededError
 } from "@/lib/billing/usage";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
@@ -34,9 +33,13 @@ export async function POST(request: NextRequest) {
   try {
     const input = contentAgentInputSchema.parse(body);
     const workspace = await resolvePersonalWorkspaceForUser(user);
-    await ensureUsageAllowed({
+    await consumeUsageForLimit({
       workspaceId: workspace.id,
       key: "aiGenerationsPerMonth",
+      metadata: {
+        platforms: input.platforms,
+        userId: user.id
+      },
       skip: workspace.isLocalPreview
     });
     const storage = createAgentStorage({
@@ -50,17 +53,6 @@ export async function POST(request: NextRequest) {
       workspaceId: workspace.id,
       storage,
       checkpoints
-    });
-    await recordUsageForLimit({
-      workspaceId: workspace.id,
-      key: "aiGenerationsPerMonth",
-      sourceId: result.run.id,
-      metadata: {
-        contentPackId: result.contentPack?.id ?? null,
-        platforms: input.platforms,
-        userId: user.id
-      },
-      skip: workspace.isLocalPreview
     });
 
     return NextResponse.json({

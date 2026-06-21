@@ -161,8 +161,8 @@ export async function saveMediaAssetsForWorkspace({
   assets: MediaAsset[];
   allowMemoryFallback?: boolean;
 }) {
-  const normalizedAssets = assets.map((asset) =>
-    normalizeAssetForWorkspace({ asset, uploadedByUserId, workspaceId })
+  const normalizedAssets = uniqueAssets(
+    assets.map((asset) => normalizeAssetForWorkspace({ asset, uploadedByUserId, workspaceId }))
   );
 
   if (allowMemoryFallback || !isDatabaseConfigured) {

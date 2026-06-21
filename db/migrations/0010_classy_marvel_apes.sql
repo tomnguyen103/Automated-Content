@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "usage_ledger_workspace_type_source_idx" ON "usage_ledger" USING btree ("workspace_id","type","source_id") WHERE "usage_ledger"."source_id" is not null;

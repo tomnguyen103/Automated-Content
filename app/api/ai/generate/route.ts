@@ -8,6 +8,10 @@ import {
 import { createContentWorkflowCheckpointStore } from "@/lib/agents/graphs/checkpoints";
 import { contentAgentInputSchema } from "@/lib/agents/schemas/content-pack";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import {
+  consumeUsageForLimit,
+  UsageLimitExceededError
+} from "@/lib/billing/usage";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
 
 export const runtime = "nodejs";
@@ -29,6 +33,15 @@ export async function POST(request: NextRequest) {
   try {
     const input = contentAgentInputSchema.parse(body);
     const workspace = await resolvePersonalWorkspaceForUser(user);
+    await consumeUsageForLimit({
+      workspaceId: workspace.id,
+      key: "aiGenerationsPerMonth",
+      metadata: {
+        platforms: input.platforms,
+        userId: user.id
+      },
+      skip: workspace.isLocalPreview
+    });
     const storage = createAgentStorage({
       allowMemoryFallback: workspace.isLocalPreview
     });
@@ -67,6 +80,16 @@ export async function POST(request: NextRequest) {
           workflow: error.workflow
         },
         { status: 500 }
+      );
+    }
+
+    if (error instanceof UsageLimitExceededError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          usage: error.metric
+        },
+        { status: 429 }
       );
     }
 

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb, type DatabaseClient } from "@/db";
 import {
   autoReplyRules,
@@ -76,6 +76,13 @@ export type ReplyRepository = {
   listRecentAttempts: (workspaceId: string) => Promise<RecentReplyAttempt[]>;
   persistWorkflowResult: (input: PersistCommentReplyWorkflowInput) => Promise<void>;
   getPendingApproval: (workspaceId: string, attemptId: string) => Promise<PendingReplyApproval | null>;
+  claimPendingApproval: (input: {
+    workspaceId: string;
+    attemptId: string;
+    userId: string;
+    replyText: string;
+    now?: Date;
+  }) => Promise<PendingReplyApproval | null>;
   approvePendingAttempt: (input: {
     workspaceId: string;
     attemptId: string;
@@ -84,6 +91,12 @@ export type ReplyRepository = {
     providerReply: ProviderReplyResult;
     now?: Date;
   }) => Promise<boolean>;
+  failClaimedApproval: (input: {
+    workspaceId: string;
+    attemptId: string;
+    error: string;
+    now?: Date;
+  }) => Promise<void>;
 };
 
 type StoredReplyAttempt = {
@@ -494,10 +507,43 @@ function createMemoryReplyRepository({ seedLocalPreview = false } = {}): ReplyRe
         comment
       };
     },
+    async claimPendingApproval({ workspaceId, attemptId, userId, replyText, now = new Date() }) {
+      const pending = await this.getPendingApproval(workspaceId, attemptId);
+
+      if (!pending) {
+        return null;
+      }
+
+      const approved = approveReplySuggestion({
+        item: pending.approval,
+        replyText,
+        userId,
+        now
+      });
+      const nextAttempt = {
+        ...pending.attempt,
+        status: "approved" as const,
+        replyText: approved.suggestedReply,
+        approvedByUserId: userId,
+        updatedAt: now.toISOString(),
+        audit: {
+          ...pending.attempt.audit,
+          notes: [...pending.attempt.audit.notes, "Suggestion was approved and provider send is starting."]
+        }
+      };
+
+      attempts.set(key(workspaceId, attemptId), nextAttempt);
+
+      return {
+        ...pending,
+        approval: approved,
+        attempt: nextAttempt
+      };
+    },
     async approvePendingAttempt({ workspaceId, attemptId, userId, replyText, providerReply, now = new Date() }) {
       const attempt = attempts.get(key(workspaceId, attemptId));
 
-      if (!attempt || attempt.status !== "awaiting_approval") {
+      if (!attempt || !["approved", "awaiting_approval"].includes(attempt.status)) {
         return false;
       }
 
@@ -526,6 +572,33 @@ function createMemoryReplyRepository({ seedLocalPreview = false } = {}): ReplyRe
       }
 
       return true;
+    },
+    async failClaimedApproval({ workspaceId, attemptId, error, now = new Date() }) {
+      const attempt = attempts.get(key(workspaceId, attemptId));
+
+      if (!attempt || attempt.status !== "approved") {
+        return;
+      }
+
+      attempts.set(key(workspaceId, attemptId), {
+        ...attempt,
+        status: "failed",
+        error,
+        updatedAt: now.toISOString(),
+        audit: {
+          ...attempt.audit,
+          notes: [...attempt.audit.notes, `Approved reply failed before provider confirmation: ${error}`]
+        }
+      });
+
+      const comment = comments.get(key(workspaceId, attempt.commentId));
+
+      if (comment) {
+        comments.set(key(workspaceId, comment.id), {
+          ...comment,
+          status: "failed"
+        });
+      }
     },
     clear() {
       rules.clear();
@@ -891,11 +964,11 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
         comment
       };
     },
-    async approvePendingAttempt({ workspaceId, attemptId, userId, replyText, providerReply, now = new Date() }) {
+    async claimPendingApproval({ workspaceId, attemptId, userId, replyText, now = new Date() }) {
       const pending = await repository.getPendingApproval(workspaceId, attemptId);
 
       if (!pending) {
-        return false;
+        return null;
       }
 
       const approved = approveReplySuggestion({
@@ -906,8 +979,115 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
       });
       const audit = {
         ...pending.attempt.audit,
+        notes: [...pending.attempt.audit.notes, "Suggestion was approved and provider send is starting."]
+      };
+      const [updated] = await db
+        .update(replyAttempts)
+        .set({
+          status: "approved",
+          replyText: approved.suggestedReply,
+          approvedByUserId: userId,
+          audit,
+          updatedAt: now
+        })
+        .where(
+          and(
+            eq(replyAttempts.workspaceId, workspaceId),
+            eq(replyAttempts.id, attemptId),
+            eq(replyAttempts.status, "awaiting_approval")
+          )
+        )
+        .returning({ id: replyAttempts.id });
+
+      if (!updated) {
+        return null;
+      }
+
+      return {
+        ...pending,
+        approval: approved,
+        attempt: {
+          ...pending.attempt,
+          status: "approved",
+          replyText: approved.suggestedReply,
+          approvedByUserId: userId,
+          updatedAt: now.toISOString(),
+          audit
+        }
+      };
+    },
+    async approvePendingAttempt({ workspaceId, attemptId, userId, replyText, providerReply, now = new Date() }) {
+      const [row] = await db
+        .select({
+          attempt: replyAttempts,
+          comment: commentEvents
+        })
+        .from(replyAttempts)
+        .innerJoin(
+          commentEvents,
+          and(
+            eq(replyAttempts.workspaceId, commentEvents.workspaceId),
+            eq(replyAttempts.commentEventId, commentEvents.id)
+          )
+        )
+        .where(
+          and(
+            eq(replyAttempts.workspaceId, workspaceId),
+            eq(replyAttempts.id, attemptId),
+            inArray(replyAttempts.status, ["approved", "awaiting_approval"])
+          )
+        )
+        .limit(1);
+
+      if (!row) {
+        return false;
+      }
+
+      const metadata = toJsonRecord(row.comment.metadata);
+      const comment: InboxComment = {
+        id: row.comment.id,
+        provider: row.comment.provider,
+        providerCommentId: row.comment.providerCommentId,
+        providerPostId: row.comment.providerPostId ?? undefined,
+        connectedAccountId: row.comment.connectedAccountId ?? undefined,
+        platform: row.comment.platform,
+        authorName: row.comment.authorDisplayName ?? "Unknown commenter",
+        authorProviderId: row.comment.authorProviderId ?? undefined,
+        text: row.comment.text,
+        postTitle: readStringMetadata(metadata, "postTitle"),
+        postBody: readStringMetadata(metadata, "postBody"),
+        receivedAt: row.comment.receivedAt.toISOString(),
+        status: row.comment.status === "matched" ? "new" : row.comment.status
+      };
+      const attempt: StoredReplyAttempt = {
+        id: row.attempt.id,
+        workspaceId: row.attempt.workspaceId,
+        commentId: row.attempt.commentEventId,
+        ruleId: row.attempt.ruleId ?? undefined,
+        provider: row.attempt.provider,
+        connectedAccountId: row.attempt.connectedAccountId ?? undefined,
+        status: row.attempt.status,
+        replyText: row.attempt.replyText,
+        approvalRequired: row.attempt.approvalRequired,
+        approvedByUserId: row.attempt.approvedByUserId ?? undefined,
+        providerReplyId: row.attempt.providerReplyId ?? undefined,
+        providerResponse: row.attempt.providerResponse ?? undefined,
+        audit: row.attempt.audit as ReplyAuditEntry,
+        error: row.attempt.error ?? undefined,
+        sentAt: row.attempt.sentAt?.toISOString(),
+        createdAt: row.attempt.createdAt.toISOString(),
+        updatedAt: row.attempt.updatedAt.toISOString()
+      };
+      const approved = approveReplySuggestion({
+        item: toApprovalItem(attempt, comment),
+        replyText,
+        userId,
+        now
+      });
+      const audit = {
+        ...attempt.audit,
         providerReplyId: providerReply.providerReplyId,
-        notes: [...pending.attempt.audit.notes, "Suggestion was approved by a user before sending."]
+        notes: [...attempt.audit.notes, "Suggestion was approved by a user before sending."]
       };
 
       return db.transaction(async (tx) => {
@@ -927,7 +1107,7 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
             and(
               eq(replyAttempts.workspaceId, workspaceId),
               eq(replyAttempts.id, attemptId),
-              eq(replyAttempts.status, "awaiting_approval")
+              inArray(replyAttempts.status, ["approved", "awaiting_approval"])
             )
           )
           .returning({ id: replyAttempts.id });
@@ -942,9 +1122,66 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
             status: "replied",
             updatedAt: now
           })
-          .where(and(eq(commentEvents.workspaceId, workspaceId), eq(commentEvents.id, pending.comment.id)));
+          .where(and(eq(commentEvents.workspaceId, workspaceId), eq(commentEvents.id, comment.id)));
 
         return true;
+      });
+    },
+    async failClaimedApproval({ workspaceId, attemptId, error, now = new Date() }) {
+      await db.transaction(async (tx) => {
+        const [existing] = await tx
+          .select({
+            audit: replyAttempts.audit,
+            commentEventId: replyAttempts.commentEventId
+          })
+          .from(replyAttempts)
+          .where(
+            and(
+              eq(replyAttempts.workspaceId, workspaceId),
+              eq(replyAttempts.id, attemptId),
+              eq(replyAttempts.status, "approved")
+            )
+          )
+          .limit(1);
+
+        if (!existing) {
+          return;
+        }
+
+        const currentAudit = existing.audit as ReplyAuditEntry;
+        const audit: ReplyAuditEntry = {
+          ...currentAudit,
+          notes: [...currentAudit.notes, `Approved reply failed before provider confirmation: ${error}`]
+        };
+
+        const [updated] = await tx
+          .update(replyAttempts)
+          .set({
+            status: "failed",
+            error,
+            audit,
+            updatedAt: now
+          })
+          .where(
+            and(
+              eq(replyAttempts.workspaceId, workspaceId),
+              eq(replyAttempts.id, attemptId),
+              eq(replyAttempts.status, "approved")
+            )
+          )
+          .returning({ commentEventId: replyAttempts.commentEventId });
+
+        if (!updated) {
+          return;
+        }
+
+        await tx
+          .update(commentEvents)
+          .set({
+            status: "failed",
+            updatedAt: now
+          })
+          .where(and(eq(commentEvents.workspaceId, workspaceId), eq(commentEvents.id, updated.commentEventId)));
       });
     }
   };

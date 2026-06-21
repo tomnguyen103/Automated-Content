@@ -193,7 +193,10 @@ export const usageLedger = pgTable(
   (table) => [
     check("usage_ledger_quantity_positive_check", sql`${table.quantity} > 0`),
     index("usage_ledger_workspace_type_idx").on(table.workspaceId, table.type),
-    index("usage_ledger_occurred_at_idx").on(table.occurredAt)
+    index("usage_ledger_occurred_at_idx").on(table.occurredAt),
+    uniqueIndex("usage_ledger_workspace_type_source_idx")
+      .on(table.workspaceId, table.type, table.sourceId)
+      .where(sql`${table.sourceId} is not null`)
   ]
 );
 
@@ -640,6 +643,31 @@ export const workflowCheckpoints = pgTable(
   ]
 );
 
+export const n8nEvents = pgTable(
+  "n8n_events",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id"),
+    direction: text("direction").notNull(),
+    eventType: text("event_type"),
+    callbackId: text("callback_id"),
+    workflow: text("workflow"),
+    status: text("status").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().default({}).notNull(),
+    responseStatus: integer("response_status"),
+    error: text("error"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    index("n8n_events_workspace_idx").on(table.workspaceId),
+    index("n8n_events_event_type_idx").on(table.eventType),
+    index("n8n_events_callback_idx").on(table.callbackId),
+    index("n8n_events_status_idx").on(table.status)
+  ]
+);
+
 export type User = typeof users.$inferSelect;
 export type Workspace = typeof workspaces.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
@@ -658,3 +686,4 @@ export type CommentEvent = typeof commentEvents.$inferSelect;
 export type AutoReplyRuleRow = typeof autoReplyRules.$inferSelect;
 export type ReplyAttempt = typeof replyAttempts.$inferSelect;
 export type WorkflowCheckpoint = typeof workflowCheckpoints.$inferSelect;
+export type N8nEvent = typeof n8nEvents.$inferSelect;

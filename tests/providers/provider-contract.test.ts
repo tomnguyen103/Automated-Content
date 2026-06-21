@@ -16,6 +16,7 @@ describe("provider adapter contract", () => {
 
     for (const provider of providerAdapters) {
       const capabilities = await provider.validateCapabilities(providerContext);
+      expect(["mock", "stub", "live"]).toContain(provider.implementationStatus);
       expect(Object.keys(capabilities)).toEqual([...providerCapabilities]);
 
       for (const capability of providerCapabilities) {
@@ -74,7 +75,8 @@ describe("provider adapter contract", () => {
     expect(metrics.metrics.impressions).toBeGreaterThan(0);
   });
 
-  it("makes real-provider gaps explicit while keeping configured capabilities visible", async () => {
+  it("makes real-provider gaps explicit while keeping planned capabilities visible", async () => {
+    expect(metaProvider.implementationStatus).toBe("stub");
     expect(metaProvider.capabilities.carousel.supported).toBe(true);
     await expect(
       metaProvider.publish({

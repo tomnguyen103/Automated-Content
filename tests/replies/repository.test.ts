@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createReplyApprovalItem } from "@/lib/replies/approval";
 import { createReplyAuditEntry } from "@/lib/replies/audit";
-import { createMemoryReplyRepositoryForTests } from "@/lib/replies/repository";
+import {
+  createDatabaseReplyRepository,
+  createMemoryReplyRepositoryForTests
+} from "@/lib/replies/repository";
 
 const workspaceId = "00000000-0000-0000-0000-000000000001";
 
@@ -115,6 +118,24 @@ describe("reply repository", () => {
       logs: [expect.objectContaining({ id: "reply_attempt_approval", status: "awaiting_approval" })]
     });
 
+    const claimed = await repository.claimPendingApproval({
+      workspaceId,
+      attemptId: "reply_attempt_approval",
+      userId: "user_1",
+      replyText: "Thanks, Rina. A teammate will follow up.",
+      now: new Date("2026-06-20T12:01:00.000Z")
+    });
+    const duplicateClaim = await repository.claimPendingApproval({
+      workspaceId,
+      attemptId: "reply_attempt_approval",
+      userId: "user_1",
+      replyText: "Thanks again.",
+      now: new Date("2026-06-20T12:01:01.000Z")
+    });
+
+    expect(claimed?.attempt.status).toBe("approved");
+    expect(duplicateClaim).toBeNull();
+
     await repository.approvePendingAttempt({
       workspaceId,
       attemptId: "reply_attempt_approval",
@@ -132,6 +153,68 @@ describe("reply repository", () => {
     await expect(repository.getConsoleState(workspaceId)).resolves.toMatchObject({
       approvals: [],
       logs: [expect.objectContaining({ id: "reply_attempt_approval", status: "sent" })]
+    });
+  });
+
+  it("appends failure diagnostics to the DB audit trail for claimed approvals", async () => {
+    const updatePayloads: Array<Record<string, unknown>> = [];
+    const audit = createReplyAuditEntry({
+      action: "approval_required",
+      commentId: "comment_approval",
+      notes: ["Suggestion requires approval."],
+      platform: "linkedin",
+      replyText: "Thanks, Rina. A teammate will follow up.",
+      now: new Date("2026-06-20T12:00:00.000Z")
+    });
+    const tx = {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => [
+              {
+                audit,
+                commentEventId: "comment_approval"
+              }
+            ]
+          })
+        })
+      }),
+      update: () => ({
+        set: (payload: Record<string, unknown>) => {
+          updatePayloads.push(payload);
+
+          return {
+            where: () => ({
+              returning: async () => [{ commentEventId: "comment_approval" }]
+            })
+          };
+        }
+      })
+    };
+    const db = {
+      transaction: async (callback: (transaction: typeof tx) => Promise<void>) => callback(tx)
+    };
+    const repository = createDatabaseReplyRepository(db as never);
+
+    await repository.failClaimedApproval({
+      workspaceId,
+      attemptId: "reply_attempt_approval",
+      error: "Provider unavailable",
+      now: new Date("2026-06-20T12:03:00.000Z")
+    });
+
+    expect(updatePayloads[0]).toMatchObject({
+      status: "failed",
+      error: "Provider unavailable",
+      audit: expect.objectContaining({
+        notes: [
+          "Suggestion requires approval.",
+          "Approved reply failed before provider confirmation: Provider unavailable"
+        ]
+      })
+    });
+    expect(updatePayloads[1]).toMatchObject({
+      status: "failed"
     });
   });
 });

@@ -28,7 +28,7 @@ function getPublishHealth(snapshot: AnalyticsSnapshot) {
     return {
       value: "No data",
       detail: "Awaiting rows",
-      tone: "success" as const
+      tone: "neutral" as const
     };
   }
 

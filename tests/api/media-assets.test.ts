@@ -49,6 +49,7 @@ describe("media assets API", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.doUnmock("@/lib/media/assets");
     vi.resetModules();
   });
 
@@ -117,5 +118,42 @@ describe("media assets API", () => {
 
     expect(response.status).toBe(400);
     expect(payload.error).toBe("Invalid media asset payload.");
+  });
+
+  it("returns a conflict when an asset id belongs to another workspace", async () => {
+    vi.resetModules();
+    vi.stubEnv("AUTH_LOCAL_PREVIEW", "1");
+    vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "1");
+    vi.stubEnv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "");
+    vi.stubEnv("CLERK_SECRET_KEY", "");
+
+    class MediaAssetConflictError extends Error {
+      constructor() {
+        super("Media asset media_route_asset already belongs to a different workspace.");
+      }
+    }
+
+    vi.doMock("@/lib/media/assets", () => ({
+      MediaAssetConflictError,
+      clearMediaAssetsForTests: vi.fn(),
+      listMediaAssetsForWorkspace: vi.fn(),
+      saveMediaAssetsForWorkspace: vi.fn(async () => {
+        throw new MediaAssetConflictError();
+      })
+    }));
+
+    const { POST } = await loadMediaAssetRoute();
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/media/assets", {
+        method: "POST",
+        body: JSON.stringify({
+          assets: [sampleAsset]
+        })
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.error).toBe("Media asset media_route_asset already belongs to a different workspace.");
   });
 });

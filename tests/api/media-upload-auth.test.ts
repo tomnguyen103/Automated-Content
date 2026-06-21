@@ -68,7 +68,7 @@ describe("media upload auth API", () => {
   it("enforces and records media usage for workspace-backed upload auth", async () => {
     vi.resetModules();
     vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
-    vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "");
+    vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "1");
     vi.stubEnv("IMAGEKIT_PUBLIC_KEY", "public_test_key");
     vi.stubEnv("IMAGEKIT_PRIVATE_KEY", "private_test_key");
     vi.stubEnv("IMAGEKIT_URL_ENDPOINT", "https://ik.imagekit.io/test-account");

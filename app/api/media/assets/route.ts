@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import {
   listMediaAssetsForWorkspace,
+  MediaAssetConflictError,
   saveMediaAssetsForWorkspace
 } from "@/lib/media/assets";
 import { mediaAssetSchema } from "@/lib/media/types";
@@ -64,6 +65,10 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    if (error instanceof MediaAssetConflictError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
     }
 
     console.error("Unexpected media assets error", error);

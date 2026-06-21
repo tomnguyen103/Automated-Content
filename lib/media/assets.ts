@@ -1,6 +1,6 @@
 import "server-only";
 
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { mediaAssets, type MediaAssetRow } from "@/db/schema";
 import { isDatabaseConfigured } from "@/lib/env";
@@ -13,6 +13,13 @@ import {
 } from "@/lib/media/types";
 
 const memoryAssetsByWorkspace = new Map<string, MediaAsset[]>();
+
+export class MediaAssetConflictError extends Error {
+  constructor(message = "Media asset already belongs to a different workspace.") {
+    super(message);
+    this.name = "MediaAssetConflictError";
+  }
+}
 
 function uniqueAssets(assets: MediaAsset[]) {
   const seen = new Set<string>();
@@ -134,6 +141,20 @@ export async function saveMediaAssetsForWorkspace({
   }
 
   const now = new Date();
+  const assetIds = [...new Set(normalizedAssets.map((asset) => asset.id))];
+  const existingAssets = await getDb()
+    .select({
+      id: mediaAssets.id,
+      workspaceId: mediaAssets.workspaceId
+    })
+    .from(mediaAssets)
+    .where(inArray(mediaAssets.id, assetIds));
+  const conflictingAsset = existingAssets.find((asset) => asset.workspaceId !== workspaceId);
+
+  if (conflictingAsset) {
+    throw new MediaAssetConflictError(`Media asset ${conflictingAsset.id} already belongs to a different workspace.`);
+  }
+
   const rows = await getDb()
     .insert(mediaAssets)
     .values(
@@ -163,6 +184,7 @@ export async function saveMediaAssetsForWorkspace({
     )
     .onConflictDoUpdate({
       target: mediaAssets.id,
+      setWhere: eq(mediaAssets.workspaceId, workspaceId),
       set: {
         provider: sql`excluded.provider`,
         imagekitFileId: sql`excluded.imagekit_file_id`,
@@ -183,6 +205,10 @@ export async function saveMediaAssetsForWorkspace({
       }
     })
     .returning();
+
+  if (rows.length !== normalizedAssets.length) {
+    throw new MediaAssetConflictError("One or more media assets could not be saved for this workspace.");
+  }
 
   return rows.map(mediaAssetRowToAsset);
 }

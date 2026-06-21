@@ -22,8 +22,8 @@ export async function GET() {
 
   try {
     const workspace = await resolvePersonalWorkspaceForUser(user);
-    const forceMockUpload = process.env.PLAYWRIGHT_AUTH_LOCAL_PREVIEW === "1";
-    const skipUsage = workspace.isLocalPreview || forceMockUpload;
+    const skipUsage = workspace.isLocalPreview;
+    const forceLocalPreviewMock = workspace.isLocalPreview && process.env.PLAYWRIGHT_AUTH_LOCAL_PREVIEW === "1";
 
     await ensureUsageAllowed({
       workspaceId: workspace.id,
@@ -34,8 +34,8 @@ export async function GET() {
     const uploadAuth = createImageKitUploadAuth({
       workspaceId: workspace.id,
       userId: user.id,
-      allowMock: skipUsage,
-      config: forceMockUpload
+      allowMock: workspace.isLocalPreview,
+      config: forceLocalPreviewMock
         ? {
             IMAGEKIT_PRIVATE_KEY: undefined,
             IMAGEKIT_PUBLIC_KEY: undefined,

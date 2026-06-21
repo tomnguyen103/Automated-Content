@@ -96,19 +96,49 @@ function normalizeAssetForWorkspace({
   });
 }
 
-function fallbackAssetsForWorkspace(workspaceId: string) {
-  return uniqueAssets([...(memoryAssetsByWorkspace.get(workspaceId) ?? []), ...mockMediaAssets]);
+function mockAssetsForWorkspace({
+  uploadedByUserId,
+  workspaceId
+}: {
+  uploadedByUserId: string;
+  workspaceId: string;
+}) {
+  return mockMediaAssets.map((asset) =>
+    normalizeAssetForWorkspace({
+      asset,
+      uploadedByUserId,
+      workspaceId
+    })
+  );
+}
+
+function fallbackAssetsForWorkspace({
+  uploadedByUserId,
+  workspaceId
+}: {
+  uploadedByUserId: string;
+  workspaceId: string;
+}) {
+  return uniqueAssets([
+    ...(memoryAssetsByWorkspace.get(workspaceId) ?? []),
+    ...mockAssetsForWorkspace({ uploadedByUserId, workspaceId })
+  ]);
 }
 
 export async function listMediaAssetsForWorkspace({
   allowMemoryFallback = false,
+  fallbackUploadedByUserId = "local-preview-user",
   workspaceId
 }: {
   workspaceId: string;
   allowMemoryFallback?: boolean;
+  fallbackUploadedByUserId?: string;
 }) {
   if (allowMemoryFallback || !isDatabaseConfigured) {
-    return fallbackAssetsForWorkspace(workspaceId);
+    return fallbackAssetsForWorkspace({
+      uploadedByUserId: fallbackUploadedByUserId,
+      workspaceId
+    });
   }
 
   const rows = await getDb()
@@ -136,7 +166,16 @@ export async function saveMediaAssetsForWorkspace({
   );
 
   if (allowMemoryFallback || !isDatabaseConfigured) {
-    memoryAssetsByWorkspace.set(workspaceId, uniqueAssets([...normalizedAssets, ...fallbackAssetsForWorkspace(workspaceId)]));
+    memoryAssetsByWorkspace.set(
+      workspaceId,
+      uniqueAssets([
+        ...normalizedAssets,
+        ...fallbackAssetsForWorkspace({
+          uploadedByUserId,
+          workspaceId
+        })
+      ])
+    );
     return normalizedAssets;
   }
 

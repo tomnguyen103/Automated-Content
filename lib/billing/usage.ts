@@ -205,13 +205,23 @@ export async function recordUsage({
 
   const db = getDb();
 
-  await db.insert(usageLedger).values({
+  const insert = db.insert(usageLedger).values({
     workspaceId,
     type,
     quantity,
     sourceId,
     metadata
   });
+
+  if (sourceId) {
+    await insert.onConflictDoNothing({
+      target: [usageLedger.workspaceId, usageLedger.type, usageLedger.sourceId],
+      where: sql`${usageLedger.sourceId} is not null`
+    });
+    return;
+  }
+
+  await insert;
 }
 
 export async function getLedgerUsageTotal({

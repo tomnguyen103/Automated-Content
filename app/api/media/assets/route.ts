@@ -25,7 +25,8 @@ export async function GET() {
   const workspace = await resolvePersonalWorkspaceForUser(user);
   const assets = await listMediaAssetsForWorkspace({
     workspaceId: workspace.id,
-    allowMemoryFallback: workspace.isLocalPreview
+    allowMemoryFallback: workspace.isLocalPreview,
+    fallbackUploadedByUserId: user.id
   });
 
   return NextResponse.json({ assets });

@@ -193,7 +193,10 @@ export const usageLedger = pgTable(
   (table) => [
     check("usage_ledger_quantity_positive_check", sql`${table.quantity} > 0`),
     index("usage_ledger_workspace_type_idx").on(table.workspaceId, table.type),
-    index("usage_ledger_occurred_at_idx").on(table.occurredAt)
+    index("usage_ledger_occurred_at_idx").on(table.occurredAt),
+    uniqueIndex("usage_ledger_workspace_type_source_idx")
+      .on(table.workspaceId, table.type, table.sourceId)
+      .where(sql`${table.sourceId} is not null`)
   ]
 );
 

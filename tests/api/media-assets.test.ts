@@ -62,6 +62,10 @@ describe("media assets API", () => {
 
     expect(initialResponse.status).toBe(200);
     expect(initialPayload.assets.length).toBeGreaterThan(0);
+    expect(initialPayload.assets[0]).toMatchObject({
+      workspaceId: localPreviewWorkspaceId,
+      uploadedByUserId: "local-preview-user"
+    });
 
     const saveResponse = await POST(
       new NextRequest("http://localhost:3000/api/media/assets", {

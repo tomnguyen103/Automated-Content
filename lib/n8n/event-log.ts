@@ -23,8 +23,17 @@ const memoryEvents = new Map<string, N8nEventLogInput & { createdAt: Date; updat
 export async function recordN8nEvent(input: N8nEventLogInput) {
   const now = new Date();
   const row = {
-    ...input,
+    id: input.id,
+    workspaceId: input.workspaceId,
+    direction: input.direction,
+    eventType: input.eventType,
+    callbackId: input.callbackId,
+    workflow: input.workflow,
+    status: input.status,
     payload: input.payload ?? {},
+    responseStatus: input.responseStatus,
+    error: input.error,
+    occurredAt: input.occurredAt,
     updatedAt: now
   };
 

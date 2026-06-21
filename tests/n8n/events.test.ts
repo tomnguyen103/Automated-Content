@@ -122,6 +122,40 @@ describe("n8n event integration", () => {
     ]);
   });
 
+  it("clears stale failure details when an event retry succeeds", async () => {
+    const { eventLog } = await loadN8nModules();
+    eventLog.clearN8nEventsForTests();
+
+    await eventLog.recordN8nEvent({
+      id: "evt_retry",
+      workspaceId: "workspace_1",
+      direction: "outbound",
+      eventType: "publishing.post.failed",
+      status: "failed",
+      payload: { id: "evt_retry" },
+      responseStatus: 500,
+      error: "n8n unavailable"
+    });
+    await eventLog.recordN8nEvent({
+      id: "evt_retry",
+      workspaceId: "workspace_1",
+      direction: "outbound",
+      eventType: "publishing.post.failed",
+      status: "delivered",
+      payload: { id: "evt_retry" },
+      responseStatus: 202
+    });
+
+    expect(eventLog.listN8nEventsForTests()).toEqual([
+      expect.objectContaining({
+        id: "evt_retry",
+        status: "delivered",
+        responseStatus: 202,
+        error: undefined
+      })
+    ]);
+  });
+
   it("validates signed n8n callbacks", async () => {
     vi.stubEnv("N8N_WEBHOOK_SECRET", secret);
     const [{ POST }, eventLog] = await Promise.all([

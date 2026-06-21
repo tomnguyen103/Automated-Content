@@ -78,6 +78,20 @@
       "when": 1782001735240,
       "tag": "0010_classy_marvel_apes",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782084985959,
+      "tag": "0011_reflective_daredevil",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782085961586,
+      "tag": "0012_loose_captain_universe",
+      "breakpoints": true
     }
   ]
 }

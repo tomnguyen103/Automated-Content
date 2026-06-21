@@ -1,0 +1,2 @@
+CREATE TYPE "public"."agent_mission_type" AS ENUM('research_topics', 'content_pipeline', 'content_remix', 'auto_publish', 'comment_engagement', 'weekly_report');--> statement-breakpoint
+ALTER TABLE "agent_missions" ADD COLUMN "mission_type" "agent_mission_type" NOT NULL;

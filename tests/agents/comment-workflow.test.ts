@@ -154,6 +154,68 @@ describe("comment reply workflow", () => {
     });
   });
 
+  it("sends approval-required suggestions when autonomous mode clears confidence threshold", async () => {
+    const storage = createMemoryAgentStorage();
+    const repository = createMemoryReplyRepositoryForTests();
+    const provider = {
+      ...mockProvider,
+      replyToComment: vi.fn(mockProvider.replyToComment)
+    };
+    const usageEnforcer = vi.fn(async () => ({ allowed: true }));
+    const usageRecorder = vi.fn(async () => {});
+
+    const result = await runCommentReplyWorkflow(
+      createInput({
+        comment: {
+          id: "comment_3",
+          provider: "mock",
+          providerCommentId: "provider_comment_3",
+          platform: "facebook",
+          authorName: "Anika Cruz",
+          text: "Demo please, I want to show my team.",
+          receivedAt: "2026-06-20T12:02:00.000Z"
+        },
+        rules: []
+      }),
+      {
+        userId,
+        workspaceId,
+        storage,
+        repository,
+        provider,
+        usageEnforcer,
+        usageRecorder,
+        autonomous: {
+          enabled: true,
+          confidenceThreshold: 0.8
+        },
+        model: createCommentModel({
+          env: {
+            AI_PROVIDER: "gemini",
+            OPENAI_API_KEY: undefined,
+            GEMINI_API_KEY: undefined
+          },
+          model: "mock-gemini",
+          draftReply: async () => ({
+            replyDraft: "Thanks, Anika. A demo walkthrough is the best next step for your team.",
+            confidence: 0.91,
+            auditNotes: ["Mock suggestion can be sent autonomously."]
+          })
+        }),
+        now: () => new Date("2026-06-20T12:02:00.000Z")
+      }
+    );
+
+    expect(result.status).toBe("sent");
+    expect(result.reply.action).toBe("approval_required");
+    expect(result.approval).toBeNull();
+    expect(result.providerReply?.providerReplyId).toContain("mock_reply_");
+    expect(result.attempt.audit.notes).toContain("Autonomous reply approved at confidence 0.91 with threshold 0.80.");
+    expect(provider.replyToComment).toHaveBeenCalledOnce();
+    expect(usageEnforcer).toHaveBeenCalledOnce();
+    expect(usageRecorder).toHaveBeenCalledOnce();
+  });
+
   it("holds keyword replies for approval when usage enforcement denies send", async () => {
     const storage = createMemoryAgentStorage();
     const repository = createMemoryReplyRepositoryForTests();

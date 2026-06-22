@@ -32,7 +32,8 @@ export async function POST(
       const result = await runMissionWorkflow({
         workspaceId: serverContext.workspace.id,
         missionId: id,
-        repositories: serverContext.repositories
+        repositories: serverContext.repositories,
+        allowMemoryFallback: serverContext.workspace.isLocalPreview
       });
 
       return NextResponse.json({
@@ -55,7 +56,8 @@ export async function POST(
       const result = await runMissionWorkflow({
         workspaceId: serverContext.workspace.id,
         missionId: id,
-        repositories: serverContext.repositories
+        repositories: serverContext.repositories,
+        allowMemoryFallback: serverContext.workspace.isLocalPreview
       });
 
       return NextResponse.json({

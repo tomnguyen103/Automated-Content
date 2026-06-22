@@ -77,6 +77,10 @@ function updateTaskRun(
   };
 }
 
+function readOutputAgentRunId(output: Record<string, unknown>) {
+  return typeof output.agentRunId === "string" && output.agentRunId.trim() ? output.agentRunId : undefined;
+}
+
 function readString(input: Record<string, unknown>, key: string) {
   const value = input[key];
 
@@ -350,6 +354,7 @@ export async function runAgentMission({
         updateTaskRun(
           taskRun,
           {
+            agentRunId: readOutputAgentRunId(output) ?? taskRun.agentRunId,
             status: "succeeded",
             output,
             completedAt: timestamp(now)
@@ -421,7 +426,14 @@ export async function runAgentMission({
           taskCount: createdTasks.length,
           succeeded: createdTasks.filter((task) => task.status === "succeeded").length,
           skipped: createdTasks.filter((task) => task.status === "skipped").length,
-          failed: createdTasks.filter((task) => task.status === "failed").length
+          failed: createdTasks.filter((task) => task.status === "failed").length,
+          taskOutputs: createdTasks.map((task) => ({
+            id: task.id,
+            taskName: task.taskName,
+            status: task.status,
+            agentRunId: task.agentRunId,
+            output: task.output
+          }))
         }
       },
       now

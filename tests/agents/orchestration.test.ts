@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { agentRunSchema } from "@/lib/agents/schemas/agent-run";
+import { contentPackSchema } from "@/lib/agents/schemas/content-pack";
 import {
   agentAutonomyPolicySchema,
   agentMissionSchema,
@@ -21,6 +23,7 @@ import {
   resumeAgentMission,
   runAgentMission
 } from "@/lib/agents/orchestration/runner";
+import { createAutonomousMissionTaskExecutor } from "@/lib/agents/orchestration/executors";
 
 const workspaceId = "00000000-0000-0000-0000-000000000001";
 const otherWorkspaceId = "00000000-0000-0000-0000-000000000002";
@@ -399,5 +402,175 @@ describe("agent orchestration foundation", () => {
         emergencyPaused: false
       }
     });
+  });
+
+  it("runs autonomous content missions through content generation and scheduling executors", async () => {
+    const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
+    const seeded = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_1",
+      now: new Date(timestamp)
+    });
+    const coordinator = seeded.find((profile) => profile.role === "coordinator")!;
+    const contentPack = contentPackSchema.parse({
+      id: "pack_autonomous_1",
+      topic: "Autonomous content operations",
+      summary: "A compact content pack for autonomous scheduling.",
+      audience: "founders",
+      tone: "practical",
+      goal: "educate",
+      ideas: [
+        {
+          id: "idea_1",
+          title: "Make the workflow visible",
+          angle: "Show the checks before scaling",
+          audiencePromise: "Know what each agent did"
+        }
+      ],
+      captions: ["Make each autonomous handoff visible before raising caps."],
+      variants: [
+        {
+          id: "variant_linkedin_1",
+          platform: "linkedin",
+          title: "Autonomy with controls",
+          hook: "Autonomous agents need a visible control plane.",
+          body: "Give every mission a policy, a run log, and a schedule trail.",
+          cta: "Review your next mission before raising caps.",
+          hashtags: ["#AI", "#ContentOps"],
+          media: [],
+          mediaPrompt: "A clean control room dashboard.",
+          characterCount: 92,
+          policyStatus: "pass",
+          policyWarnings: []
+        }
+      ],
+      hashtags: ["#AI", "#ContentOps"],
+      ctaOptions: ["Review your next mission before raising caps."],
+      scheduleSuggestions: [
+        {
+          id: "schedule_linkedin_1",
+          platform: "linkedin",
+          scheduledFor: "2026-06-22T17:00:00.000Z",
+          timezone: "America/Chicago",
+          reason: "High-attention publishing window.",
+          confidence: 0.88
+        }
+      ],
+      warnings: [],
+      createdAt: timestamp,
+      metadata: {
+        provider: "gemini",
+        model: "mock-gemini",
+        traceId: "trace_content_1",
+        toolCallCount: 1
+      }
+    });
+    const run = agentRunSchema.parse({
+      id: "run_autonomous_content_1",
+      traceId: "trace_content_1",
+      status: "succeeded",
+      provider: "gemini",
+      model: "mock-gemini",
+      userId: "user_1",
+      workspaceId,
+      input: {
+        topic: contentPack.topic,
+        platforms: ["linkedin"]
+      },
+      output: contentPack,
+      toolCalls: [],
+      startedAt: timestamp,
+      completedAt: timestamp
+    });
+    const runContent = vi.fn(async () => ({
+      run,
+      contentPack,
+      draft: {
+        draftId: "draft_autonomous_1",
+        status: "saved" as const,
+        savedAt: timestamp
+      }
+    }));
+    const schedulePost = vi.fn(async ({ input }) => ({
+      scheduledJob: {
+        id: `job_${input.platformVariantId}`,
+        platformVariantId: input.platformVariantId,
+        provider: input.provider,
+        scheduledFor: input.scheduledFor
+      },
+      enqueue: {
+        status: "queued" as const,
+        queueJobId: `queue_${input.platformVariantId}`,
+        delayMs: 0
+      }
+    })) as never;
+    const createdAt = new Date(timestamp).toISOString();
+
+    await repositories.missions.save({
+      id: "mission_content_executor_1",
+      workspaceId,
+      createdByUserId: "user_1",
+      coordinatorProfileId: coordinator.id,
+      missionType: "content_remix",
+      title: "Autonomous content remix",
+      objective: "Generate and schedule a platform-ready remix.",
+      brief: "Create a durable draft and schedule it through provider queues.",
+      status: "queued",
+      priority: 80,
+      inputs: {
+        topic: "Autonomous content operations",
+        platforms: ["linkedin"]
+      },
+      context: {},
+      policy: agentAutonomyPolicySchema.parse({
+        autonomy: "full",
+        allowedActions: ["mission.run", "content.generate", "content.schedule"],
+        allowedToolScopes: ["mission.plan", "content.generate", "content.schedule"],
+        platformScope: ["linkedin"],
+        allowedProviders: ["linkedin"]
+      }),
+      requestedAt: createdAt,
+      createdAt,
+      updatedAt: createdAt
+    });
+
+    const result = await runAgentMission({
+      workspaceId,
+      missionId: "mission_content_executor_1",
+      repositories,
+      executeTask: createAutonomousMissionTaskExecutor({
+        allowMemoryFallback: true,
+        runContent,
+        schedulePost
+      }),
+      now: () => new Date(timestamp)
+    });
+
+    expect(result.mission.status).toBe("succeeded");
+    expect(result.tasks).toHaveLength(2);
+    expect(result.tasks[0]).toMatchObject({
+      status: "succeeded",
+      agentRunId: "run_autonomous_content_1"
+    });
+    expect(result.tasks[1].output).toMatchObject({
+      scheduledJobs: [
+        {
+          id: "job_variant_linkedin_1",
+          provider: "linkedin"
+        }
+      ]
+    });
+    expect(runContent).toHaveBeenCalledOnce();
+    expect(schedulePost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          platformVariantId: "variant_linkedin_1",
+          metadata: expect.objectContaining({
+            agentMissionId: "mission_content_executor_1",
+            autonomous: true
+          })
+        })
+      })
+    );
   });
 });

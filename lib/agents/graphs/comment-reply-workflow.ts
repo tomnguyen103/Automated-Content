@@ -60,6 +60,10 @@ export type RunCommentReplyWorkflowOptions = Omit<RunCommentAgentOptions, "works
   repository?: ReplyRepository;
   usageEnforcer?: AutoReplyUsageEnforcer;
   usageRecorder?: AutoReplyUsageRecorder;
+  autonomous?: {
+    enabled?: boolean;
+    confidenceThreshold?: number;
+  };
 };
 
 function createAttemptId() {
@@ -68,6 +72,14 @@ function createAttemptId() {
 
 function getProviderCommentId(input: CommentReplyInput) {
   return input.comment.providerCommentId ?? input.comment.id;
+}
+
+function canSendApprovalDraftAutonomously(reply: CommentReplyOutput, options: RunCommentReplyWorkflowOptions) {
+  if (!options.autonomous?.enabled || !reply.replyDraft || reply.safety.status === "blocked") {
+    return false;
+  }
+
+  return reply.confidence >= (options.autonomous.confidenceThreshold ?? 0.7);
 }
 
 function createAttempt({
@@ -139,7 +151,13 @@ export async function runCommentReplyWorkflow(
     return result;
   }
 
-  if (reply.action === "auto_reply" && reply.replyDraft) {
+  async function sendReplyDraft({ auditNotes = [] }: { auditNotes?: string[] } = {}) {
+    const replyDraft = reply.replyDraft;
+
+    if (!replyDraft) {
+      throw new Error("Reply draft is required before sending.");
+    }
+
     let usageAllowed = false;
     let usageReason = "Auto reply usage is not available.";
 
@@ -158,9 +176,9 @@ export async function runCommentReplyWorkflow(
         action: "failed",
         commentId: input.comment.id,
         match: matchedRule,
-        notes: [message],
+        notes: [...auditNotes, message],
         platform: input.comment.platform,
-        replyText: reply.replyDraft,
+        replyText: replyDraft,
         now: now()
       });
       const attempt = createAttempt({
@@ -188,9 +206,9 @@ export async function runCommentReplyWorkflow(
         action: "approval_required",
         commentId: input.comment.id,
         match: matchedRule,
-        notes: [usageReason],
+        notes: [...auditNotes, usageReason],
         platform: input.comment.platform,
-        replyText: reply.replyDraft,
+        replyText: replyDraft,
         now: now()
       });
       const attempt = createAttempt({
@@ -208,7 +226,7 @@ export async function runCommentReplyWorkflow(
         platform: input.comment.platform,
         authorName: input.comment.authorName,
         commentText: input.comment.text,
-        suggestedReply: reply.replyDraft,
+        suggestedReply: replyDraft,
         confidence: reply.confidence,
         auditNotes: audit.notes,
         now: new Date(attempt.createdAt)
@@ -231,7 +249,7 @@ export async function runCommentReplyWorkflow(
         workspaceId: options.workspaceId,
         connectedAccountId: input.comment.connectedAccountId,
         commentId: getProviderCommentId(input),
-        message: reply.replyDraft
+        message: replyDraft
       });
       let usageRecordError: string | null = null;
 
@@ -255,10 +273,13 @@ export async function runCommentReplyWorkflow(
         action: "sent",
         commentId: input.comment.id,
         match: matchedRule,
-        notes: usageRecordError ? [`Usage recording failed after provider send: ${usageRecordError}`] : [],
+        notes: [
+          ...auditNotes,
+          ...(usageRecordError ? [`Usage recording failed after provider send: ${usageRecordError}`] : [])
+        ],
         platform: input.comment.platform,
         providerReplyId: providerReply.providerReplyId,
-        replyText: reply.replyDraft,
+        replyText: replyDraft,
         now: providerReply.sentAt
       });
       const attempt = createAttempt({
@@ -285,9 +306,9 @@ export async function runCommentReplyWorkflow(
         action: "failed",
         commentId: input.comment.id,
         match: matchedRule,
-        notes: [message],
+        notes: [...auditNotes, message],
         platform: input.comment.platform,
-        replyText: reply.replyDraft,
+        replyText: replyDraft,
         now: now()
       });
       const attempt = createAttempt({
@@ -309,6 +330,18 @@ export async function runCommentReplyWorkflow(
         agent
       });
     }
+  }
+
+  if (reply.action === "auto_reply" && reply.replyDraft) {
+    return sendReplyDraft();
+  }
+
+  if (reply.action === "approval_required" && canSendApprovalDraftAutonomously(reply, options)) {
+    return sendReplyDraft({
+      auditNotes: [
+        `Autonomous reply approved at confidence ${reply.confidence.toFixed(2)} with threshold ${(options.autonomous?.confidenceThreshold ?? 0.7).toFixed(2)}.`
+      ]
+    });
   }
 
   if (reply.action === "approval_required" && reply.replyDraft) {

@@ -15,11 +15,22 @@ import {
   isProviderCompatibleWithPlatform
 } from "@/lib/providers/platform-compatibility";
 import { getProviderAdapter } from "@/lib/providers/registry";
+import {
+  evaluateProviderHealth,
+  isProviderHealthBlocking,
+  type ProviderHealthAccount
+} from "@/lib/providers/health";
 import type { PublishPostJobData } from "@/lib/scheduler/enqueue";
+import {
+  classifyPublishFailure,
+  PublishRecoveryError,
+  type PublishFailureRecovery
+} from "@/lib/scheduler/publish-recovery";
 
 const publishableJobStatuses = ["scheduled", "queued"] as const;
 
 type PublishJobRepository = ReturnType<typeof createPublishJobRepository>;
+type LoadedScheduledPost = NonNullable<Awaited<ReturnType<PublishJobRepository["loadScheduledPost"]>>>;
 
 function isPublishableJobStatus(status: ScheduledJob["status"]) {
   return publishableJobStatuses.some((publishableStatus) => publishableStatus === status);
@@ -35,6 +46,20 @@ function getErrorMessage(error: unknown) {
 
 function isLocalPreviewJob(job: ScheduledJob) {
   return job.metadata.localPreview === true;
+}
+
+function toHealthAccount(account: LoadedScheduledPost["account"]): ProviderHealthAccount | null {
+  if (!account) {
+    return null;
+  }
+
+  return {
+    id: account.id,
+    status: account.status,
+    scopes: account.scopes,
+    capabilities: account.capabilities,
+    lastValidatedAt: account.lastValidatedAt
+  };
 }
 
 export function createPublishJobRepository(db: DatabaseClient = getDb()) {
@@ -171,6 +196,7 @@ export function createPublishJobRepository(db: DatabaseClient = getDb()) {
       attemptId: string;
       errorCode: string;
       errorMessage: string;
+      recovery?: PublishFailureRecovery;
     }) {
       const now = new Date();
 
@@ -196,8 +222,88 @@ export function createPublishJobRepository(db: DatabaseClient = getDb()) {
           })
           .where(and(eq(scheduledJobs.workspaceId, workspaceId), eq(scheduledJobs.id, scheduledJobId)));
       });
+    },
+    async markPreflightFailed({
+      workspaceId,
+      scheduledJobId,
+      provider,
+      errorCode,
+      errorMessage
+    }: {
+      workspaceId: string;
+      scheduledJobId: string;
+      provider: PublishPostJobData["provider"];
+      errorCode: string;
+      errorMessage: string;
+      recovery?: PublishFailureRecovery;
+    }) {
+      const now = new Date();
+
+      await db.transaction(async (tx) => {
+        const [job] = await tx
+          .update(scheduledJobs)
+          .set({
+            status: "failed",
+            lockedAt: null,
+            failedAt: now,
+            updatedAt: now
+          })
+          .where(
+            and(
+              eq(scheduledJobs.workspaceId, workspaceId),
+              eq(scheduledJobs.id, scheduledJobId),
+              inArray(scheduledJobs.status, [...publishableJobStatuses])
+            )
+          )
+          .returning({ id: scheduledJobs.id });
+
+        if (!job) {
+          return;
+        }
+
+        await tx.insert(publishAttempts).values({
+          workspaceId,
+          scheduledJobId,
+          provider,
+          status: "failed",
+          errorCode,
+          errorMessage,
+          startedAt: now,
+          completedAt: now,
+          updatedAt: now
+        });
+      });
     }
   };
+}
+
+async function failPreflight({
+  code,
+  loaded,
+  message,
+  repository
+}: {
+  code: string;
+  loaded: NonNullable<Awaited<ReturnType<PublishJobRepository["loadScheduledPost"]>>>;
+  message: string;
+  repository: PublishJobRepository;
+}): Promise<never> {
+  const recovery = classifyPublishFailure({ errorCode: code, errorMessage: message });
+
+  await repository.markPreflightFailed({
+    workspaceId: loaded.job.workspaceId,
+    scheduledJobId: loaded.job.id,
+    provider: loaded.job.provider,
+    errorCode: code,
+    errorMessage: message,
+    recovery
+  });
+
+  throw new PublishRecoveryError({
+    code,
+    message,
+    recovery
+  });
 }
 
 export async function publishScheduledPostJob({
@@ -218,21 +324,39 @@ export async function publishScheduledPostJob({
   }
 
   if (loaded.job.provider !== data.provider) {
-    throw new Error(
-      `Scheduled job ${data.scheduledJobId} provider mismatch: expected ${loaded.job.provider}, received ${data.provider}.`
-    );
+    await failPreflight({
+      code: "provider_mismatch",
+      loaded,
+      message: `Scheduled job ${data.scheduledJobId} provider mismatch: expected ${loaded.job.provider}, received ${data.provider}.`,
+      repository
+    });
   }
 
   if (loaded.job.connectedAccountId && !loaded.account) {
-    throw new Error(`Connected account ${loaded.job.connectedAccountId} was not found for this workspace.`);
+    await failPreflight({
+      code: "account_not_ready",
+      loaded,
+      message: `Connected account ${loaded.job.connectedAccountId} was not found for this workspace.`,
+      repository
+    });
   }
 
   if (loaded.account && loaded.account.status !== "connected") {
-    throw new Error(`Connected account ${loaded.account.id} is not ready for publishing.`);
+    await failPreflight({
+      code: "account_not_ready",
+      loaded,
+      message: `Connected account ${loaded.account.id} is not ready for publishing.`,
+      repository
+    });
   }
 
   if (loaded.variant.policyStatus !== "pass") {
-    throw new Error(`Platform variant ${loaded.variant.id} is not approved for publishing.`);
+    await failPreflight({
+      code: "policy_block",
+      loaded,
+      message: `Platform variant ${loaded.variant.id} is not approved for publishing.`,
+      repository
+    });
   }
 
   if (
@@ -242,10 +366,32 @@ export async function publishScheduledPostJob({
       provider: loaded.job.provider
     })
   ) {
-    throw new Error(formatProviderPlatformError(loaded.job.provider, loaded.variant.platform));
+    await failPreflight({
+      code: "provider_capability_unsupported",
+      loaded,
+      message: formatProviderPlatformError(loaded.job.provider, loaded.variant.platform),
+      repository
+    });
   }
 
   const provider = getProviderAdapter(loaded.job.provider);
+  const providerHealth = evaluateProviderHealth({
+    adapter: provider,
+    allowMock: isLocalPreviewJob(loaded.job),
+    connectedAccount: toHealthAccount(loaded.account),
+    connectedAccountId: loaded.job.connectedAccountId,
+    requiredCapability: "scheduled_publish"
+  });
+
+  if (isProviderHealthBlocking(providerHealth)) {
+    await failPreflight({
+      code: providerHealth.status,
+      loaded,
+      message: providerHealth.blockingReason ?? `Provider ${loaded.job.provider} is not ready for publishing.`,
+      repository
+    });
+  }
+
   const attempt = await repository.startAttempt({
     ...data,
     provider: loaded.job.provider
@@ -284,12 +430,19 @@ export async function publishScheduledPostJob({
     };
   } catch (error) {
     const normalized = provider.normalizeError(error);
+    const recovery = classifyPublishFailure({
+      errorCode: normalized.code,
+      errorMessage: normalized.message || getErrorMessage(error),
+      retryable: normalized.retryable
+    });
+
     await repository.markFailed({
       workspaceId: loaded.job.workspaceId,
       scheduledJobId: loaded.job.id,
       attemptId: attempt.id,
       errorCode: normalized.code,
-      errorMessage: normalized.message || getErrorMessage(error)
+      errorMessage: normalized.message || getErrorMessage(error),
+      recovery
     });
 
     throw error;

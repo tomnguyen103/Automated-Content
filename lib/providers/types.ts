@@ -30,7 +30,8 @@ export type ProviderConnectionStatus =
   | "connected"
   | "requires_configuration"
   | "unsupported"
-  | "disconnected";
+  | "disconnected"
+  | "error";
 
 export type ProviderImplementationStatus = "mock" | "stub" | "live";
 

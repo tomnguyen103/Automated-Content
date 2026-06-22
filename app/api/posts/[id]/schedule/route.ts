@@ -14,6 +14,12 @@ import {
   formatProviderPlatformError,
   isProviderCompatibleWithPlatform
 } from "@/lib/providers/platform-compatibility";
+import {
+  evaluateProviderHealth,
+  isProviderHealthBlocking,
+  type ProviderHealthAccount
+} from "@/lib/providers/health";
+import { getProviderAdapter } from "@/lib/providers/registry";
 import { providerKeys, type ProviderKey } from "@/lib/providers/types";
 import {
   createScheduledPost,
@@ -64,7 +70,7 @@ async function loadPlatformVariantForWorkspace({
   return variant ?? null;
 }
 
-async function connectedAccountExistsForWorkspace({
+async function loadConnectedAccountForWorkspace({
   connectedAccountId,
   provider,
   workspaceId
@@ -72,17 +78,54 @@ async function connectedAccountExistsForWorkspace({
   connectedAccountId: string | null | undefined;
   provider: ProviderKey;
   workspaceId: string;
-}) {
+}): Promise<ProviderHealthAccount | null> {
   if (!connectedAccountId || !isDatabaseConfigured) {
-    return true;
+    return null;
   }
 
   const [account] = await getDb()
-    .select({ id: connectedAccounts.id })
+    .select({
+      id: connectedAccounts.id,
+      status: connectedAccounts.status,
+      scopes: connectedAccounts.scopes,
+      capabilities: connectedAccounts.capabilities,
+      lastValidatedAt: connectedAccounts.lastValidatedAt
+    })
     .from(connectedAccounts)
     .where(
       and(
         eq(connectedAccounts.id, connectedAccountId),
+        eq(connectedAccounts.workspaceId, workspaceId),
+        eq(connectedAccounts.provider, provider)
+      )
+    )
+    .limit(1);
+
+  return account ?? null;
+}
+
+async function loadDefaultConnectedAccountForWorkspace({
+  provider,
+  workspaceId
+}: {
+  provider: ProviderKey;
+  workspaceId: string;
+}): Promise<ProviderHealthAccount | null> {
+  if (!isDatabaseConfigured) {
+    return null;
+  }
+
+  const [account] = await getDb()
+    .select({
+      id: connectedAccounts.id,
+      status: connectedAccounts.status,
+      scopes: connectedAccounts.scopes,
+      capabilities: connectedAccounts.capabilities,
+      lastValidatedAt: connectedAccounts.lastValidatedAt
+    })
+    .from(connectedAccounts)
+    .where(
+      and(
         eq(connectedAccounts.workspaceId, workspaceId),
         eq(connectedAccounts.provider, provider),
         eq(connectedAccounts.status, "connected")
@@ -90,7 +133,7 @@ async function connectedAccountExistsForWorkspace({
     )
     .limit(1);
 
-  return Boolean(account);
+  return account ?? null;
 }
 
 export async function POST(
@@ -151,14 +194,38 @@ export async function POST(
       );
     }
 
-    const accountExists = await connectedAccountExistsForWorkspace({
-      connectedAccountId: input.connectedAccountId,
-      provider: input.provider,
-      workspaceId: workspace.id
+    const connectedAccount = input.connectedAccountId
+      ? await loadConnectedAccountForWorkspace({
+          connectedAccountId: input.connectedAccountId,
+          provider: input.provider,
+          workspaceId: workspace.id
+        })
+      : await loadDefaultConnectedAccountForWorkspace({
+          provider: input.provider,
+          workspaceId: workspace.id
+        });
+    const resolvedConnectedAccountId = connectedAccount?.id ?? input.connectedAccountId ?? null;
+
+    if (input.connectedAccountId && !connectedAccount && isDatabaseConfigured) {
+      return NextResponse.json({ error: "Connected account not found." }, { status: 404 });
+    }
+
+    const providerHealth = evaluateProviderHealth({
+      adapter: getProviderAdapter(input.provider),
+      allowMock: workspace.isLocalPreview,
+      connectedAccount,
+      connectedAccountId: resolvedConnectedAccountId,
+      requiredCapability: "scheduled_publish"
     });
 
-    if (!accountExists) {
-      return NextResponse.json({ error: "Connected account not found." }, { status: 404 });
+    if (isProviderHealthBlocking(providerHealth)) {
+      return NextResponse.json(
+        {
+          error: providerHealth.blockingReason ?? "Provider is not ready for scheduling.",
+          providerHealth
+        },
+        { status: 409 }
+      );
     }
 
     await consumeUsageForLimit({
@@ -178,7 +245,7 @@ export async function POST(
         workspaceId: workspace.id,
         platformVariantId,
         provider: input.provider,
-        connectedAccountId: input.connectedAccountId ?? null,
+        connectedAccountId: resolvedConnectedAccountId,
         scheduledFor,
         metadata: {
           ...input.metadata,
@@ -193,7 +260,8 @@ export async function POST(
     return NextResponse.json(
       {
         scheduledJob: result.scheduledJob,
-        enqueue: result.enqueue
+        enqueue: result.enqueue,
+        providerHealth
       },
       {
         status: result.enqueue.status === "queued" ? 201 : 202

@@ -111,7 +111,11 @@ describe("createScheduledPost", () => {
     expect(events).toEqual(["insert", "enqueue:20000000-0000-0000-0000-000000000001", "mark-failed"]);
     expect(result.enqueue).toEqual({
       status: "failed",
-      error: "Redis connection refused"
+      error: "Redis connection refused",
+      recovery: expect.objectContaining({
+        category: "queue_enqueue",
+        actions: ["retry", "reschedule"]
+      })
     });
     expect(result.scheduledJob.status).toBe("scheduled");
     expect(result.scheduledJob.enqueueStatus).toBe("failed");

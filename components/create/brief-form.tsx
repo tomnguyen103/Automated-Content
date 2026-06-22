@@ -5,7 +5,10 @@ import { FormEvent, useState } from "react";
 import { DraftEditor } from "@/components/create/draft-editor";
 import { GenerationTimeline } from "@/components/create/generation-timeline";
 import { PlatformTabs } from "@/components/create/platform-tabs";
-import { ReviewStep } from "@/components/create/review-step";
+import {
+  ReviewStep,
+  type ApprovedVariantScheduleResult
+} from "@/components/create/review-step";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type {
@@ -15,6 +18,8 @@ import type {
 import type { AgentRun } from "@/lib/agents/schemas/agent-run";
 import type { ContentPack } from "@/lib/agents/schemas/content-pack";
 import type { SocialPlatform } from "@/lib/agents/schemas/platform-variant";
+import { defaultProviderByPlatform } from "@/lib/providers/platform-compatibility";
+import type { ProviderKey } from "@/lib/providers/types";
 
 const platformOptions: Array<{ value: SocialPlatform; label: string }> = [
   { value: "linkedin", label: "LinkedIn" },
@@ -36,6 +41,19 @@ type GenerateResponse = {
 
 type WorkflowPayload = Partial<GenerateResponse> & {
   error?: string;
+};
+
+type ScheduleResponsePayload = {
+  error?: string;
+  scheduledJob?: {
+    id: string;
+    enqueueStatus?: string;
+  };
+  enqueue?: {
+    status: "queued" | "failed";
+    error?: string;
+    delayMs?: number;
+  };
 };
 
 function normalizeWorkflowPayload(payload: WorkflowPayload): GenerateResponse | null {
@@ -170,6 +188,120 @@ export function BriefForm() {
     }
   };
 
+  const providerForVariant = (platform: SocialPlatform): ProviderKey => {
+    if (
+      typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    ) {
+      return "mock";
+    }
+
+    return defaultProviderByPlatform[platform];
+  };
+
+  const scheduleApprovedVariants = async (): Promise<ApprovedVariantScheduleResult[]> => {
+    const workflow = result?.workflow;
+    const contentPack = result?.contentPack ?? workflow?.contentPack;
+
+    if (!workflow || !contentPack || workflow.approvalStatus !== "approved" || workflow.status !== "succeeded") {
+      throw new Error("Approve the content pack before scheduling variants.");
+    }
+
+    const schedules = contentPack.variants.map(async (variant) => {
+      const suggestion = contentPack.scheduleSuggestions.find((candidate) => candidate.platform === variant.platform);
+      const provider = providerForVariant(variant.platform);
+
+      if (variant.policyStatus !== "pass") {
+        return {
+          variantId: variant.id,
+          platform: variant.platform,
+          provider,
+          status: "skipped" as const,
+          message: "Variant needs policy review before scheduling."
+        };
+      }
+
+      if (!suggestion) {
+        return {
+          variantId: variant.id,
+          platform: variant.platform,
+          provider,
+          status: "skipped" as const,
+          message: "No schedule suggestion is available for this variant."
+        };
+      }
+
+      let response: Response;
+      let payload: ScheduleResponsePayload;
+
+      try {
+        response = await fetch(`/api/posts/${variant.id}/schedule`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            provider,
+            connectedAccountId: null,
+            scheduledFor: suggestion.scheduledFor,
+            metadata: {
+              confirmation: "create-review-approved-variants",
+              contentPackId: contentPack.id,
+              runId: workflow.runId,
+              scheduleSuggestionId: suggestion.id,
+              source: "create-review"
+            }
+          })
+        });
+        payload = (await response.json()) as ScheduleResponsePayload;
+      } catch (caughtError) {
+        return {
+          variantId: variant.id,
+          platform: variant.platform,
+          provider,
+          scheduledFor: suggestion.scheduledFor,
+          status: "needs_attention" as const,
+          message: caughtError instanceof Error ? caughtError.message : "Schedule request failed."
+        };
+      }
+
+      if (!response.ok) {
+        return {
+          variantId: variant.id,
+          platform: variant.platform,
+          provider,
+          scheduledFor: suggestion.scheduledFor,
+          status: "needs_attention" as const,
+          message: payload.error ?? "Schedule request failed."
+        };
+      }
+
+      if (payload.enqueue?.status === "failed") {
+        return {
+          variantId: variant.id,
+          platform: variant.platform,
+          provider,
+          scheduledFor: suggestion.scheduledFor,
+          status: "needs_attention" as const,
+          scheduledJobId: payload.scheduledJob?.id,
+          message: payload.enqueue.error ?? "Scheduled row was saved, but queue enqueue needs attention."
+        };
+      }
+
+      return {
+        variantId: variant.id,
+        platform: variant.platform,
+        provider,
+        scheduledFor: suggestion.scheduledFor,
+        status: "queued" as const,
+        scheduledJobId: payload.scheduledJob?.id,
+        message: "Scheduled and queued."
+      };
+    });
+
+    return Promise.all(schedules);
+  };
+
   return (
     <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
       <form className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-5" onSubmit={submitBrief}>
@@ -293,6 +425,7 @@ export function BriefForm() {
           disabled={decisionLoading}
           workflow={result?.workflow ?? null}
           onDecision={submitApprovalDecision}
+          onScheduleApprovedVariants={scheduleApprovedVariants}
         />
       </div>
     </div>

@@ -296,6 +296,186 @@ describe("schedule post API", () => {
     expect(createScheduledPost).not.toHaveBeenCalled();
   });
 
+  it("does not schedule through a provider that is not ready for live scheduling", async () => {
+    vi.resetModules();
+
+    const limit = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: "variant_linkedin", platform: "linkedin", policyStatus: "pass" }])
+      .mockResolvedValueOnce([]);
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit
+          }))
+        }))
+      }))
+    };
+    const createScheduledPost = vi.fn();
+
+    vi.doMock("@/db", () => ({
+      getDb: () => db
+    }));
+    vi.doMock("@/lib/auth/current-user", () => ({
+      getCurrentUser: vi.fn(async () => ({
+        id: "user_1",
+        email: "user@example.com",
+        name: "User One",
+        imageUrl: null,
+        initials: "UO",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/env", () => ({
+      isDatabaseConfigured: true
+    }));
+    vi.doMock("@/lib/scheduler/create-scheduled-post", () => ({
+      createScheduledPost,
+      createSchedulerRepository: vi.fn()
+    }));
+    vi.doMock("@/lib/workspaces/personal-workspace", () => ({
+      resolvePersonalWorkspaceForUser: vi.fn(async () => ({
+        id: "00000000-0000-0000-0000-000000000001",
+        role: "owner",
+        isLocalPreview: false
+      }))
+    }));
+
+    const { POST } = await import("@/app/api/posts/[id]/schedule/route");
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/posts/variant_linkedin/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "linkedin",
+          scheduledFor: futureIsoDate()
+        })
+      }),
+      {
+        params: Promise.resolve({ id: "variant_linkedin" })
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.error).toContain("scaffold-only");
+    expect(payload.providerHealth).toMatchObject({
+      provider: "linkedin",
+      status: "configuration_required"
+    });
+    expect(createScheduledPost).not.toHaveBeenCalled();
+  });
+
+  it("uses a connected default account when the schedule request omits an account id", async () => {
+    vi.resetModules();
+
+    const connectedAccountId = "22222222-2222-4222-8222-222222222222";
+    const limit = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: "variant_mock", platform: "linkedin", policyStatus: "pass" }])
+      .mockResolvedValueOnce([
+        {
+          id: connectedAccountId,
+          status: "connected",
+          scopes: ["publish"],
+          capabilities: ["scheduled_publish"],
+          lastValidatedAt: new Date("2026-06-22T12:00:00.000Z")
+        }
+      ]);
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit
+          }))
+        }))
+      }))
+    };
+    const consumeUsageForLimit = vi.fn(async () => null);
+    const createScheduledPost = vi.fn(
+      async ({
+        input
+      }: {
+        input: {
+          workspaceId: string;
+          platformVariantId: string;
+          provider: string;
+          connectedAccountId: string | null;
+        };
+      }) => ({
+        scheduledJob: {
+          id: "scheduled_default_account_1",
+          workspaceId: input.workspaceId,
+          platformVariantId: input.platformVariantId,
+          provider: input.provider,
+          connectedAccountId: input.connectedAccountId,
+          enqueueStatus: "queued"
+        },
+        enqueue: { status: "queued" }
+      })
+    );
+
+    vi.doMock("@/db", () => ({
+      getDb: () => db
+    }));
+    vi.doMock("@/lib/auth/current-user", () => ({
+      getCurrentUser: vi.fn(async () => ({
+        id: "user_1",
+        email: "user@example.com",
+        name: "User One",
+        imageUrl: null,
+        initials: "UO",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/env", () => ({
+      isDatabaseConfigured: true
+    }));
+    vi.doMock("@/lib/billing/usage", () => ({
+      UsageLimitExceededError: class UsageLimitExceededError extends Error {},
+      consumeUsageForLimit
+    }));
+    vi.doMock("@/lib/scheduler/create-scheduled-post", () => ({
+      createScheduledPost,
+      createSchedulerRepository: vi.fn(() => ({ mocked: true }))
+    }));
+    vi.doMock("@/lib/workspaces/personal-workspace", () => ({
+      resolvePersonalWorkspaceForUser: vi.fn(async () => ({
+        id: "00000000-0000-0000-0000-000000000001",
+        role: "owner",
+        isLocalPreview: true
+      }))
+    }));
+
+    const { POST } = await import("@/app/api/posts/[id]/schedule/route");
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/posts/variant_mock/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "mock",
+          scheduledFor: futureIsoDate()
+        })
+      }),
+      {
+        params: Promise.resolve({ id: "variant_mock" })
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(payload.providerHealth).toMatchObject({
+      connectedAccountId,
+      status: "ready"
+    });
+    expect(createScheduledPost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          connectedAccountId
+        })
+      })
+    );
+  });
+
   it("atomically consumes scheduled post usage for workspace-backed users", async () => {
     vi.resetModules();
     vi.stubEnv("AUTH_LOCAL_PREVIEW", "");

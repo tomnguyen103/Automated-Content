@@ -21,6 +21,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { classifyPublishFailure } from "@/lib/scheduler/publish-recovery";
 import {
   agentMissionSchema,
   agentMissionSimulationRunSchema,
@@ -305,6 +306,16 @@ function summarizeTaskOutput(task: AgentTaskRun) {
   const keys = Object.keys(task.output).slice(0, 3);
 
   return `Output fields: ${keys.join(", ")}`;
+}
+
+function recoveryForFailure(message: string | null | undefined) {
+  if (!message) {
+    return null;
+  }
+
+  return classifyPublishFailure({
+    errorMessage: message
+  });
 }
 
 function n8nLabel(event: AgentN8nAuditEvent) {
@@ -923,6 +934,8 @@ function MissionAuditDetail({ id, record }: { id: string; record: MissionRecord 
   const latestSimulation = newestSimulation(record);
   const summary = latestSimulation ? simulationSummary(latestSimulation) : null;
   const failedTask = record.tasks.find((task) => task.status === "failed");
+  const failureMessage = record.mission.error ?? failedTask?.error ?? null;
+  const recovery = recoveryForFailure(failureMessage);
   const timeline = [
     {
       id: `${record.mission.id}_created`,
@@ -962,11 +975,22 @@ function MissionAuditDetail({ id, record }: { id: string; record: MissionRecord 
         <section className="rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-4">
           <p className="text-sm font-semibold text-red-800">Needs attention</p>
           <p className="mt-2 text-sm leading-6 text-red-800">
-            {record.mission.error ?? failedTask?.error ?? "A mission task failed."}
+            {failureMessage ?? "A mission task failed."}
           </p>
           <p className="mt-2 text-xs leading-5 text-red-800">
-            Review the failed task, adjust inputs or policy, then rerun the mission when the blocker is cleared.
+            {recovery?.recommendation ??
+              "Review the failed task, adjust inputs or policy, then rerun the mission when the blocker is cleared."}
           </p>
+          {recovery ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Badge tone="critical">{recovery.category.replaceAll("_", " ")}</Badge>
+              {recovery.actions.map((action) => (
+                <Badge key={action} tone="neutral">
+                  {action.replaceAll("_", " ")}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
         </section>
       ) : null}
 

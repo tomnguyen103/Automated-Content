@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { providerCapabilities } from "@/lib/providers/types";
+import { evaluateProviderHealth } from "@/lib/providers/health";
 import { metaProvider } from "@/lib/providers/meta";
 import { mockProvider } from "@/lib/providers/mock";
 import { providerAdapters, providerRegistry } from "@/lib/providers/registry";
@@ -105,6 +106,78 @@ describe("provider adapter contract", () => {
       })
     ).rejects.toMatchObject({
       code: "provider_capability_unsupported"
+    });
+  });
+
+  it("reports provider readiness without live provider calls", () => {
+    const liveProvider = {
+      ...mockProvider,
+      displayName: "Live Provider",
+      implementationStatus: "live" as const
+    };
+    const mockHealth = evaluateProviderHealth({
+      adapter: mockProvider,
+      allowMock: true,
+      requiredCapability: "scheduled_publish"
+    });
+    const metaHealth = evaluateProviderHealth({
+      adapter: metaProvider,
+      requiredCapability: "scheduled_publish"
+    });
+    const xReplyHealth = evaluateProviderHealth({
+      adapter: xProvider,
+      requiredCapability: "comment_reply"
+    });
+
+    expect(mockHealth).toMatchObject({
+      configured: true,
+      status: "ready"
+    });
+    expect(mockHealth.blockingReason).toBeUndefined();
+    expect(metaHealth).toMatchObject({
+      configured: false,
+      status: "configuration_required"
+    });
+    expect(metaHealth.blockingReason).toContain("scaffold-only");
+    expect(xReplyHealth).toMatchObject({
+      configured: false,
+      status: "capability_unsupported"
+    });
+
+    expect(
+      evaluateProviderHealth({
+        adapter: liveProvider,
+        connectedAccount: {
+          id: "account_missing_scopes",
+          status: "connected",
+          scopes: [],
+          capabilities: ["scheduled_publish"],
+          lastValidatedAt: new Date("2026-06-22T12:00:00.000Z")
+        },
+        requiredCapability: "scheduled_publish"
+      })
+    ).toMatchObject({
+      configured: false,
+      status: "scope_missing",
+      blockingReason: "Connected account account_missing_scopes is missing required scopes: publish."
+    });
+
+    expect(
+      evaluateProviderHealth({
+        adapter: liveProvider,
+        connectedAccount: {
+          id: "account_missing_capability",
+          status: "connected",
+          scopes: ["publish"],
+          capabilities: [],
+          lastValidatedAt: new Date("2026-06-22T12:00:00.000Z")
+        },
+        requiredCapability: "scheduled_publish"
+      })
+    ).toMatchObject({
+      configured: false,
+      status: "capability_unsupported",
+      blockingReason: "Connected account account_missing_capability does not expose scheduled_publish."
     });
   });
 });

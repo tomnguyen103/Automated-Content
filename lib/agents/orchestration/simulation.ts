@@ -27,6 +27,15 @@ import {
 } from "@/lib/agents/orchestration/repository";
 import type { MissionTaskExecutor } from "@/lib/agents/orchestration/runner";
 import { emitAgentOrchestrationEvent } from "@/lib/agents/orchestration/events";
+import type { SocialPlatform } from "@/lib/agents/schemas/platform-variant";
+import { evaluateProviderHealth } from "@/lib/providers/health";
+import {
+  defaultProviderByPlatform,
+  isProviderCompatibleWithPlatform
+} from "@/lib/providers/platform-compatibility";
+import { getProviderAdapter, isProviderKey } from "@/lib/providers/registry";
+import type { ProviderHealthAccount } from "@/lib/providers/health";
+import type { ProviderKey } from "@/lib/providers/types";
 
 export type SimulateAgentMissionOptions = {
   workspaceId: string;
@@ -94,6 +103,133 @@ function readStringMap(input: Record<string, unknown>, key: string) {
       .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0)
       .map(([mapKey, mapValue]) => [mapKey, mapValue.trim()])
   );
+}
+
+function readRecordMap(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, Record<string, unknown>] =>
+        Boolean(entry[1]) && typeof entry[1] === "object" && !Array.isArray(entry[1])
+    )
+  );
+}
+
+function readBoolean(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+
+  return typeof value === "boolean" ? value : false;
+}
+
+function readPlatforms(input: Record<string, unknown>) {
+  return readStringArray(input, "platforms").filter((platform): platform is SocialPlatform => platform in defaultProviderByPlatform);
+}
+
+const providerConnectionStatuses = ["connected", "requires_configuration", "unsupported", "disconnected", "error"] as const;
+
+function readProviderHealthAccount(value: unknown): ProviderHealthAccount | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === "string" && record.id.trim() ? record.id.trim() : null;
+  const status = providerConnectionStatuses.find((candidate) => candidate === record.status);
+
+  if (!id || !status) {
+    return null;
+  }
+
+  const lastValidatedAt =
+    record.lastValidatedAt instanceof Date
+      ? record.lastValidatedAt
+      : typeof record.lastValidatedAt === "string" && record.lastValidatedAt.trim()
+        ? new Date(record.lastValidatedAt)
+        : null;
+
+  return {
+    id,
+    status,
+    scopes: Array.isArray(record.scopes) ? record.scopes.filter((scope): scope is string => typeof scope === "string") : [],
+    capabilities: Array.isArray(record.capabilities)
+      ? record.capabilities.filter((capability): capability is string => typeof capability === "string")
+      : [],
+    lastValidatedAt: lastValidatedAt && !Number.isNaN(lastValidatedAt.getTime()) ? lastValidatedAt : null
+  };
+}
+
+function resolveConnectedAccountId({
+  input,
+  platform,
+  provider
+}: {
+  input: Record<string, unknown>;
+  platform?: SocialPlatform;
+  provider: ProviderKey;
+}) {
+  const accountByProvider = readStringMap(input, "connectedAccountIdsByProvider");
+  const accountByPlatform = readStringMap(input, "connectedAccountIdsByPlatform");
+
+  return (platform ? accountByPlatform[platform] : undefined) ?? accountByProvider[provider] ?? readString(input, "connectedAccountId");
+}
+
+function resolveConnectedAccount({
+  connectedAccountId,
+  input,
+  platform,
+  provider
+}: {
+  connectedAccountId?: string;
+  input: Record<string, unknown>;
+  platform?: SocialPlatform;
+  provider: ProviderKey;
+}) {
+  const accountByProvider = readRecordMap(input, "connectedAccountsByProvider");
+  const accountByPlatform = readRecordMap(input, "connectedAccountsByPlatform");
+  const account =
+    readProviderHealthAccount(platform ? accountByPlatform[platform] : undefined)
+    ?? readProviderHealthAccount(accountByProvider[provider])
+    ?? readProviderHealthAccount(input.connectedAccount);
+
+  if (!account || (connectedAccountId && account.id !== connectedAccountId)) {
+    return null;
+  }
+
+  return account;
+}
+
+function hasConnectedAccountSelection(input: Record<string, unknown>) {
+  return Boolean(
+    readString(input, "connectedAccountId")
+      || Object.keys(readStringMap(input, "connectedAccountIdsByProvider")).length > 0
+      || Object.keys(readStringMap(input, "connectedAccountIdsByPlatform")).length > 0
+      || readProviderHealthAccount(input.connectedAccount)
+      || Object.keys(readRecordMap(input, "connectedAccountsByProvider")).length > 0
+      || Object.keys(readRecordMap(input, "connectedAccountsByPlatform")).length > 0
+  );
+}
+
+function platformForProvider({
+  platformProvider,
+  platforms,
+  provider,
+  providerByPlatform
+}: {
+  platformProvider?: string;
+  platforms: SocialPlatform[];
+  provider?: string;
+  providerByPlatform: Record<string, string>;
+}) {
+  return platforms.find((platform) => {
+    const mappedProvider = providerByPlatform[platform] ?? provider ?? defaultProviderByPlatform[platform];
+
+    return mappedProvider === platformProvider;
+  });
 }
 
 function estimatePlatformActionCount(mission: AgentMission) {
@@ -288,36 +424,86 @@ function providerReadinessWarningsForTask(mission: AgentMission, task: MissionPl
   const warnings: string[] = [];
   const provider = readString(mission.inputs, "provider");
   const providerByPlatform = readStringMap(mission.inputs, "providerByPlatform");
-  const platforms = readStringArray(mission.inputs, "platforms");
-  const connectedAccountId = readString(mission.inputs, "connectedAccountId");
+  const platforms = readPlatforms(mission.inputs);
+  const localPreview = readBoolean(mission.inputs, "localPreview");
+  const requiredCapability = task.action === "reply.send" ? "comment_reply" : "scheduled_publish";
   const providers = [
     ...(provider ? [provider] : []),
-    ...Object.values(providerByPlatform)
+    ...Object.values(providerByPlatform),
+    ...(provider || Object.keys(providerByPlatform).length > 0
+      ? []
+      : platforms.map((platform) => defaultProviderByPlatform[platform]))
   ];
   const uniqueProviders = [...new Set(providers)];
 
-  if (!provider && uniqueProviders.length === 0) {
+  if (!provider && Object.keys(providerByPlatform).length === 0) {
     warnings.push("No provider is selected for this external action.");
   }
 
-  if (platforms.length > 0 && Object.keys(providerByPlatform).length > 0) {
+  if (platforms.length > 0) {
+    const hasProviderMap = Object.keys(providerByPlatform).length > 0;
+
     for (const platform of platforms) {
-      if (!providerByPlatform[platform]) {
+      const mappedProvider = providerByPlatform[platform] ?? provider ?? (hasProviderMap ? undefined : defaultProviderByPlatform[platform]);
+
+      if (!mappedProvider) {
         warnings.push(`No provider mapping is configured for ${platform}.`);
+        continue;
+      }
+
+      if (
+        isProviderKey(mappedProvider) &&
+        !isProviderCompatibleWithPlatform({
+          allowMock: localPreview,
+          platform,
+          provider: mappedProvider
+        })
+      ) {
+        warnings.push(`Provider ${mappedProvider} cannot publish ${platform} variants.`);
       }
     }
   }
 
-  if (!connectedAccountId) {
+  if (!hasConnectedAccountSelection(mission.inputs)) {
     warnings.push("No connected account is selected for readiness validation.");
   }
 
-  if (uniqueProviders.includes("mock")) {
-    warnings.push("Mock provider readiness is local-preview only.");
-  }
+  for (const providerKey of uniqueProviders) {
+    if (!isProviderKey(providerKey)) {
+      warnings.push(`Provider ${providerKey} is not registered.`);
+      continue;
+    }
 
-  if (uniqueProviders.some((candidate) => candidate !== "mock")) {
-    warnings.push("Provider health has not been checked by a live readiness sentinel yet.");
+    const platform = platformForProvider({
+      platformProvider: providerKey,
+      platforms,
+      provider,
+      providerByPlatform
+    });
+    const connectedAccountId = resolveConnectedAccountId({
+      input: mission.inputs,
+      platform,
+      provider: providerKey
+    });
+    const connectedAccount = resolveConnectedAccount({
+      connectedAccountId,
+      input: mission.inputs,
+      platform,
+      provider: providerKey
+    });
+    const health = evaluateProviderHealth({
+      adapter: getProviderAdapter(providerKey),
+      allowMock: localPreview,
+      connectedAccount,
+      connectedAccountId: connectedAccount?.id ?? connectedAccountId ?? null,
+      requiredCapability
+    });
+
+    if (health.blockingReason) {
+      warnings.push(health.blockingReason);
+    }
+
+    warnings.push(...health.warnings);
   }
 
   return [...new Set(warnings)];

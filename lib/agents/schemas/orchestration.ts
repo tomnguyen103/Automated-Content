@@ -47,6 +47,7 @@ export const agentPolicyEventActionSchema = z.enum([
   "escalate",
   "note"
 ]);
+export const agentMissionSimulationStatusSchema = z.enum(["succeeded", "failed"]);
 
 export const agentActionTypeSchema = z.enum([
   "mission.run",
@@ -203,6 +204,55 @@ export const agentPolicyEventSchema = z.object({
   createdAt: isoTimestampSchema
 });
 
+export const agentSimulationUsageEstimateSchema = z.object({
+  modelCalls: z.number().int().nonnegative().default(0),
+  toolCalls: z.number().int().nonnegative().default(0),
+  estimatedCostCents: z.number().int().nonnegative().default(0),
+  usageLedgerWrites: z.number().int().nonnegative().default(0),
+  scheduledPostWrites: z.number().int().nonnegative().default(0),
+  publishEnqueues: z.number().int().nonnegative().default(0),
+  replySends: z.number().int().nonnegative().default(0),
+  providerRequests: z.number().int().nonnegative().default(0),
+  sideEffectsSuppressed: z.number().int().nonnegative().default(0)
+});
+
+export const agentSimulationPlannedActionSchema = z.object({
+  id: z.string().min(1),
+  taskIndex: z.number().int().nonnegative(),
+  role: agentProfileRoleSchema,
+  taskName: z.string().min(1).max(180),
+  action: agentActionTypeSchema,
+  toolScope: z.string().min(1),
+  input: jsonRecordSchema.default({}),
+  profileId: z.string().min(1).optional(),
+  profileName: z.string().min(1).optional(),
+  status: z.enum(["would_run", "would_skip", "would_require_review", "blocked"]),
+  policy: z.object({
+    allowed: z.boolean(),
+    action: agentPolicyEventActionSchema,
+    severity: agentPolicyEventSeveritySchema,
+    policyKey: z.string().min(1),
+    message: z.string().min(1)
+  }),
+  estimatedUsage: agentSimulationUsageEstimateSchema,
+  suppressedSideEffects: z.array(z.string().min(1)).default([])
+});
+
+export const agentMissionSimulationRunSchema = z.object({
+  id: z.string().min(1),
+  workspaceId: z.string().min(1),
+  missionId: z.string().min(1),
+  requestedByUserId: z.string().min(1).optional(),
+  status: agentMissionSimulationStatusSchema.default("succeeded"),
+  plannedActions: z.array(agentSimulationPlannedActionSchema).default([]),
+  policyEvents: z.array(agentPolicyEventSchema).default([]),
+  estimatedUsage: agentSimulationUsageEstimateSchema,
+  summary: jsonRecordSchema.default({}),
+  error: z.string().min(1).optional(),
+  createdAt: isoTimestampSchema,
+  completedAt: isoTimestampSchema.optional()
+});
+
 export type AgentProfileRole = z.infer<typeof agentProfileRoleSchema>;
 export type AgentProfileStatus = z.infer<typeof agentProfileStatusSchema>;
 export type AgentMissionStatus = z.infer<typeof agentMissionStatusSchema>;
@@ -210,6 +260,7 @@ export type AgentMissionType = z.infer<typeof agentMissionTypeSchema>;
 export type AgentTaskRunStatus = z.infer<typeof agentTaskRunStatusSchema>;
 export type AgentPolicyEventSeverity = z.infer<typeof agentPolicyEventSeveritySchema>;
 export type AgentPolicyEventAction = z.infer<typeof agentPolicyEventActionSchema>;
+export type AgentMissionSimulationStatus = z.infer<typeof agentMissionSimulationStatusSchema>;
 export type AgentActionType = z.infer<typeof agentActionTypeSchema>;
 export type AgentAutonomyPolicy = z.infer<typeof agentAutonomyPolicySchema>;
 export type AgentRoleTemplate = z.infer<typeof agentRoleTemplateSchema>;
@@ -217,3 +268,6 @@ export type AgentProfile = z.infer<typeof agentProfileSchema>;
 export type AgentMission = z.infer<typeof agentMissionSchema>;
 export type AgentTaskRun = z.infer<typeof agentTaskRunSchema>;
 export type AgentPolicyEvent = z.infer<typeof agentPolicyEventSchema>;
+export type AgentSimulationUsageEstimate = z.infer<typeof agentSimulationUsageEstimateSchema>;
+export type AgentSimulationPlannedAction = z.infer<typeof agentSimulationPlannedActionSchema>;
+export type AgentMissionSimulationRun = z.infer<typeof agentMissionSimulationRunSchema>;

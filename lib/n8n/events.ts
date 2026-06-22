@@ -18,6 +18,7 @@ export const n8nEventTypeSchema = z.enum([
   "reply.failed",
   "agent.mission.started",
   "agent.mission.completed",
+  "agent.mission.simulated",
   "agent.task.succeeded",
   "agent.task.failed",
   "agent.policy.evaluated",

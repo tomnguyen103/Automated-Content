@@ -4,16 +4,19 @@ import { and, desc, eq } from "drizzle-orm";
 import { getDb, type DatabaseClient } from "@/db";
 import {
   agentMissions,
+  agentMissionSimulations,
   agentPolicyEvents,
   agentProfiles,
   agentTaskRuns
 } from "@/db/schema";
 import {
   agentMissionSchema,
+  agentMissionSimulationRunSchema,
   agentPolicyEventSchema,
   agentProfileSchema,
   agentTaskRunSchema,
   type AgentMission,
+  type AgentMissionSimulationRun,
   type AgentPolicyEvent,
   type AgentProfile,
   type AgentProfileRole,
@@ -48,6 +51,7 @@ export type SeedAgentRoleTemplatesInput = {
 export const AGENT_MISSION_HISTORY_LIMIT = 25;
 export const AGENT_TASK_RUN_HISTORY_LIMIT = 8;
 export const AGENT_POLICY_EVENT_HISTORY_LIMIT = 12;
+export const AGENT_SIMULATION_HISTORY_LIMIT = 5;
 const MAX_AGENT_HISTORY_LIMIT = 100;
 
 export type AgentProfileRepository = {
@@ -76,11 +80,18 @@ export type AgentPolicyEventRepository = {
   listForTaskRun: (input: TaskRunScopedInput) => Promise<AgentPolicyEvent[]>;
 };
 
+export type AgentMissionSimulationRepository = {
+  save: (simulation: AgentMissionSimulationRun) => Promise<AgentMissionSimulationRun>;
+  get: (input: ScopedIdInput) => Promise<AgentMissionSimulationRun | null>;
+  listForMission: (input: MissionScopedInput) => Promise<AgentMissionSimulationRun[]>;
+};
+
 export type AgentOrchestrationRepositories = {
   profiles: AgentProfileRepository;
   missions: AgentMissionRepository;
   taskRuns: AgentTaskRunRepository;
   policyEvents: AgentPolicyEventRepository;
+  simulationRuns: AgentMissionSimulationRepository;
 };
 
 function toJsonRecord(value: Record<string, unknown>) {
@@ -200,6 +211,23 @@ function policyEventFromRow(row: typeof agentPolicyEvents.$inferSelect): AgentPo
   });
 }
 
+function simulationRunFromRow(row: typeof agentMissionSimulations.$inferSelect): AgentMissionSimulationRun {
+  return agentMissionSimulationRunSchema.parse({
+    id: row.id,
+    workspaceId: row.workspaceId,
+    missionId: row.missionId,
+    requestedByUserId: row.requestedByUserId ?? undefined,
+    status: row.status,
+    plannedActions: row.plannedActions,
+    policyEvents: row.policyEvents,
+    estimatedUsage: row.estimatedUsage,
+    summary: row.summary,
+    error: row.error ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    completedAt: toIso(row.completedAt)
+  });
+}
+
 function profileToRow(profile: AgentProfile) {
   return {
     id: profile.id,
@@ -282,6 +310,23 @@ function policyEventToRow(event: AgentPolicyEvent) {
     details: toJsonRecord(event.details),
     occurredAt: toDate(event.occurredAt),
     createdAt: toDate(event.createdAt)
+  };
+}
+
+function simulationRunToRow(simulation: AgentMissionSimulationRun) {
+  return {
+    id: simulation.id,
+    workspaceId: simulation.workspaceId,
+    missionId: simulation.missionId,
+    requestedByUserId: simulation.requestedByUserId ?? null,
+    status: simulation.status,
+    plannedActions: simulation.plannedActions,
+    policyEvents: simulation.policyEvents,
+    estimatedUsage: simulation.estimatedUsage,
+    summary: toJsonRecord(simulation.summary),
+    error: simulation.error ?? null,
+    createdAt: toDate(simulation.createdAt),
+    completedAt: simulation.completedAt ? toDate(simulation.completedAt) : null
   };
 }
 
@@ -551,6 +596,62 @@ export function createDatabaseAgentPolicyEventRepository(db: DatabaseClient = ge
   };
 }
 
+export function createDatabaseAgentMissionSimulationRepository(
+  db: DatabaseClient = getDb()
+): AgentMissionSimulationRepository {
+  return {
+    async save(simulation) {
+      const parsed = agentMissionSimulationRunSchema.parse(simulation);
+      const row = simulationRunToRow(parsed);
+
+      await db
+        .insert(agentMissionSimulations)
+        .values(row)
+        .onConflictDoUpdate({
+          target: agentMissionSimulations.id,
+          set: {
+            requestedByUserId: row.requestedByUserId,
+            status: row.status,
+            plannedActions: row.plannedActions,
+            policyEvents: row.policyEvents,
+            estimatedUsage: row.estimatedUsage,
+            summary: row.summary,
+            error: row.error,
+            completedAt: row.completedAt
+          }
+        });
+
+      return parsed;
+    },
+
+    async get({ workspaceId, id }) {
+      const [row] = await db
+        .select()
+        .from(agentMissionSimulations)
+        .where(and(eq(agentMissionSimulations.workspaceId, workspaceId), eq(agentMissionSimulations.id, id)))
+        .limit(1);
+
+      return row ? simulationRunFromRow(row) : null;
+    },
+
+    async listForMission({ workspaceId, missionId, limit }) {
+      const rows = await db
+        .select()
+        .from(agentMissionSimulations)
+        .where(
+          and(
+            eq(agentMissionSimulations.workspaceId, workspaceId),
+            eq(agentMissionSimulations.missionId, missionId)
+          )
+        )
+        .orderBy(desc(agentMissionSimulations.createdAt))
+        .limit(normalizeHistoryLimit(limit, AGENT_SIMULATION_HISTORY_LIMIT));
+
+      return rows.map(simulationRunFromRow);
+    }
+  };
+}
+
 export function createDatabaseAgentOrchestrationRepositories(
   db: DatabaseClient = getDb()
 ): AgentOrchestrationRepositories {
@@ -558,7 +659,8 @@ export function createDatabaseAgentOrchestrationRepositories(
     profiles: createDatabaseAgentProfileRepository(db),
     missions: createDatabaseAgentMissionRepository(db),
     taskRuns: createDatabaseAgentTaskRunRepository(db),
-    policyEvents: createDatabaseAgentPolicyEventRepository(db)
+    policyEvents: createDatabaseAgentPolicyEventRepository(db),
+    simulationRuns: createDatabaseAgentMissionSimulationRepository(db)
   };
 }
 
@@ -569,6 +671,7 @@ export function createMemoryAgentOrchestrationRepositories(): AgentOrchestration
   const missions = new Map<string, AgentMission>();
   const taskRuns = new Map<string, AgentTaskRun>();
   const policyEvents = new Map<string, AgentPolicyEvent>();
+  const simulationRuns = new Map<string, AgentMissionSimulationRun>();
 
   function key(_workspaceId: string, id: string) {
     return id;
@@ -668,11 +771,29 @@ export function createMemoryAgentOrchestrationRepositories(): AgentOrchestration
         );
       }
     },
+    simulationRuns: {
+      async save(simulation) {
+        const parsed = agentMissionSimulationRunSchema.parse(simulation);
+        simulationRuns.set(key(parsed.workspaceId, parsed.id), parsed);
+        return parsed;
+      },
+      async get({ workspaceId, id }) {
+        return getScoped(simulationRuns, workspaceId, id);
+      },
+      async listForMission({ workspaceId, missionId, limit }) {
+        return sortByCreatedDesc(
+          [...simulationRuns.values()].filter(
+            (simulation) => simulation.workspaceId === workspaceId && simulation.missionId === missionId
+          )
+        ).slice(0, normalizeHistoryLimit(limit, AGENT_SIMULATION_HISTORY_LIMIT));
+      }
+    },
     clear() {
       profiles.clear();
       missions.clear();
       taskRuns.clear();
       policyEvents.clear();
+      simulationRuns.clear();
     }
   };
 

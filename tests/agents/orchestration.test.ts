@@ -15,6 +15,9 @@ import {
   buildAgentProfileFromTemplate
 } from "@/lib/agents/orchestration/role-templates";
 import {
+  AGENT_MISSION_HISTORY_LIMIT,
+  AGENT_POLICY_EVENT_HISTORY_LIMIT,
+  AGENT_TASK_RUN_HISTORY_LIMIT,
   clearAgentOrchestrationRepositoriesForTests,
   createAgentOrchestrationRepositories,
   createDatabaseAgentPolicyEventRepository
@@ -578,5 +581,143 @@ describe("agent orchestration foundation", () => {
         })
       })
     );
+  });
+
+  it("does not overwrite customized role templates when seeding runs again", async () => {
+    const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
+    const seeded = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_1",
+      now: new Date(timestamp)
+    });
+    const coordinator = seeded.find((profile) => profile.role === "coordinator")!;
+    const customized = await repositories.profiles.save({
+      ...coordinator,
+      name: "Dragon",
+      instructions: "Preserve this workspace-specific control-plane knowledge.",
+      policy: {
+        ...coordinator.policy,
+        dailyActionCap: 1,
+        emergencyPaused: true
+      },
+      metadata: {
+        ...coordinator.metadata,
+        customized: true
+      },
+      updatedAt: "2026-06-21T13:00:00.000Z"
+    });
+
+    const reseeded = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_2",
+      now: new Date("2026-06-21T14:00:00.000Z")
+    });
+    const reseededCoordinator = reseeded.find((profile) => profile.id === coordinator.id);
+    const persistedCoordinator = await repositories.profiles.get({
+      workspaceId,
+      id: coordinator.id
+    });
+
+    expect(reseededCoordinator).toMatchObject({
+      id: coordinator.id,
+      name: "Dragon",
+      instructions: customized.instructions,
+      policy: {
+        dailyActionCap: 1,
+        emergencyPaused: true
+      },
+      metadata: {
+        customized: true
+      }
+    });
+    expect(persistedCoordinator).toEqual(reseededCoordinator);
+  });
+
+  it("bounds mission, task, and policy history lists", async () => {
+    const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
+    const [coordinator] = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_1",
+      roles: ["coordinator"],
+      now: new Date(timestamp)
+    });
+    const policy = agentAutonomyPolicySchema.parse({
+      autonomy: "full",
+      allowedActions: ["mission.run", "task.execute"],
+      allowedToolScopes: ["mission.plan"]
+    });
+
+    for (let index = 0; index < AGENT_MISSION_HISTORY_LIMIT + 5; index += 1) {
+      const createdAt = new Date(Date.UTC(2026, 5, 21, 12, index)).toISOString();
+      await repositories.missions.save({
+        id: `mission_history_${index}`,
+        workspaceId,
+        createdByUserId: "user_1",
+        coordinatorProfileId: coordinator.id,
+        missionType: "weekly_report",
+        title: `History mission ${index}`,
+        objective: "Keep recent mission history bounded.",
+        brief: "Regression coverage for list limits.",
+        status: "queued",
+        priority: 50,
+        inputs: {},
+        context: {},
+        policy,
+        requestedAt: createdAt,
+        createdAt,
+        updatedAt: createdAt
+      });
+    }
+
+    for (let index = 0; index < AGENT_TASK_RUN_HISTORY_LIMIT + 5; index += 1) {
+      const createdAt = new Date(Date.UTC(2026, 5, 21, 13, index)).toISOString();
+      await repositories.taskRuns.save({
+        id: `task_history_${index}`,
+        workspaceId,
+        missionId: "mission_history_0",
+        profileId: coordinator.id,
+        taskName: `Task history ${index}`,
+        status: "queued",
+        attemptNumber: 1,
+        input: {},
+        policySnapshot: policy,
+        queuedAt: createdAt,
+        createdAt,
+        updatedAt: createdAt
+      });
+    }
+
+    for (let index = 0; index < AGENT_POLICY_EVENT_HISTORY_LIMIT + 5; index += 1) {
+      const createdAt = new Date(Date.UTC(2026, 5, 21, 14, index)).toISOString();
+      await repositories.policyEvents.record({
+        id: `policy_history_${index}`,
+        workspaceId,
+        missionId: "mission_history_0",
+        taskRunId: "task_history_0",
+        profileId: coordinator.id,
+        severity: "info",
+        action: "allow",
+        policyKey: "history_limit",
+        message: `History policy event ${index}`,
+        details: {},
+        occurredAt: createdAt,
+        createdAt
+      });
+    }
+
+    await expect(repositories.missions.list(workspaceId)).resolves.toHaveLength(AGENT_MISSION_HISTORY_LIMIT);
+    await expect(repositories.missions.list(workspaceId, { limit: 5 })).resolves.toHaveLength(5);
+    await expect(
+      repositories.taskRuns.listForMission({
+        workspaceId,
+        missionId: "mission_history_0"
+      })
+    ).resolves.toHaveLength(AGENT_TASK_RUN_HISTORY_LIMIT);
+    await expect(
+      repositories.policyEvents.listForMission({
+        workspaceId,
+        missionId: "mission_history_0"
+      })
+    ).resolves.toHaveLength(AGENT_POLICY_EVENT_HISTORY_LIMIT);
   });
 });

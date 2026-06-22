@@ -6,6 +6,11 @@ import {
   agentMissionTypeSchema
 } from "@/lib/agents/schemas/orchestration";
 import { resolveAgentOrchestrationContext } from "@/lib/agents/orchestration/server";
+import {
+  AGENT_MISSION_HISTORY_LIMIT,
+  AGENT_POLICY_EVENT_HISTORY_LIMIT,
+  AGENT_TASK_RUN_HISTORY_LIMIT
+} from "@/lib/agents/orchestration/repository";
 
 export const runtime = "nodejs";
 
@@ -28,17 +33,21 @@ export async function GET() {
     return NextResponse.json({ error: "Authentication is required." }, { status: 401 });
   }
 
-  const missions = await context.repositories.missions.list(context.workspace.id);
+  const missions = await context.repositories.missions.list(context.workspace.id, {
+    limit: AGENT_MISSION_HISTORY_LIMIT
+  });
   const enriched = await Promise.all(
     missions.map(async (mission) => {
       const [tasks, policyEvents] = await Promise.all([
         context.repositories.taskRuns.listForMission({
           workspaceId: context.workspace.id,
-          missionId: mission.id
+          missionId: mission.id,
+          limit: AGENT_TASK_RUN_HISTORY_LIMIT
         }),
         context.repositories.policyEvents.listForMission({
           workspaceId: context.workspace.id,
-          missionId: mission.id
+          missionId: mission.id,
+          limit: AGENT_POLICY_EVENT_HISTORY_LIMIT
         })
       ]);
 

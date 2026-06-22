@@ -33,6 +33,15 @@ test("agents control center creates, runs, pauses, and resumes missions", async 
   await expect(page.getByRole("heading", { name: "Agents" })).toBeVisible();
   await expect(page.getByText("coordinator", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "Mission builder" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Control" })).toHaveAttribute("href", "#control");
+  await expect(page.getByRole("link", { name: "Missions", exact: true })).toHaveAttribute("href", "#missions");
+  await expect(page.getByRole("link", { name: "Permissions", exact: true })).toHaveAttribute("href", "#permissions");
+  await expect(page.getByRole("link", { name: "Activity", exact: true })).toHaveAttribute("href", "#activity");
+
+  await page.getByRole("link", { name: "Missions", exact: true }).focus();
+  await expect(page.getByRole("link", { name: "Missions", exact: true })).toBeFocused();
+  await page.getByRole("link", { name: "Missions", exact: true }).click();
+  await expect(page).toHaveURL(/#missions$/);
 
   await page.getByRole("textbox", { name: "Title" }).fill(missionTitle);
   await page.getByRole("textbox", { name: "Topic" }).fill("Autonomous content operations");

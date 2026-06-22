@@ -109,7 +109,7 @@ describe("schedule post API", () => {
   it("returns a 404 when the connected account is not available in the workspace", async () => {
     vi.resetModules();
 
-    const limit = vi.fn().mockResolvedValueOnce([{ id: "variant_1" }]).mockResolvedValueOnce([]);
+    const limit = vi.fn().mockResolvedValueOnce([{ id: "variant_1", platform: "tiktok", policyStatus: "pass" }]).mockResolvedValueOnce([]);
     const db = {
       select: vi.fn(() => ({
         from: vi.fn(() => ({
@@ -167,6 +167,132 @@ describe("schedule post API", () => {
 
     expect(response.status).toBe(404);
     expect(payload.error).toBe("Connected account not found.");
+    expect(createScheduledPost).not.toHaveBeenCalled();
+  });
+
+  it("does not schedule platform variants that failed policy review", async () => {
+    vi.resetModules();
+
+    const limit = vi.fn().mockResolvedValueOnce([{ id: "variant_blocked", platform: "linkedin", policyStatus: "block" }]);
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit
+          }))
+        }))
+      }))
+    };
+    const createScheduledPost = vi.fn();
+
+    vi.doMock("@/db", () => ({
+      getDb: () => db
+    }));
+    vi.doMock("@/lib/auth/current-user", () => ({
+      getCurrentUser: vi.fn(async () => ({
+        id: "user_1",
+        email: "user@example.com",
+        name: "User One",
+        imageUrl: null,
+        initials: "UO",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/env", () => ({
+      isDatabaseConfigured: true
+    }));
+    vi.doMock("@/lib/scheduler/create-scheduled-post", () => ({
+      createScheduledPost,
+      createSchedulerRepository: vi.fn()
+    }));
+    vi.doMock("@/lib/workspaces/personal-workspace", () => ({
+      resolvePersonalWorkspaceForUser: vi.fn(async () => ({
+        id: "00000000-0000-0000-0000-000000000001",
+        role: "owner",
+        isLocalPreview: false
+      }))
+    }));
+
+    const { POST } = await import("@/app/api/posts/[id]/schedule/route");
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/posts/variant_blocked/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "linkedin",
+          scheduledFor: futureIsoDate()
+        })
+      }),
+      {
+        params: Promise.resolve({ id: "variant_blocked" })
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.error).toBe("Platform variant is not approved for scheduling.");
+    expect(createScheduledPost).not.toHaveBeenCalled();
+  });
+
+  it("does not schedule a variant through an incompatible provider", async () => {
+    vi.resetModules();
+
+    const limit = vi.fn().mockResolvedValueOnce([{ id: "variant_linkedin", platform: "linkedin", policyStatus: "pass" }]);
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit
+          }))
+        }))
+      }))
+    };
+    const createScheduledPost = vi.fn();
+
+    vi.doMock("@/db", () => ({
+      getDb: () => db
+    }));
+    vi.doMock("@/lib/auth/current-user", () => ({
+      getCurrentUser: vi.fn(async () => ({
+        id: "user_1",
+        email: "user@example.com",
+        name: "User One",
+        imageUrl: null,
+        initials: "UO",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/env", () => ({
+      isDatabaseConfigured: true
+    }));
+    vi.doMock("@/lib/scheduler/create-scheduled-post", () => ({
+      createScheduledPost,
+      createSchedulerRepository: vi.fn()
+    }));
+    vi.doMock("@/lib/workspaces/personal-workspace", () => ({
+      resolvePersonalWorkspaceForUser: vi.fn(async () => ({
+        id: "00000000-0000-0000-0000-000000000001",
+        role: "owner",
+        isLocalPreview: false
+      }))
+    }));
+
+    const { POST } = await import("@/app/api/posts/[id]/schedule/route");
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/posts/variant_linkedin/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "x",
+          scheduledFor: futureIsoDate()
+        })
+      }),
+      {
+        params: Promise.resolve({ id: "variant_linkedin" })
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe("Provider x cannot publish linkedin variants.");
     expect(createScheduledPost).not.toHaveBeenCalled();
   });
 

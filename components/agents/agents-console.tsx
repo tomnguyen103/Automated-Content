@@ -324,7 +324,7 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
 
   return (
     <div className="grid gap-6">
-      <section className="grid gap-4 md:grid-cols-4">
+      <section id="control" className="grid scroll-mt-20 gap-4 md:grid-cols-4">
         <Stat label="Active agents" value={stats.activeProfiles} icon={<Bot size={18} aria-hidden="true" />} />
         <Stat label="Paused agents" value={stats.pausedProfiles} icon={<Pause size={18} aria-hidden="true" />} />
         <Stat label="Open missions" value={stats.runningMissions} icon={<Clock3 size={18} aria-hidden="true" />} />
@@ -364,7 +364,7 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
         </Button>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-7">
+      <section id="permissions" className="grid scroll-mt-20 gap-4 lg:grid-cols-7">
         {profiles.map((profile) => (
           <article key={profile.id} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-4">
             <div className="flex items-start justify-between gap-3">
@@ -404,7 +404,7 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
         ))}
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[410px_1fr]">
+      <section id="missions" className="grid scroll-mt-20 gap-6 xl:grid-cols-[410px_1fr]">
         <form
           className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-5"
           onSubmit={(event) => {
@@ -591,7 +591,7 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
         </section>
       </section>
 
-      <section className="grid gap-3">
+      <section id="activity" className="grid scroll-mt-20 gap-3">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-base font-semibold">Live activity</h2>
           <Badge tone="neutral">{activity.length} events</Badge>

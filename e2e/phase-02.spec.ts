@@ -34,6 +34,10 @@ test("billing page shows plan and usage state", async ({ page }, testInfo) => {
   await expect(page.getByRole("heading", { name: "Usage state" })).toBeVisible();
   await expect(page.getByText("Premium limit: 7 posts/day")).toBeVisible();
   await expect(page.getByRole("heading", { name: "AI generations" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Plan" })).toHaveAttribute("href", "#plan");
+  await expect(page.getByRole("link", { name: "Usage" })).toHaveAttribute("href", "#usage");
+  await expect(page.getByRole("button", { name: "Invoices is not available yet" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Upgrade is not available yet" })).toBeDisabled();
 
   await page.screenshot({
     path: testInfo.outputPath(`billing-${testInfo.project.name}.png`),

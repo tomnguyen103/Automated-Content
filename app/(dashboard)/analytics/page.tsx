@@ -55,18 +55,18 @@ export default async function AnalyticsPage() {
     <>
       <SubNav
         items={[
-          { label: "Overview", active: true },
-          { label: "Platforms" },
-          { label: "Replies" },
-          { label: "Usage" },
-          { label: "Agent activity" }
+          { label: "Overview", href: "#overview", active: true },
+          { label: "Platforms", href: "#platforms" },
+          { label: "Replies", href: "#replies" },
+          { label: "Usage", href: "#usage" },
+          { label: "Agent activity", href: "#agent-activity" }
         ]}
       />
       <PageShell
         title="Analytics"
         description="Measure posting volume, publishing failures, reply automation, usage ledger activity, and agent traces."
       >
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div id="overview" className="grid scroll-mt-20 gap-4 md:grid-cols-2 xl:grid-cols-5">
           <StatTile
             icon={<Send size={18} aria-hidden="true" />}
             label="Posts tracked"
@@ -105,8 +105,10 @@ export default async function AnalyticsPage() {
         </div>
 
         <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_380px]">
-          <PlatformBreakdown rows={snapshot.platformBreakdown} />
-          <section className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-5">
+          <div id="platforms" className="scroll-mt-20">
+            <PlatformBreakdown rows={snapshot.platformBreakdown} />
+          </div>
+          <section id="replies" className="scroll-mt-20 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-5">
             <div className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] bg-rose-50 text-[var(--color-primary)]">
                 <Zap size={18} aria-hidden="true" />
@@ -138,8 +140,12 @@ export default async function AnalyticsPage() {
         </div>
 
         <div className="mt-6 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-          <UsageChart byType={snapshot.usage.byType} points={snapshot.usage.daily} />
-          <AgentRunTable runs={snapshot.agents.recent} />
+          <div id="usage" className="scroll-mt-20">
+            <UsageChart byType={snapshot.usage.byType} points={snapshot.usage.daily} />
+          </div>
+          <div id="agent-activity" className="scroll-mt-20">
+            <AgentRunTable runs={snapshot.agents.recent} />
+          </div>
         </div>
       </PageShell>
     </>

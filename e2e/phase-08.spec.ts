@@ -36,6 +36,9 @@ test("analytics shows Phase 8 operational metrics", async ({ page }, testInfo) =
   await expect(page.getByRole("heading", { name: "Platform breakdown" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Usage history" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Agent activity" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Platforms" })).toHaveAttribute("href", "#platforms");
+  await expect(page.getByRole("link", { name: "Usage" })).toHaveAttribute("href", "#usage");
+  await expect(page.getByRole("link", { name: "Agent activity" })).toHaveAttribute("href", "#agent-activity");
 
   await page.screenshot({
     path: testInfo.outputPath(`analytics-${testInfo.project.name}.png`),

@@ -33,7 +33,7 @@ function createScheduledJob(overrides: Partial<ScheduledJob> = {}): ScheduledJob
   };
 }
 
-function createVariant(): PlatformVariantRow {
+function createVariant(overrides: Partial<PlatformVariantRow> = {}): PlatformVariantRow {
   const now = new Date("2026-06-20T12:00:00.000Z");
 
   return {
@@ -52,7 +52,8 @@ function createVariant(): PlatformVariantRow {
     policyStatus: "pass",
     policyWarnings: [],
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
+    ...overrides
   };
 }
 
@@ -80,16 +81,18 @@ function createAccount(overrides: Partial<ConnectedAccount> = {}): ConnectedAcco
 
 function createRepository({
   job,
-  account = createAccount()
+  account = createAccount(),
+  variant = createVariant()
 }: {
   job: ScheduledJob;
   account?: ConnectedAccount | null;
+  variant?: PlatformVariantRow;
 }) {
   const startAttempt = vi.fn();
   const repository: PublishRepository = {
     loadScheduledPost: vi.fn(async () => ({
       job,
-      variant: createVariant(),
+      variant,
       account
     })),
     startAttempt,
@@ -183,6 +186,52 @@ describe("publishScheduledPostJob", () => {
         repository
       })
     ).rejects.toThrow("is not ready for publishing");
+    expect(startAttempt).not.toHaveBeenCalled();
+  });
+
+  it("does not publish platform variants that failed policy review", async () => {
+    const { repository, startAttempt } = createRepository({
+      job: createScheduledJob({
+        provider: "linkedin"
+      }),
+      variant: createVariant({
+        policyStatus: "block"
+      })
+    });
+
+    await expect(
+      publishScheduledPostJob({
+        data: {
+          scheduledJobId,
+          workspaceId,
+          provider: "linkedin"
+        },
+        repository
+      })
+    ).rejects.toThrow("is not approved for publishing");
+    expect(startAttempt).not.toHaveBeenCalled();
+  });
+
+  it("does not publish through providers that cannot serve the variant platform", async () => {
+    const { repository, startAttempt } = createRepository({
+      job: createScheduledJob({
+        provider: "x"
+      }),
+      variant: createVariant({
+        platform: "linkedin"
+      })
+    });
+
+    await expect(
+      publishScheduledPostJob({
+        data: {
+          scheduledJobId,
+          workspaceId,
+          provider: "x"
+        },
+        repository
+      })
+    ).rejects.toThrow("Provider x cannot publish linkedin variants");
     expect(startAttempt).not.toHaveBeenCalled();
   });
 });

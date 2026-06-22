@@ -137,10 +137,16 @@ export function MediaLibrary() {
 
   return (
     <div className="grid gap-5">
-      <UploadDropzone uploading={uploading} error={error} onUpload={uploadFiles} />
+      <div id="uploads" className="scroll-mt-20">
+        <UploadDropzone uploading={uploading} error={error} onUpload={uploadFiles} />
+      </div>
       <div className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
-        <MediaGrid assets={assets} selectedId={displayedSelectedId} onSelect={(asset) => setSelectedId(asset.id)} />
-        <TransformPanel asset={selectedAsset} />
+        <div id="library" className="scroll-mt-20">
+          <MediaGrid assets={assets} selectedId={displayedSelectedId} onSelect={(asset) => setSelectedId(asset.id)} />
+        </div>
+        <div id="transforms" className="scroll-mt-20">
+          <TransformPanel asset={selectedAsset} />
+        </div>
       </div>
     </div>
   );

@@ -6,10 +6,12 @@ export default function MediaPage() {
   return (
     <>
       <SubNav
-        items={["Library", "Uploads", "AI Transforms", "Platform Crops"].map((label, index) => ({
-          label,
-          active: index === 0
-        }))}
+        items={[
+          { label: "Library", href: "#library", active: true },
+          { label: "Uploads", href: "#uploads" },
+          { label: "AI Transforms", href: "#transforms" },
+          { label: "Platform Crops", href: "#transforms" }
+        ]}
       />
       <PageShell
         title="Media"

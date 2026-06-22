@@ -10,6 +10,10 @@ import {
   type ScheduledJob,
   usageLedger
 } from "@/db/schema";
+import {
+  formatProviderPlatformError,
+  isProviderCompatibleWithPlatform
+} from "@/lib/providers/platform-compatibility";
 import { getProviderAdapter } from "@/lib/providers/registry";
 import type { PublishPostJobData } from "@/lib/scheduler/enqueue";
 
@@ -221,6 +225,19 @@ export async function publishScheduledPostJob({
 
   if (loaded.account && loaded.account.status !== "connected") {
     throw new Error(`Connected account ${loaded.account.id} is not ready for publishing.`);
+  }
+
+  if (loaded.variant.policyStatus !== "pass") {
+    throw new Error(`Platform variant ${loaded.variant.id} is not approved for publishing.`);
+  }
+
+  if (
+    !isProviderCompatibleWithPlatform({
+      platform: loaded.variant.platform,
+      provider: loaded.job.provider
+    })
+  ) {
+    throw new Error(formatProviderPlatformError(loaded.job.provider, loaded.variant.platform));
   }
 
   const provider = getProviderAdapter(loaded.job.provider);

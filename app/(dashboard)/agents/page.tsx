@@ -2,6 +2,11 @@ import { AgentsConsole } from "@/components/agents/agents-console";
 import { PageShell } from "@/components/layout/page-shell";
 import { SubNav } from "@/components/layout/sub-nav";
 import { Badge } from "@/components/ui/badge";
+import {
+  AGENT_MISSION_HISTORY_LIMIT,
+  AGENT_POLICY_EVENT_HISTORY_LIMIT,
+  AGENT_TASK_RUN_HISTORY_LIMIT
+} from "@/lib/agents/orchestration/repository";
 import { resolveAgentOrchestrationContext } from "@/lib/agents/orchestration/server";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +29,9 @@ export default async function AgentsPage() {
 
   let [profiles, missions] = await Promise.all([
     context.repositories.profiles.list(context.workspace.id),
-    context.repositories.missions.list(context.workspace.id)
+    context.repositories.missions.list(context.workspace.id, {
+      limit: AGENT_MISSION_HISTORY_LIMIT
+    })
   ]);
 
   if (profiles.length === 0) {
@@ -34,7 +41,9 @@ export default async function AgentsPage() {
     });
     [profiles, missions] = await Promise.all([
       context.repositories.profiles.list(context.workspace.id),
-      context.repositories.missions.list(context.workspace.id)
+      context.repositories.missions.list(context.workspace.id, {
+        limit: AGENT_MISSION_HISTORY_LIMIT
+      })
     ]);
   }
 
@@ -43,11 +52,13 @@ export default async function AgentsPage() {
       const [tasks, policyEvents] = await Promise.all([
         context.repositories.taskRuns.listForMission({
           workspaceId: context.workspace.id,
-          missionId: mission.id
+          missionId: mission.id,
+          limit: AGENT_TASK_RUN_HISTORY_LIMIT
         }),
         context.repositories.policyEvents.listForMission({
           workspaceId: context.workspace.id,
-          missionId: mission.id
+          missionId: mission.id,
+          limit: AGENT_POLICY_EVENT_HISTORY_LIMIT
         })
       ]);
 
@@ -63,10 +74,10 @@ export default async function AgentsPage() {
     <>
       <SubNav
         items={[
-          { label: "Control", active: true },
-          { label: "Missions" },
-          { label: "Permissions" },
-          { label: "Activity" }
+          { label: "Control", href: "#control", active: true },
+          { label: "Missions", href: "#missions" },
+          { label: "Permissions", href: "#permissions" },
+          { label: "Activity", href: "#activity" }
         ]}
       />
       <PageShell

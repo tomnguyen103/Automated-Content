@@ -65,24 +65,13 @@ export async function POST(
     }
 
     if (error instanceof QueueConfigurationError) {
-      try {
-        const { id } = routeParamsSchema.parse(await routeContext.params);
-        const result = await runMissionWorkflow({
-          workspaceId: serverContext.workspace.id,
-          missionId: id,
-          repositories: serverContext.repositories,
-          allowMemoryFallback: serverContext.workspace.isLocalPreview
-        });
-
-        return NextResponse.json({
-          execution: "inline",
-          queueFallback: error.message,
-          ...result
-        });
-      } catch (fallbackError) {
-        console.error("Agent mission queue fallback failed", fallbackError);
-        return NextResponse.json({ error: "Unable to run agent mission." }, { status: 500 });
-      }
+      return NextResponse.json(
+        {
+          error: "Agent mission queue is not configured.",
+          code: "agent_mission_queue_unavailable"
+        },
+        { status: 503 }
+      );
     }
 
     console.error("Unexpected agent mission run error", error);

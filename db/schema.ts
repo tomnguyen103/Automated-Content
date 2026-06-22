@@ -728,9 +728,7 @@ export const agentMissions = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
     createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
-    coordinatorProfileId: text("coordinator_profile_id").references(() => agentProfiles.id, {
-      onDelete: "set null"
-    }),
+    coordinatorProfileId: text("coordinator_profile_id"),
     missionType: agentMissionTypeEnum("mission_type").notNull(),
     title: text("title").notNull(),
     objective: text("objective").notNull(),
@@ -750,6 +748,11 @@ export const agentMissions = pgTable(
   },
   (table) => [
     uniqueIndex("agent_missions_workspace_id_id_idx").on(table.workspaceId, table.id),
+    foreignKey({
+      columns: [table.workspaceId, table.coordinatorProfileId],
+      foreignColumns: [agentProfiles.workspaceId, agentProfiles.id],
+      name: "agent_missions_workspace_coordinator_profile_fk"
+    }),
     check("agent_missions_priority_range_check", sql`${table.priority} >= 0 and ${table.priority} <= 100`),
     index("agent_missions_workspace_status_idx").on(table.workspaceId, table.status),
     index("agent_missions_created_by_user_idx").on(table.createdByUserId),
@@ -814,7 +817,7 @@ export const agentPolicyEvents = pgTable(
       .references(() => workspaces.id, { onDelete: "cascade" }),
     missionId: text("mission_id"),
     taskRunId: text("task_run_id"),
-    profileId: text("profile_id").references(() => agentProfiles.id, { onDelete: "set null" }),
+    profileId: text("profile_id"),
     severity: agentPolicyEventSeverityEnum("severity").default("info").notNull(),
     action: agentPolicyEventActionEnum("action").notNull(),
     policyKey: text("policy_key").notNull(),
@@ -835,6 +838,11 @@ export const agentPolicyEvents = pgTable(
       foreignColumns: [agentTaskRuns.workspaceId, agentTaskRuns.id],
       name: "agent_policy_events_workspace_task_run_fk"
     }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.profileId],
+      foreignColumns: [agentProfiles.workspaceId, agentProfiles.id],
+      name: "agent_policy_events_workspace_profile_fk"
+    }),
     index("agent_policy_events_workspace_severity_idx").on(table.workspaceId, table.severity),
     index("agent_policy_events_mission_idx").on(table.missionId),
     index("agent_policy_events_task_run_idx").on(table.taskRunId),

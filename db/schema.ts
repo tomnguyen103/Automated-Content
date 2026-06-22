@@ -35,6 +35,53 @@ export const usageEventTypeEnum = pgEnum("usage_event_type", [
 ]);
 export const aiProviderEnum = pgEnum("ai_provider", ["openai", "gemini"]);
 export const agentRunStatusEnum = pgEnum("agent_run_status", ["queued", "running", "succeeded", "failed"]);
+export const agentProfileRoleEnum = pgEnum("agent_profile_role", [
+  "coordinator",
+  "researcher",
+  "strategist",
+  "remixer",
+  "publisher",
+  "engagement",
+  "reporter"
+]);
+export const agentProfileStatusEnum = pgEnum("agent_profile_status", ["active", "disabled", "archived"]);
+export const agentMissionStatusEnum = pgEnum("agent_mission_status", [
+  "draft",
+  "queued",
+  "running",
+  "paused",
+  "succeeded",
+  "failed",
+  "canceled"
+]);
+export const agentMissionTypeEnum = pgEnum("agent_mission_type", [
+  "research_topics",
+  "content_pipeline",
+  "content_remix",
+  "auto_publish",
+  "comment_engagement",
+  "weekly_report"
+]);
+export const agentTaskRunStatusEnum = pgEnum("agent_task_run_status", [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "canceled",
+  "skipped"
+]);
+export const agentPolicyEventSeverityEnum = pgEnum("agent_policy_event_severity", [
+  "info",
+  "warning",
+  "blocked"
+]);
+export const agentPolicyEventActionEnum = pgEnum("agent_policy_event_action", [
+  "allow",
+  "require_review",
+  "block",
+  "escalate",
+  "note"
+]);
 export const workflowCheckpointStatusEnum = pgEnum("workflow_checkpoint_status", [
   "running",
   "awaiting_review",
@@ -643,6 +690,167 @@ export const workflowCheckpoints = pgTable(
   ]
 );
 
+export const agentProfiles = pgTable(
+  "agent_profiles",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    role: agentProfileRoleEnum("role").notNull(),
+    status: agentProfileStatusEnum("status").default("active").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    instructions: text("instructions").notNull(),
+    capabilities: jsonb("capabilities").$type<string[]>().default([]).notNull(),
+    toolScopes: jsonb("tool_scopes").$type<string[]>().default([]).notNull(),
+    policy: jsonb("policy").$type<Record<string, unknown>>().default({}).notNull(),
+    modelPreferences: jsonb("model_preferences").$type<Record<string, unknown>>().default({}).notNull(),
+    maxConcurrency: integer("max_concurrency").default(1).notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex("agent_profiles_workspace_id_id_idx").on(table.workspaceId, table.id),
+    check("agent_profiles_max_concurrency_positive_check", sql`${table.maxConcurrency} > 0`),
+    index("agent_profiles_workspace_status_idx").on(table.workspaceId, table.status),
+    index("agent_profiles_workspace_role_idx").on(table.workspaceId, table.role)
+  ]
+);
+
+export const agentMissions = pgTable(
+  "agent_missions",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    coordinatorProfileId: text("coordinator_profile_id"),
+    missionType: agentMissionTypeEnum("mission_type").notNull(),
+    title: text("title").notNull(),
+    objective: text("objective").notNull(),
+    brief: text("brief").notNull(),
+    status: agentMissionStatusEnum("status").default("draft").notNull(),
+    priority: integer("priority").default(50).notNull(),
+    inputs: jsonb("inputs").$type<Record<string, unknown>>().default({}).notNull(),
+    context: jsonb("context").$type<Record<string, unknown>>().default({}).notNull(),
+    policy: jsonb("policy").$type<Record<string, unknown>>().default({}).notNull(),
+    result: jsonb("result").$type<Record<string, unknown>>(),
+    error: text("error"),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex("agent_missions_workspace_id_id_idx").on(table.workspaceId, table.id),
+    foreignKey({
+      columns: [table.workspaceId, table.coordinatorProfileId],
+      foreignColumns: [agentProfiles.workspaceId, agentProfiles.id],
+      name: "agent_missions_workspace_coordinator_profile_fk"
+    }),
+    check("agent_missions_priority_range_check", sql`${table.priority} >= 0 and ${table.priority} <= 100`),
+    index("agent_missions_workspace_status_idx").on(table.workspaceId, table.status),
+    index("agent_missions_created_by_user_idx").on(table.createdByUserId),
+    index("agent_missions_coordinator_profile_idx").on(table.coordinatorProfileId)
+  ]
+);
+
+export const agentTaskRuns = pgTable(
+  "agent_task_runs",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    missionId: text("mission_id").notNull(),
+    profileId: text("profile_id").notNull(),
+    agentRunId: text("agent_run_id"),
+    taskName: text("task_name").notNull(),
+    status: agentTaskRunStatusEnum("status").default("queued").notNull(),
+    attemptNumber: integer("attempt_number").default(1).notNull(),
+    input: jsonb("input").$type<Record<string, unknown>>().default({}).notNull(),
+    output: jsonb("output").$type<Record<string, unknown>>(),
+    policySnapshot: jsonb("policy_snapshot").$type<Record<string, unknown>>().default({}).notNull(),
+    error: text("error"),
+    queuedAt: timestamp("queued_at", { withTimezone: true }).defaultNow().notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex("agent_task_runs_workspace_id_id_idx").on(table.workspaceId, table.id),
+    foreignKey({
+      columns: [table.workspaceId, table.missionId],
+      foreignColumns: [agentMissions.workspaceId, agentMissions.id],
+      name: "agent_task_runs_workspace_mission_fk"
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.profileId],
+      foreignColumns: [agentProfiles.workspaceId, agentProfiles.id],
+      name: "agent_task_runs_workspace_profile_fk"
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.agentRunId],
+      foreignColumns: [agentRuns.workspaceId, agentRuns.id],
+      name: "agent_task_runs_workspace_agent_run_fk"
+    }),
+    check("agent_task_runs_attempt_number_positive_check", sql`${table.attemptNumber} > 0`),
+    index("agent_task_runs_workspace_status_idx").on(table.workspaceId, table.status),
+    index("agent_task_runs_mission_idx").on(table.missionId),
+    index("agent_task_runs_profile_idx").on(table.profileId),
+    index("agent_task_runs_agent_run_idx").on(table.agentRunId)
+  ]
+);
+
+export const agentPolicyEvents = pgTable(
+  "agent_policy_events",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    missionId: text("mission_id"),
+    taskRunId: text("task_run_id"),
+    profileId: text("profile_id"),
+    severity: agentPolicyEventSeverityEnum("severity").default("info").notNull(),
+    action: agentPolicyEventActionEnum("action").notNull(),
+    policyKey: text("policy_key").notNull(),
+    message: text("message").notNull(),
+    details: jsonb("details").$type<Record<string, unknown>>().default({}).notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex("agent_policy_events_workspace_id_id_idx").on(table.workspaceId, table.id),
+    foreignKey({
+      columns: [table.workspaceId, table.missionId],
+      foreignColumns: [agentMissions.workspaceId, agentMissions.id],
+      name: "agent_policy_events_workspace_mission_fk"
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.taskRunId],
+      foreignColumns: [agentTaskRuns.workspaceId, agentTaskRuns.id],
+      name: "agent_policy_events_workspace_task_run_fk"
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.profileId],
+      foreignColumns: [agentProfiles.workspaceId, agentProfiles.id],
+      name: "agent_policy_events_workspace_profile_fk"
+    }),
+    index("agent_policy_events_workspace_severity_idx").on(table.workspaceId, table.severity),
+    index("agent_policy_events_mission_idx").on(table.missionId),
+    index("agent_policy_events_task_run_idx").on(table.taskRunId),
+    index("agent_policy_events_profile_idx").on(table.profileId),
+    index("agent_policy_events_occurred_at_idx").on(table.occurredAt)
+  ]
+);
+
 export const n8nEvents = pgTable(
   "n8n_events",
   {
@@ -686,4 +894,8 @@ export type CommentEvent = typeof commentEvents.$inferSelect;
 export type AutoReplyRuleRow = typeof autoReplyRules.$inferSelect;
 export type ReplyAttempt = typeof replyAttempts.$inferSelect;
 export type WorkflowCheckpoint = typeof workflowCheckpoints.$inferSelect;
+export type AgentProfileRow = typeof agentProfiles.$inferSelect;
+export type AgentMissionRow = typeof agentMissions.$inferSelect;
+export type AgentTaskRunRow = typeof agentTaskRuns.$inferSelect;
+export type AgentPolicyEventRow = typeof agentPolicyEvents.$inferSelect;
 export type N8nEvent = typeof n8nEvents.$inferSelect;

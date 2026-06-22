@@ -1,0 +1,657 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import {
+  Ban,
+  Bot,
+  CheckCircle2,
+  Clock3,
+  Pause,
+  Play,
+  RotateCw,
+  ShieldAlert,
+  ShieldCheck,
+  SlidersHorizontal
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import {
+  agentMissionSchema,
+  agentMissionTypeSchema,
+  agentPolicyEventSchema,
+  agentProfileSchema,
+  agentTaskRunSchema,
+  type AgentMission,
+  type AgentMissionType,
+  type AgentPolicyEvent,
+  type AgentProfile,
+  type AgentTaskRun
+} from "@/lib/agents/schemas/orchestration";
+
+type MissionRecord = {
+  mission: AgentMission;
+  tasks: AgentTaskRun[];
+  policyEvents: AgentPolicyEvent[];
+};
+
+type AgentsConsoleState = {
+  profiles: AgentProfile[];
+  missions: MissionRecord[];
+};
+
+type AgentsConsoleProps = {
+  initialState: AgentsConsoleState;
+};
+
+type BusyAction =
+  | "create_mission"
+  | "run_mission"
+  | "pause_mission"
+  | "resume_mission"
+  | "profile_pause"
+  | "profile_resume"
+  | "refresh"
+  | null;
+
+const missionTypeOptions: Array<{ value: AgentMissionType; label: string }> = [
+  { value: "research_topics", label: "Research topics" },
+  { value: "content_pipeline", label: "Content pipeline" },
+  { value: "content_remix", label: "Content remix" },
+  { value: "auto_publish", label: "Auto publish" },
+  { value: "comment_engagement", label: "Comment engagement" },
+  { value: "weekly_report", label: "Weekly report" }
+];
+
+const platformOptions = ["linkedin", "x", "instagram", "facebook", "threads", "tiktok"] as const;
+
+const statusTone = {
+  active: "success",
+  archived: "neutral",
+  canceled: "neutral",
+  disabled: "critical",
+  draft: "neutral",
+  failed: "critical",
+  paused: "premium",
+  queued: "community",
+  running: "primary",
+  skipped: "neutral",
+  succeeded: "success"
+} as const;
+
+function formatDate(value: string | undefined) {
+  if (!value) {
+    return "Not started";
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short"
+  }).format(new Date(value));
+}
+
+function parseProfiles(payload: unknown) {
+  const value = payload as { profiles?: unknown[] };
+  return (value.profiles ?? []).map((profile) => agentProfileSchema.parse(profile));
+}
+
+function parseMissions(payload: unknown): MissionRecord[] {
+  const value = payload as { missions?: Array<{ mission: unknown; tasks?: unknown[]; policyEvents?: unknown[] }> };
+
+  return (value.missions ?? []).map((record) => ({
+    mission: agentMissionSchema.parse(record.mission),
+    tasks: (record.tasks ?? []).map((task) => agentTaskRunSchema.parse(task)),
+    policyEvents: (record.policyEvents ?? []).map((event) => agentPolicyEventSchema.parse(event))
+  }));
+}
+
+async function readJson(response: Response) {
+  const payload: unknown = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const message =
+      payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
+        ? payload.error
+        : "Agent request failed.";
+    throw new Error(message);
+  }
+
+  return payload;
+}
+
+function roleLabel(role: AgentProfile["role"]) {
+  return role.replace("_", " ");
+}
+
+function missionVerb(status: AgentMission["status"]) {
+  if (status === "paused") {
+    return "Resume";
+  }
+
+  if (status === "running") {
+    return "Running";
+  }
+
+  return "Run";
+}
+
+function newestActivity(missions: MissionRecord[]) {
+  return missions
+    .flatMap((record) => [
+      ...record.tasks.map((task) => ({
+        id: task.id,
+        label: task.taskName,
+        detail: record.mission.title,
+        status: task.status,
+        at: task.completedAt ?? task.startedAt ?? task.queuedAt
+      })),
+      ...record.policyEvents.map((event) => ({
+        id: event.id,
+        label: event.message,
+        detail: event.policyKey,
+        status: event.severity,
+        at: event.occurredAt
+      }))
+    ])
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, 8);
+}
+
+export function AgentsConsole({ initialState }: AgentsConsoleProps) {
+  const [profiles, setProfiles] = useState(initialState.profiles);
+  const [missions, setMissions] = useState(initialState.missions);
+  const [missionType, setMissionType] = useState<AgentMissionType>("content_pipeline");
+  const [title, setTitle] = useState("Autonomous content mission");
+  const [topic, setTopic] = useState("Autonomous content operations");
+  const [brief, setBrief] = useState("Research, generate, schedule, and report on a focused content mission.");
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["linkedin", "x"]);
+  const [dailyActionCap, setDailyActionCap] = useState(10);
+  const [confidenceThreshold, setConfidenceThreshold] = useState(0.78);
+  const [blockedPhrases, setBlockedPhrases] = useState("guarantee, risk-free");
+  const [busyAction, setBusyAction] = useState<BusyAction>(null);
+  const [error, setError] = useState<string | null>(null);
+  const activity = useMemo(() => newestActivity(missions), [missions]);
+  const stats = useMemo(
+    () => ({
+      activeProfiles: profiles.filter((profile) => profile.status === "active" && !profile.policy.emergencyPaused).length,
+      pausedProfiles: profiles.filter((profile) => profile.policy.emergencyPaused || profile.status !== "active").length,
+      runningMissions: missions.filter((record) => record.mission.status === "running" || record.mission.status === "queued").length,
+      blockedEvents: missions.reduce(
+        (sum, record) => sum + record.policyEvents.filter((event) => event.severity === "blocked").length,
+        0
+      )
+    }),
+    [missions, profiles]
+  );
+
+  async function refresh() {
+    const [profilePayload, missionPayload] = await Promise.all([
+      fetch("/api/agents/profiles").then(readJson),
+      fetch("/api/agents/missions").then(readJson)
+    ]);
+
+    setProfiles(parseProfiles(profilePayload));
+    setMissions(parseMissions(missionPayload));
+  }
+
+  async function withBusy(action: BusyAction, mutation: () => Promise<void>) {
+    setBusyAction(action);
+    setError(null);
+
+    try {
+      await mutation();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Agent request failed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function createMission() {
+    await withBusy("create_mission", async () => {
+      const parsedMissionType = agentMissionTypeSchema.parse(missionType);
+      const platforms = selectedPlatforms.length > 0 ? selectedPlatforms : ["linkedin"];
+
+      await readJson(
+        await fetch("/api/agents/missions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            missionType: parsedMissionType,
+            title,
+            objective: topic,
+            brief,
+            inputs: {
+              topic,
+              platforms,
+              providerByPlatform: {
+                facebook: "meta",
+                instagram: "meta",
+                linkedin: "linkedin",
+                threads: "meta",
+                tiktok: "mock",
+                x: "x"
+              },
+              maxComments: dailyActionCap
+            },
+            policy: {
+              autonomy: "full",
+              dailyActionCap,
+              confidenceThreshold,
+              blockedPhrases: blockedPhrases
+                .split(",")
+                .map((phrase) => phrase.trim())
+                .filter(Boolean),
+              platformScope: platforms,
+              maxTasksPerRun: 12
+            }
+          })
+        })
+      );
+      await refresh();
+    });
+  }
+
+  async function runMission(mission: AgentMission) {
+    const endpoint = mission.status === "paused" ? "resume" : "run";
+
+    await withBusy(mission.status === "paused" ? "resume_mission" : "run_mission", async () => {
+      await readJson(await fetch(`/api/agents/missions/${mission.id}/${endpoint}`, { method: "POST" }));
+      await refresh();
+    });
+  }
+
+  async function pauseMission(mission: AgentMission) {
+    await withBusy("pause_mission", async () => {
+      await readJson(await fetch(`/api/agents/missions/${mission.id}/pause`, { method: "POST" }));
+      await refresh();
+    });
+  }
+
+  async function toggleProfilePause(profile: AgentProfile) {
+    const nextPaused = !profile.policy.emergencyPaused;
+
+    await withBusy(nextPaused ? "profile_pause" : "profile_resume", async () => {
+      await readJson(
+        await fetch(`/api/agents/profiles/${profile.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            policy: {
+              emergencyPaused: nextPaused
+            }
+          })
+        })
+      );
+      await refresh();
+    });
+  }
+
+  async function toggleAllProfiles(nextPaused: boolean) {
+    await withBusy(nextPaused ? "profile_pause" : "profile_resume", async () => {
+      const results = await Promise.allSettled(
+        profiles.map(async (profile) =>
+          readJson(
+            await fetch(`/api/agents/profiles/${profile.id}`, {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                policy: {
+                  emergencyPaused: nextPaused
+                }
+              })
+            })
+          )
+        )
+      );
+      await refresh();
+
+      const failed = results.filter((result) => result.status === "rejected");
+      if (failed.length > 0) {
+        throw new Error(`${failed.length} profile update(s) failed. Retry to fully apply this action.`);
+      }
+    });
+  }
+
+  return (
+    <div className="grid gap-6">
+      <section className="grid gap-4 md:grid-cols-4">
+        <Stat label="Active agents" value={stats.activeProfiles} icon={<Bot size={18} aria-hidden="true" />} />
+        <Stat label="Paused agents" value={stats.pausedProfiles} icon={<Pause size={18} aria-hidden="true" />} />
+        <Stat label="Open missions" value={stats.runningMissions} icon={<Clock3 size={18} aria-hidden="true" />} />
+        <Stat label="Policy blocks" value={stats.blockedEvents} icon={<ShieldAlert size={18} aria-hidden="true" />} />
+      </section>
+
+      {error ? (
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-error)] bg-rose-50 p-4 text-sm font-medium text-[var(--color-error)]">
+          {error}
+        </div>
+      ) : null}
+
+      <section className="flex flex-wrap items-center gap-3">
+        <Button
+          variant="outline"
+          onClick={() => withBusy("refresh", refresh)}
+          disabled={busyAction === "refresh"}
+        >
+          <RotateCw size={16} aria-hidden="true" />
+          Refresh
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => toggleAllProfiles(true)}
+          disabled={busyAction === "profile_pause" || profiles.every((profile) => profile.policy.emergencyPaused)}
+        >
+          <Ban size={16} aria-hidden="true" />
+          Kill switch
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => toggleAllProfiles(false)}
+          disabled={busyAction === "profile_resume" || profiles.every((profile) => !profile.policy.emergencyPaused)}
+        >
+          <ShieldCheck size={16} aria-hidden="true" />
+          Resume agents
+        </Button>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-7">
+        {profiles.map((profile) => (
+          <article key={profile.id} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold capitalize">{roleLabel(profile.role)}</p>
+                <p className="mt-1 truncate text-xs text-[var(--color-text-muted)]">{profile.name}</p>
+              </div>
+              <Badge tone={profile.policy.emergencyPaused ? "premium" : statusTone[profile.status]}>
+                {profile.policy.emergencyPaused ? "paused" : profile.status}
+              </Badge>
+            </div>
+            <dl className="mt-4 grid gap-2 text-xs">
+              <div className="flex justify-between gap-3">
+                <dt className="text-[var(--color-text-muted)]">Cap</dt>
+                <dd className="font-medium">{profile.policy.dailyActionCap}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-[var(--color-text-muted)]">Threshold</dt>
+                <dd className="font-medium">{profile.policy.confidenceThreshold.toFixed(2)}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-[var(--color-text-muted)]">Tools</dt>
+                <dd className="font-medium">{profile.toolScopes.length}</dd>
+              </div>
+            </dl>
+            <Button
+              className="mt-4 w-full"
+              variant="outline"
+              size="sm"
+              onClick={() => toggleProfilePause(profile)}
+              disabled={busyAction === "profile_pause" || busyAction === "profile_resume"}
+            >
+              {profile.policy.emergencyPaused ? <Play size={15} aria-hidden="true" /> : <Pause size={15} aria-hidden="true" />}
+              {profile.policy.emergencyPaused ? "Resume" : "Pause"}
+            </Button>
+          </article>
+        ))}
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[410px_1fr]">
+        <form
+          className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void createMission();
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] bg-teal-50 text-teal-700">
+              <SlidersHorizontal size={18} aria-hidden="true" />
+            </span>
+            <h2 className="text-base font-semibold">Mission builder</h2>
+          </div>
+
+          <div className="mt-5 grid gap-4">
+            <label className="grid gap-2 text-sm font-medium">
+              Mission type
+              <select
+                className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 text-sm font-normal"
+                value={missionType}
+                onChange={(event) => setMissionType(event.target.value as AgentMissionType)}
+              >
+                {missionTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium">
+              Title
+              <input
+                className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-sm font-normal"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium">
+              Topic
+              <input
+                className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-sm font-normal"
+                value={topic}
+                onChange={(event) => setTopic(event.target.value)}
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium">
+              Brief
+              <textarea
+                className="min-h-24 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 text-sm font-normal leading-6"
+                value={brief}
+                onChange={(event) => setBrief(event.target.value)}
+              />
+            </label>
+
+            <div className="grid gap-2">
+              <span className="text-sm font-medium">Platforms</span>
+              <div className="grid grid-cols-2 gap-2">
+                {platformOptions.map((platform) => (
+                  <label key={platform} className="flex items-center gap-2 text-sm capitalize">
+                    <input
+                      type="checkbox"
+                      checked={selectedPlatforms.includes(platform)}
+                      onChange={(event) =>
+                        setSelectedPlatforms((current) =>
+                          event.target.checked
+                            ? [...current, platform]
+                            : current.filter((candidate) => candidate !== platform)
+                        )
+                      }
+                    />
+                    {platform}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-2 text-sm font-medium">
+                Daily cap
+                <input
+                  className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-sm font-normal"
+                  min={1}
+                  max={100}
+                  type="number"
+                  value={dailyActionCap}
+                  onChange={(event) => setDailyActionCap(Number(event.target.value))}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                Confidence
+                <input
+                  className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-sm font-normal"
+                  max={1}
+                  min={0}
+                  step={0.01}
+                  type="number"
+                  value={confidenceThreshold}
+                  onChange={(event) => setConfidenceThreshold(Number(event.target.value))}
+                />
+              </label>
+            </div>
+
+            <label className="grid gap-2 text-sm font-medium">
+              Blocked phrases
+              <input
+                className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-sm font-normal"
+                value={blockedPhrases}
+                onChange={(event) => setBlockedPhrases(event.target.value)}
+              />
+            </label>
+
+            <Button type="submit" disabled={busyAction === "create_mission"}>
+              <CheckCircle2 size={16} aria-hidden="true" />
+              Create mission
+            </Button>
+          </div>
+        </form>
+
+        <section className="grid gap-4">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold">Missions</h2>
+            <Badge tone="neutral">{missions.length} total</Badge>
+          </div>
+          {missions.length === 0 ? (
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-5 text-sm text-[var(--color-text-muted)]">
+              No missions have been created yet.
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {missions.map((record) => (
+                <article key={record.mission.id} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-semibold">{record.mission.title}</h3>
+                        <Badge tone={statusTone[record.mission.status]}>{record.mission.status.replace("_", " ")}</Badge>
+                        <Badge tone="neutral">{record.mission.missionType.replace("_", " ")}</Badge>
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">{record.mission.objective}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => runMission(record.mission)}
+                        disabled={record.mission.status === "running" || busyAction === "run_mission" || busyAction === "resume_mission"}
+                      >
+                        <Play size={15} aria-hidden="true" />
+                        {missionVerb(record.mission.status)}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => pauseMission(record.mission)}
+                        disabled={record.mission.status === "paused" || busyAction === "pause_mission"}
+                      >
+                        <Pause size={15} aria-hidden="true" />
+                        Pause
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    <MiniMetric label="Tasks" value={record.tasks.length} />
+                    <MiniMetric label="Policy events" value={record.policyEvents.length} />
+                    <MiniMetric label="Updated" value={formatDate(record.mission.updatedAt)} />
+                  </div>
+                  {record.tasks.length > 0 ? (
+                    <div className="mt-4 divide-y divide-[var(--color-border)] border-t border-[var(--color-border)]">
+                      {record.tasks.slice(0, 4).map((task) => (
+                        <div key={task.id} className="flex items-center justify-between gap-3 py-3 text-sm">
+                          <span className="min-w-0 truncate">{task.taskName}</span>
+                          <Badge tone={statusTone[task.status]}>{task.status}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      </section>
+
+      <section className="grid gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold">Live activity</h2>
+          <Badge tone="neutral">{activity.length} events</Badge>
+        </div>
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white">
+          {activity.length === 0 ? (
+            <div className="p-5 text-sm text-[var(--color-text-muted)]">No agent activity has been recorded.</div>
+          ) : (
+            <div className="divide-y divide-[var(--color-border)]">
+              {activity.map((event) => (
+                <div key={event.id} className="grid gap-2 p-4 md:grid-cols-[1fr_auto_auto] md:items-center">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{event.label}</p>
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">{event.detail}</p>
+                  </div>
+                  <Badge
+                    tone={
+                      event.status === "blocked" || event.status === "failed"
+                        ? "critical"
+                        : event.status === "warning"
+                          ? "premium"
+                          : event.status === "succeeded" || event.status === "info"
+                            ? "success"
+                            : "neutral"
+                    }
+                  >
+                    {event.status}
+                  </Badge>
+                  <span className="text-xs text-[var(--color-text-muted)]">{formatDate(event.at)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function Stat({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
+  return (
+    <section className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-4">
+      <div className="flex items-center gap-3">
+        <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-surface)] text-[var(--color-primary)]">
+          {icon}
+        </span>
+        <div>
+          <p className="text-2xl font-semibold">{value}</p>
+          <p className="text-sm text-[var(--color-text-muted)]">{label}</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-[var(--radius-md)] bg-[var(--color-surface)] px-3 py-2">
+      <p className="text-xs text-[var(--color-text-muted)]">{label}</p>
+      <p className={cn("mt-1 truncate text-sm font-semibold", typeof value === "number" ? "tabular-nums" : "")}>{value}</p>
+    </div>
+  );
+}

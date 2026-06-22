@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Bot,
   CalendarDays,
   CreditCard,
   Home,
@@ -22,6 +23,7 @@ export const navItems = [
   { label: "Calendar", href: "/calendar", icon: CalendarDays },
   { label: "Media", href: "/media", icon: Image },
   { label: "Connections", href: "/connections", icon: Plug },
+  { label: "Agents", href: "/agents", icon: Bot },
   { label: "Auto Replies", href: "/auto-replies", icon: MessageCircleReply },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Billing", href: "/billing", icon: CreditCard },

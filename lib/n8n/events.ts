@@ -16,6 +16,11 @@ export const n8nEventTypeSchema = z.enum([
   "reply.approval_requested",
   "reply.sent",
   "reply.failed",
+  "agent.mission.started",
+  "agent.mission.completed",
+  "agent.task.succeeded",
+  "agent.task.failed",
+  "agent.policy.evaluated",
   "usage.threshold_reached"
 ]);
 

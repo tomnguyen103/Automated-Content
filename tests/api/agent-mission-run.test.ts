@@ -13,7 +13,8 @@ const routeMocks = vi.hoisted(() => {
     enqueueAgentMission: vi.fn(),
     getMission: vi.fn(),
     resolveAgentOrchestrationContext: vi.fn(),
-    runMissionWorkflow: vi.fn()
+    runMissionWorkflow: vi.fn(),
+    simulateAgentMission: vi.fn()
   };
 });
 
@@ -29,6 +30,10 @@ vi.mock("@/lib/agents/orchestration/server", () => ({
   resolveAgentOrchestrationContext: routeMocks.resolveAgentOrchestrationContext
 }));
 
+vi.mock("@/lib/agents/orchestration/simulation", () => ({
+  simulateAgentMission: routeMocks.simulateAgentMission
+}));
+
 vi.mock("@/lib/scheduler/enqueue", () => ({
   QueueConfigurationError: routeMocks.QueueConfigurationError
 }));
@@ -41,6 +46,9 @@ describe("agent mission run API", () => {
       workspace: {
         id: "00000000-0000-0000-0000-000000000001",
         isLocalPreview: false
+      },
+      user: {
+        id: "user_1"
       },
       repositories: {
         missions: {
@@ -64,6 +72,41 @@ describe("agent mission run API", () => {
       error: "Agent mission queue is not configured.",
       code: "agent_mission_queue_unavailable"
     });
+    expect(routeMocks.runMissionWorkflow).not.toHaveBeenCalled();
+  });
+
+  it("runs mission simulations inline without queueing execution work", async () => {
+    routeMocks.simulateAgentMission.mockResolvedValue({
+      mission: {
+        id: "mission_1"
+      },
+      simulationRun: {
+        id: "agent_sim_1"
+      },
+      policyEvents: []
+    });
+    const { POST } = await import("@/app/api/agents/missions/[id]/simulate/route");
+
+    const response = await POST(new Request("http://localhost/api/agents/missions/mission_1/simulate"), {
+      params: Promise.resolve({ id: "mission_1" })
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({
+      execution: "simulation",
+      simulationRun: {
+        id: "agent_sim_1"
+      }
+    });
+    expect(routeMocks.simulateAgentMission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        missionId: "mission_1",
+        requestedByUserId: "user_1",
+        workspaceId: "00000000-0000-0000-0000-000000000001"
+      })
+    );
+    expect(routeMocks.enqueueAgentMission).not.toHaveBeenCalled();
     expect(routeMocks.runMissionWorkflow).not.toHaveBeenCalled();
   });
 });

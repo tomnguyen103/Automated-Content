@@ -27,6 +27,7 @@ import {
   resumeAgentMission,
   runAgentMission
 } from "@/lib/agents/orchestration/runner";
+import { simulateAgentMission } from "@/lib/agents/orchestration/simulation";
 import { createAutonomousMissionTaskExecutor } from "@/lib/agents/orchestration/executors";
 
 const workspaceId = "00000000-0000-0000-0000-000000000001";
@@ -581,6 +582,166 @@ describe("agent orchestration foundation", () => {
         })
       })
     );
+  });
+
+  it("simulates publish missions without invoking scheduling or publish executors", async () => {
+    const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
+    const seeded = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_1",
+      now: new Date(timestamp)
+    });
+    const coordinator = seeded.find((profile) => profile.role === "coordinator")!;
+    const executeTask = vi.fn(async () => {
+      throw new Error("Simulation must not execute task side effects.");
+    });
+
+    await repositories.missions.save({
+      id: "mission_publish_simulation_1",
+      workspaceId,
+      createdByUserId: "user_1",
+      coordinatorProfileId: coordinator.id,
+      missionType: "content_pipeline",
+      title: "Autonomous publish simulation",
+      objective: "Preview a publish mission before queueing provider work.",
+      brief: "Research, generate, and prepare publish actions without writing jobs.",
+      status: "queued",
+      priority: 80,
+      inputs: {
+        topic: "Simulation safety",
+        platforms: ["linkedin", "x"]
+      },
+      context: {},
+      policy: agentAutonomyPolicySchema.parse({
+        autonomy: "full",
+        allowedActions: ["mission.run", "research.collect", "task.execute", "content.generate", "content.publish"],
+        allowedToolScopes: ["mission.plan", "research.topic", "strategy.plan", "content.generate", "content.publish"],
+        platformScope: ["linkedin", "x"]
+      }),
+      requestedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+
+    const result = await simulateAgentMission({
+      workspaceId,
+      missionId: "mission_publish_simulation_1",
+      repositories,
+      executeTask,
+      requestedByUserId: "user_1",
+      now: () => new Date(timestamp)
+    });
+
+    expect(executeTask).not.toHaveBeenCalled();
+    expect(result.mission.status).toBe("queued");
+    expect(result.simulationRun).toMatchObject({
+      missionId: "mission_publish_simulation_1",
+      requestedByUserId: "user_1",
+      status: "succeeded",
+      estimatedUsage: {
+        scheduledPostWrites: 2,
+        publishEnqueues: 2
+      }
+    });
+    expect(result.simulationRun.plannedActions.map((action) => action.action)).toContain("content.publish");
+    expect(result.simulationRun.plannedActions.find((action) => action.action === "content.publish")).toMatchObject({
+      status: "would_run",
+      suppressedSideEffects: expect.arrayContaining(["publish queue enqueue"])
+    });
+    await expect(
+      repositories.taskRuns.listForMission({
+        workspaceId,
+        missionId: "mission_publish_simulation_1"
+      })
+    ).resolves.toHaveLength(0);
+    await expect(
+      repositories.simulationRuns.listForMission({
+        workspaceId,
+        missionId: "mission_publish_simulation_1"
+      })
+    ).resolves.toHaveLength(1);
+    await expect(
+      repositories.policyEvents.listForMission({
+        workspaceId,
+        missionId: "mission_publish_simulation_1"
+      })
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          details: expect.objectContaining({
+            simulation: true,
+            simulationRunId: result.simulationRun.id
+          })
+        })
+      ])
+    );
+  });
+
+  it("simulates comment engagement without invoking reply send executors", async () => {
+    const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
+    const seeded = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_1",
+      now: new Date(timestamp)
+    });
+    const coordinator = seeded.find((profile) => profile.role === "coordinator")!;
+    const executeTask = vi.fn(async () => {
+      throw new Error("Simulation must not send replies.");
+    });
+
+    await repositories.missions.save({
+      id: "mission_reply_simulation_1",
+      workspaceId,
+      createdByUserId: "user_1",
+      coordinatorProfileId: coordinator.id,
+      missionType: "comment_engagement",
+      title: "Reply simulation",
+      objective: "Preview auto replies before provider calls.",
+      brief: "Review inbound comment handling without sending replies.",
+      status: "queued",
+      priority: 70,
+      inputs: {
+        maxComments: 3,
+        platform: "linkedin"
+      },
+      context: {},
+      policy: agentAutonomyPolicySchema.parse({
+        autonomy: "full",
+        allowedActions: ["mission.run", "reply.send"],
+        allowedToolScopes: ["mission.plan", "reply.send"],
+        dailyActionCap: 5,
+        platformScope: ["linkedin"]
+      }),
+      requestedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+
+    const result = await simulateAgentMission({
+      workspaceId,
+      missionId: "mission_reply_simulation_1",
+      repositories,
+      executeTask,
+      now: () => new Date(timestamp)
+    });
+    const replyAction = result.simulationRun.plannedActions.find((action) => action.action === "reply.send");
+
+    expect(executeTask).not.toHaveBeenCalled();
+    expect(replyAction).toMatchObject({
+      status: "would_run",
+      estimatedUsage: {
+        replySends: 3,
+        providerRequests: 3
+      },
+      suppressedSideEffects: expect.arrayContaining(["provider reply send"])
+    });
+    expect(result.simulationRun.estimatedUsage.replySends).toBe(3);
+    await expect(
+      repositories.taskRuns.listForMission({
+        workspaceId,
+        missionId: "mission_reply_simulation_1"
+      })
+    ).resolves.toHaveLength(0);
   });
 
   it("does not overwrite customized role templates when seeding runs again", async () => {

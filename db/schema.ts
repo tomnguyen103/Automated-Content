@@ -82,6 +82,10 @@ export const agentPolicyEventActionEnum = pgEnum("agent_policy_event_action", [
   "escalate",
   "note"
 ]);
+export const agentMissionSimulationStatusEnum = pgEnum("agent_mission_simulation_status", [
+  "succeeded",
+  "failed"
+]);
 export const workflowCheckpointStatusEnum = pgEnum("workflow_checkpoint_status", [
   "running",
   "awaiting_review",
@@ -851,6 +855,43 @@ export const agentPolicyEvents = pgTable(
   ]
 );
 
+export const agentMissionSimulations = pgTable(
+  "agent_mission_simulations",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    missionId: text("mission_id").notNull(),
+    requestedByUserId: text("requested_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    status: agentMissionSimulationStatusEnum("status").default("succeeded").notNull(),
+    plannedActions: jsonb("planned_actions").$type<Array<Record<string, unknown>>>().default([]).notNull(),
+    policyEvents: jsonb("policy_events").$type<Array<Record<string, unknown>>>().default([]).notNull(),
+    estimatedUsage: jsonb("estimated_usage").$type<Record<string, unknown>>().default({}).notNull(),
+    summary: jsonb("summary").$type<Record<string, unknown>>().default({}).notNull(),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true })
+  },
+  (table) => [
+    uniqueIndex("agent_mission_simulations_workspace_id_id_idx").on(table.workspaceId, table.id),
+    foreignKey({
+      columns: [table.workspaceId, table.missionId],
+      foreignColumns: [agentMissions.workspaceId, agentMissions.id],
+      name: "agent_mission_simulations_workspace_mission_fk"
+    }).onDelete("cascade"),
+    index("agent_mission_simulations_workspace_idx").on(table.workspaceId),
+    index("agent_mission_simulations_mission_idx").on(table.missionId),
+    index("agent_mission_simulations_workspace_mission_created_at_idx").on(
+      table.workspaceId,
+      table.missionId,
+      table.createdAt
+    ),
+    index("agent_mission_simulations_status_idx").on(table.status),
+    index("agent_mission_simulations_created_at_idx").on(table.createdAt)
+  ]
+);
+
 export const n8nEvents = pgTable(
   "n8n_events",
   {
@@ -898,4 +939,5 @@ export type AgentProfileRow = typeof agentProfiles.$inferSelect;
 export type AgentMissionRow = typeof agentMissions.$inferSelect;
 export type AgentTaskRunRow = typeof agentTaskRuns.$inferSelect;
 export type AgentPolicyEventRow = typeof agentPolicyEvents.$inferSelect;
+export type AgentMissionSimulationRow = typeof agentMissionSimulations.$inferSelect;
 export type N8nEvent = typeof n8nEvents.$inferSelect;

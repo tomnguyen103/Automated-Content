@@ -7,6 +7,7 @@ import {
   Bot,
   CheckCircle2,
   Clock3,
+  FlaskConical,
   Pause,
   Play,
   RotateCw,
@@ -19,14 +20,17 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   agentMissionSchema,
+  agentMissionSimulationRunSchema,
   agentMissionTypeSchema,
   agentPolicyEventSchema,
   agentProfileSchema,
   agentTaskRunSchema,
   type AgentMission,
+  type AgentMissionSimulationRun,
   type AgentMissionType,
   type AgentPolicyEvent,
   type AgentProfile,
+  type AgentSimulationPlannedAction,
   type AgentTaskRun
 } from "@/lib/agents/schemas/orchestration";
 
@@ -34,6 +38,7 @@ type MissionRecord = {
   mission: AgentMission;
   tasks: AgentTaskRun[];
   policyEvents: AgentPolicyEvent[];
+  simulations: AgentMissionSimulationRun[];
 };
 
 type AgentsConsoleState = {
@@ -48,6 +53,7 @@ type AgentsConsoleProps = {
 type BusyAction =
   | "create_mission"
   | "run_mission"
+  | "simulate_mission"
   | "pause_mission"
   | "resume_mission"
   | "profile_pause"
@@ -93,18 +99,28 @@ function formatDate(value: string | undefined) {
   }).format(new Date(value));
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 function parseProfiles(payload: unknown) {
-  const value = payload as { profiles?: unknown[] };
-  return (value.profiles ?? []).map((profile) => agentProfileSchema.parse(profile));
+  if (!isRecord(payload) || !Array.isArray(payload.profiles)) {
+    return [];
+  }
+
+  return payload.profiles.map((profile) => agentProfileSchema.parse(profile));
 }
 
 function parseMissions(payload: unknown): MissionRecord[] {
-  const value = payload as { missions?: Array<{ mission: unknown; tasks?: unknown[]; policyEvents?: unknown[] }> };
+  if (!isRecord(payload) || !Array.isArray(payload.missions)) {
+    return [];
+  }
 
-  return (value.missions ?? []).map((record) => ({
+  return payload.missions.filter(isRecord).map((record) => ({
     mission: agentMissionSchema.parse(record.mission),
-    tasks: (record.tasks ?? []).map((task) => agentTaskRunSchema.parse(task)),
-    policyEvents: (record.policyEvents ?? []).map((event) => agentPolicyEventSchema.parse(event))
+    tasks: (Array.isArray(record.tasks) ? record.tasks : []).map((task) => agentTaskRunSchema.parse(task)),
+    policyEvents: (Array.isArray(record.policyEvents) ? record.policyEvents : []).map((event) => agentPolicyEventSchema.parse(event)),
+    simulations: (Array.isArray(record.simulations) ? record.simulations : []).map((simulation) => agentMissionSimulationRunSchema.parse(simulation))
   }));
 }
 
@@ -154,10 +170,49 @@ function newestActivity(missions: MissionRecord[]) {
         detail: event.policyKey,
         status: event.severity,
         at: event.occurredAt
+      })),
+      ...record.simulations.map((simulation) => ({
+        id: simulation.id,
+        label: "Mission simulation completed",
+        detail: `${record.mission.title} - ${simulation.plannedActions.length} planned actions`,
+        status: simulation.status,
+        at: simulation.completedAt ?? simulation.createdAt
       }))
     ])
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, 8);
+}
+
+function newestSimulations(missions: MissionRecord[]) {
+  return missions
+    .flatMap((record) =>
+      record.simulations.map((simulation) => ({
+        mission: record.mission,
+        simulation
+      }))
+    )
+    .sort((a, b) => (b.simulation.completedAt ?? b.simulation.createdAt).localeCompare(a.simulation.completedAt ?? a.simulation.createdAt))
+    .slice(0, 6);
+}
+
+function plannedActionTone(status: AgentSimulationPlannedAction["status"]) {
+  if (status === "would_run") {
+    return "success";
+  }
+
+  if (status === "would_require_review") {
+    return "premium";
+  }
+
+  return status === "blocked" ? "critical" : "neutral";
+}
+
+function formatCents(value: number) {
+  if (value === 0) {
+    return "$0.00";
+  }
+
+  return `$${(value / 100).toFixed(2)}`;
 }
 
 export function AgentsConsole({ initialState }: AgentsConsoleProps) {
@@ -174,6 +229,7 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [error, setError] = useState<string | null>(null);
   const activity = useMemo(() => newestActivity(missions), [missions]);
+  const simulationRecords = useMemo(() => newestSimulations(missions), [missions]);
   const stats = useMemo(
     () => ({
       activeProfiles: profiles.filter((profile) => profile.status === "active" && !profile.policy.emergencyPaused).length,
@@ -182,7 +238,8 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
       blockedEvents: missions.reduce(
         (sum, record) => sum + record.policyEvents.filter((event) => event.severity === "blocked").length,
         0
-      )
+      ),
+      simulationRuns: missions.reduce((sum, record) => sum + record.simulations.length, 0)
     }),
     [missions, profiles]
   );
@@ -266,6 +323,13 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
     });
   }
 
+  async function simulateMission(mission: AgentMission) {
+    await withBusy("simulate_mission", async () => {
+      await readJson(await fetch(`/api/agents/missions/${mission.id}/simulate`, { method: "POST" }));
+      await refresh();
+    });
+  }
+
   async function pauseMission(mission: AgentMission) {
     await withBusy("pause_mission", async () => {
       await readJson(await fetch(`/api/agents/missions/${mission.id}/pause`, { method: "POST" }));
@@ -324,10 +388,11 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
 
   return (
     <div className="grid gap-6">
-      <section id="control" className="grid scroll-mt-20 gap-4 md:grid-cols-4">
+      <section id="control" className="grid scroll-mt-20 gap-4 md:grid-cols-5">
         <Stat label="Active agents" value={stats.activeProfiles} icon={<Bot size={18} aria-hidden="true" />} />
         <Stat label="Paused agents" value={stats.pausedProfiles} icon={<Pause size={18} aria-hidden="true" />} />
         <Stat label="Open missions" value={stats.runningMissions} icon={<Clock3 size={18} aria-hidden="true" />} />
+        <Stat label="Simulations" value={stats.simulationRuns} icon={<FlaskConical size={18} aria-hidden="true" />} />
         <Stat label="Policy blocks" value={stats.blockedEvents} icon={<ShieldAlert size={18} aria-hidden="true" />} />
       </section>
 
@@ -552,6 +617,15 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
                       <Button
                         size="sm"
                         variant="outline"
+                        onClick={() => simulateMission(record.mission)}
+                        disabled={busyAction === "simulate_mission"}
+                      >
+                        <FlaskConical size={15} aria-hidden="true" />
+                        Simulate
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={() => runMission(record.mission)}
                         disabled={record.mission.status === "running" || busyAction === "run_mission" || busyAction === "resume_mission"}
                       >
@@ -572,6 +646,9 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
                   <div className="mt-4 grid gap-3 md:grid-cols-3">
                     <MiniMetric label="Tasks" value={record.tasks.length} />
                     <MiniMetric label="Policy events" value={record.policyEvents.length} />
+                    <MiniMetric label="Simulations" value={record.simulations.length} />
+                  </div>
+                  <div className="mt-3">
                     <MiniMetric label="Updated" value={formatDate(record.mission.updatedAt)} />
                   </div>
                   {record.tasks.length > 0 ? (
@@ -589,6 +666,55 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
             </div>
           )}
         </section>
+      </section>
+
+      <section id="simulations" className="grid scroll-mt-20 gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold">Simulation runs</h2>
+          <Badge tone="neutral">{simulationRecords.length} recent</Badge>
+        </div>
+        {simulationRecords.length === 0 ? (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-5 text-sm text-[var(--color-text-muted)]">
+            Run a simulation to preview planned actions, policy outcomes, and estimated usage before execution.
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {simulationRecords.map(({ mission, simulation }) => (
+              <article key={simulation.id} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-semibold">{mission.title}</h3>
+                      <Badge tone={statusTone[simulation.status]}>{simulation.status}</Badge>
+                    </div>
+                    <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+                      {formatDate(simulation.completedAt ?? simulation.createdAt)}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-right text-xs">
+                    <MiniMetric label="Actions" value={simulation.plannedActions.length} />
+                    <MiniMetric label="Suppressed" value={simulation.estimatedUsage.sideEffectsSuppressed} />
+                    <MiniMetric label="Cost" value={formatCents(simulation.estimatedUsage.estimatedCostCents)} />
+                  </div>
+                </div>
+                <div className="mt-4 divide-y divide-[var(--color-border)] border-t border-[var(--color-border)]">
+                  {simulation.plannedActions.slice(0, 4).map((action) => (
+                    <div key={action.id} className="grid gap-2 py-3 text-sm md:grid-cols-[1fr_auto_auto] md:items-center">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{action.taskName}</p>
+                        <p className="mt-1 text-xs text-[var(--color-text-muted)]">{action.action}</p>
+                      </div>
+                      <Badge tone={plannedActionTone(action.status)}>{action.status.replaceAll("_", " ")}</Badge>
+                      <span className="text-xs text-[var(--color-text-muted)]">
+                        {action.suppressedSideEffects.length} suppressed
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section id="activity" className="grid scroll-mt-20 gap-3">

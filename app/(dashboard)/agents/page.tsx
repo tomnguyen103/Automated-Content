@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   AGENT_MISSION_HISTORY_LIMIT,
   AGENT_POLICY_EVENT_HISTORY_LIMIT,
+  AGENT_SIMULATION_HISTORY_LIMIT,
   AGENT_TASK_RUN_HISTORY_LIMIT
 } from "@/lib/agents/orchestration/repository";
 import { resolveAgentOrchestrationContext } from "@/lib/agents/orchestration/server";
@@ -49,7 +50,7 @@ export default async function AgentsPage() {
 
   const missionRecords = await Promise.all(
     missions.map(async (mission) => {
-      const [tasks, policyEvents] = await Promise.all([
+      const [tasks, policyEvents, simulations] = await Promise.all([
         context.repositories.taskRuns.listForMission({
           workspaceId: context.workspace.id,
           missionId: mission.id,
@@ -59,13 +60,19 @@ export default async function AgentsPage() {
           workspaceId: context.workspace.id,
           missionId: mission.id,
           limit: AGENT_POLICY_EVENT_HISTORY_LIMIT
+        }),
+        context.repositories.simulationRuns.listForMission({
+          workspaceId: context.workspace.id,
+          missionId: mission.id,
+          limit: AGENT_SIMULATION_HISTORY_LIMIT
         })
       ]);
 
       return {
         mission,
         tasks,
-        policyEvents
+        policyEvents,
+        simulations
       };
     })
   );
@@ -76,6 +83,7 @@ export default async function AgentsPage() {
         items={[
           { label: "Control", href: "#control", active: true },
           { label: "Missions", href: "#missions" },
+          { label: "Simulations", href: "#simulations" },
           { label: "Permissions", href: "#permissions" },
           { label: "Activity", href: "#activity" }
         ]}

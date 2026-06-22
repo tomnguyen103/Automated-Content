@@ -33,17 +33,39 @@ export function redactSensitive(value: unknown): unknown {
   );
 }
 
-async function loadOptionalExportSection<T>(label: string, loader: Promise<T>, fallback: T): Promise<T> {
+type GovernanceExportAccessIssue = {
+  message: string;
+  section: string;
+};
+
+type OptionalExportSection<T> = {
+  accessIssue?: GovernanceExportAccessIssue;
+  data: T;
+};
+
+async function loadOptionalExportSection<T>(
+  label: string,
+  loader: Promise<T>,
+  fallback: T
+): Promise<OptionalExportSection<T>> {
   try {
-    return await loader;
+    return { data: await loader };
   } catch (error) {
     console.error(`Unable to load governance export ${label}`, error);
-    return fallback;
+    return {
+      accessIssue: {
+        message: `Unable to load ${label}; this section contains fallback data.`,
+        section: label
+      },
+      data: fallback
+    };
   }
 }
 
 export async function buildAgentGovernanceExport({
   allowMemoryFallback = false,
+  loadBillingState,
+  loadUsageRecords,
   now = new Date(),
   repositories,
   requestedByUserId,
@@ -53,6 +75,8 @@ export async function buildAgentGovernanceExport({
   requestedByUserId: string;
   repositories: AgentOrchestrationRepositories;
   allowMemoryFallback?: boolean;
+  loadBillingState?: () => Promise<Awaited<ReturnType<typeof getWorkspaceBillingState>> | null>;
+  loadUsageRecords?: () => Promise<Awaited<ReturnType<typeof listUsageLedgerRecords>>>;
   now?: Date;
 }) {
   const brandMemoryRepository = createBrandMemoryProposalRepository({
@@ -60,7 +84,7 @@ export async function buildAgentGovernanceExport({
     preferMemoryFallback: allowMemoryFallback
   });
   const replyRepository = createReplyRepository({ allowMemoryFallback });
-  const [missions, brandMemoryProposals, replyConsoleState, usageRecords, billingState] = await Promise.all([
+  const [missions, brandMemoryProposals, replyConsoleState, usageResult, billingResult] = await Promise.all([
     listAgentMissionAuditRecords({
       workspaceId,
       repositories,
@@ -73,30 +97,43 @@ export async function buildAgentGovernanceExport({
     replyRepository.getConsoleState(workspaceId),
     loadOptionalExportSection(
       "usage records",
-      listUsageLedgerRecords({
-        workspaceId,
-        limit: 200
-      }),
+      loadUsageRecords
+        ? loadUsageRecords()
+        : listUsageLedgerRecords({
+            workspaceId,
+            limit: 200
+          }),
       []
     ),
     isDatabaseConfigured
       ? loadOptionalExportSection(
           "billing state",
-          getWorkspaceBillingState({
-            workspaceId,
-            now
-          }),
+          loadBillingState
+            ? loadBillingState()
+            : getWorkspaceBillingState({
+                workspaceId,
+                now
+              }),
           null
         )
-      : Promise.resolve(null)
+      : Promise.resolve<OptionalExportSection<Awaited<ReturnType<typeof getWorkspaceBillingState>> | null>>({
+          data: null
+        })
   ]);
+  const usageRecords = usageResult.data;
+  const billingState = billingResult.data;
+  const accessIssues = [usageResult.accessIssue, billingResult.accessIssue].filter(
+    (issue): issue is GovernanceExportAccessIssue => Boolean(issue)
+  );
 
   const payload = {
     schemaVersion: 1,
     generatedAt: now.toISOString(),
     workspaceId,
     requestedByUserId,
+    accessIssues,
     summary: {
+      degraded: accessIssues.length > 0,
       missions: missions.length,
       taskRuns: missions.reduce((sum, record) => sum + record.tasks.length, 0),
       simulations: missions.reduce((sum, record) => sum + record.simulations.length, 0),

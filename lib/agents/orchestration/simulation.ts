@@ -5,6 +5,7 @@ import {
   type AgentPolicyEvent,
   type AgentProfile,
   type AgentSimulationPlannedAction,
+  type AgentSimulationRiskLevel,
   type AgentSimulationUsageEstimate,
   agentMissionSimulationRunSchema,
   agentSimulationUsageEstimateSchema
@@ -17,6 +18,7 @@ import {
 import {
   createPolicyEventFromDecision,
   evaluateAgentPolicy,
+  isExternalAction,
   type AgentPolicyDecision
 } from "@/lib/agents/orchestration/policy";
 import {
@@ -78,6 +80,20 @@ function readStringArray(input: Record<string, unknown>, key: string) {
   return value
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     .map((item) => item.trim());
+}
+
+function readStringMap(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0)
+      .map(([mapKey, mapValue]) => [mapKey, mapValue.trim()])
+  );
 }
 
 function estimatePlatformActionCount(mission: AgentMission) {
@@ -150,7 +166,7 @@ function estimateUsageForTask({
     providerRequests: 0
   };
 
-  if (!decision.allowed) {
+  if (!decision.allowed && decision.action !== "require_review") {
     return agentSimulationUsageEstimateSchema.parse({
       ...base,
       sideEffectsSuppressed: 0
@@ -253,7 +269,7 @@ function suppressedSideEffectsForTask(task: MissionPlanTask) {
 }
 
 function suppressedSideEffectsForDecision(task: MissionPlanTask, decision: AgentPolicyDecision) {
-  return decision.allowed ? suppressedSideEffectsForTask(task) : [];
+  return decision.allowed || decision.action === "require_review" ? suppressedSideEffectsForTask(task) : [];
 }
 
 function plannedActionStatus(decision: AgentPolicyDecision): AgentSimulationPlannedAction["status"] {
@@ -262,6 +278,77 @@ function plannedActionStatus(decision: AgentPolicyDecision): AgentSimulationPlan
   }
 
   return decision.action === "require_review" ? "would_require_review" : "blocked";
+}
+
+function providerReadinessWarningsForTask(mission: AgentMission, task: MissionPlanTask) {
+  if (!isExternalAction(task.action)) {
+    return [];
+  }
+
+  const warnings: string[] = [];
+  const provider = readString(mission.inputs, "provider");
+  const providerByPlatform = readStringMap(mission.inputs, "providerByPlatform");
+  const platforms = readStringArray(mission.inputs, "platforms");
+  const connectedAccountId = readString(mission.inputs, "connectedAccountId");
+  const providers = [
+    ...(provider ? [provider] : []),
+    ...Object.values(providerByPlatform)
+  ];
+  const uniqueProviders = [...new Set(providers)];
+
+  if (!provider && uniqueProviders.length === 0) {
+    warnings.push("No provider is selected for this external action.");
+  }
+
+  if (platforms.length > 0 && Object.keys(providerByPlatform).length > 0) {
+    for (const platform of platforms) {
+      if (!providerByPlatform[platform]) {
+        warnings.push(`No provider mapping is configured for ${platform}.`);
+      }
+    }
+  }
+
+  if (!connectedAccountId) {
+    warnings.push("No connected account is selected for readiness validation.");
+  }
+
+  if (uniqueProviders.includes("mock")) {
+    warnings.push("Mock provider readiness is local-preview only.");
+  }
+
+  if (uniqueProviders.some((candidate) => candidate !== "mock")) {
+    warnings.push("Provider health has not been checked by a live readiness sentinel yet.");
+  }
+
+  return [...new Set(warnings)];
+}
+
+function blockedReasonsForDecision(decision: AgentPolicyDecision) {
+  return decision.action === "block" ? [decision.message] : [];
+}
+
+function riskLevelForAction({
+  decision,
+  task,
+  providerReadinessWarnings
+}: {
+  decision: AgentPolicyDecision;
+  task: MissionPlanTask;
+  providerReadinessWarnings: string[];
+}): AgentSimulationRiskLevel {
+  if (decision.action === "block") {
+    return "blocked";
+  }
+
+  if (decision.action === "require_review" || task.action === "content.publish" || task.action === "reply.send") {
+    return "high";
+  }
+
+  if (task.action === "content.schedule" || providerReadinessWarnings.length > 0) {
+    return "medium";
+  }
+
+  return "low";
 }
 
 function createSimulationPolicyEvent({
@@ -335,16 +422,48 @@ function createSimulationSummary({
   policyEvents: AgentPolicyEvent[];
 }) {
   const blockedActions = plannedActions.filter((action) => action.status === "blocked").length;
-  const reviewEvents = policyEvents.filter((event) => event.action === "require_review").length;
+  const approvalRequiredCount = plannedActions.filter((action) => action.approvalRequired).length
+    + policyEvents.filter((event) => {
+      const details = isRecord(event.details) ? event.details : {};
+
+      return event.action === "require_review" && typeof details.plannedActionId !== "string";
+    }).length;
+  const policyBlocks = policyEvents.filter((event) => event.severity === "blocked").length;
+  const blockedReasonCount = plannedActions.reduce((sum, action) => sum + action.blockedReasons.length, 0)
+    + policyEvents.filter((event) => {
+      const details = isRecord(event.details) ? event.details : {};
+
+      return event.severity === "blocked" && typeof details.plannedActionId !== "string";
+    }).length;
+  const providerReadinessWarnings = [
+    ...new Set(plannedActions.flatMap((action) => action.providerReadinessWarnings))
+  ];
+  const riskOrder: AgentSimulationRiskLevel[] = ["low", "medium", "high", "blocked"];
+  const riskLevel = plannedActions.reduce<AgentSimulationRiskLevel>((current, action) => {
+    return riskOrder.indexOf(action.riskLevel) > riskOrder.indexOf(current) ? action.riskLevel : current;
+  }, policyBlocks > 0 ? "blocked" : approvalRequiredCount > 0 ? "high" : "low");
 
   return {
     allowedActions: plannedActions.filter((action) => action.status === "would_run").length,
+    approvalRequiredCount,
     blockedActions,
-    policyBlocks: policyEvents.filter((event) => event.severity === "blocked").length,
-    reviewRequiredActions: reviewEvents,
+    blockedReasonCount,
+    policyBlocks,
+    providerReadinessWarnings,
+    promotable:
+      plannedActions.length > 0
+      && approvalRequiredCount === 0
+      && blockedReasonCount === 0
+      && providerReadinessWarnings.length === 0,
+    riskLevel,
+    reviewRequiredActions: approvalRequiredCount,
     sideEffectsSuppressed: estimatedUsage.sideEffectsSuppressed,
     taskCount: plannedActions.length
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 export async function simulateAgentMission({
@@ -412,6 +531,8 @@ export async function simulateAgentMission({
               role: task.role
             });
         const taskEstimate = estimateUsageForTask({ decision, mission, task });
+        const providerReadinessWarnings = providerReadinessWarningsForTask(mission, task);
+        const blockedReasons = blockedReasonsForDecision(decision);
         const policyEvent = createSimulationPolicyEvent({
           decision,
           mission,
@@ -444,7 +565,12 @@ export async function simulateAgentMission({
               message: decision.message
             },
             estimatedUsage: taskEstimate,
-            suppressedSideEffects: suppressedSideEffectsForDecision(task, decision)
+            suppressedSideEffects: suppressedSideEffectsForDecision(task, decision),
+            approvalRequired: decision.action === "require_review",
+            blockedReasons,
+            providerReadinessWarnings,
+            promotable: decision.allowed && blockedReasons.length === 0 && providerReadinessWarnings.length === 0,
+            riskLevel: riskLevelForAction({ decision, providerReadinessWarnings, task })
           }
         );
       }

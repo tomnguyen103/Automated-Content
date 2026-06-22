@@ -128,6 +128,10 @@ function findBlockedPhrase(policy: AgentAutonomyPolicy, contentText: string | nu
   );
 }
 
+export function isExternalAction(action: AgentActionType) {
+  return action === "content.schedule" || action === "content.publish" || action === "reply.send";
+}
+
 export function evaluateAgentPolicy(input: EvaluateAgentPolicyInput): AgentPolicyDecision {
   const policy = mergePolicies(input.profile?.policy, input.mission?.policy, input.policy);
   const profileStatus = input.profile?.status ?? "active";
@@ -159,7 +163,7 @@ export function evaluateAgentPolicy(input: EvaluateAgentPolicyInput): AgentPolic
     });
   }
 
-  if (policy.autonomy !== "full" || policy.requiresHumanApproval) {
+  if (policy.requiresHumanApproval || policy.autonomy === "assistive") {
     return decision({
       allowed: false,
       action: "require_review",
@@ -292,6 +296,18 @@ export function evaluateAgentPolicy(input: EvaluateAgentPolicyInput): AgentPolic
       policyKey: "quiet_hours",
       message: "Autonomous external actions are paused during quiet hours.",
       details: { quietHours: policy.quietHours },
+      policy
+    });
+  }
+
+  if (policy.autonomy === "supervised" && isExternalAction(input.action)) {
+    return decision({
+      allowed: false,
+      action: "require_review",
+      severity: "warning",
+      policyKey: "supervised_external_action",
+      message: "Supervised mode requires review before this external action.",
+      details: { action: input.action, autonomy: policy.autonomy },
       policy
     });
   }

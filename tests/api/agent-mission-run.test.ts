@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
+import { NextRequest } from "next/server";
 
 const routeMocks = vi.hoisted(() => {
   class QueueConfigurationError extends Error {
@@ -14,6 +15,8 @@ const routeMocks = vi.hoisted(() => {
     getMission: vi.fn(),
     resolveAgentOrchestrationContext: vi.fn(),
     runMissionWorkflow: vi.fn(),
+    saveMission: vi.fn(),
+    seedRoleTemplates: vi.fn(),
     simulateAgentMission: vi.fn()
   };
 });
@@ -42,6 +45,13 @@ describe("agent mission run API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     routeMocks.getMission.mockResolvedValue({ id: "mission_1" });
+    routeMocks.saveMission.mockImplementation(async (mission) => mission);
+    routeMocks.seedRoleTemplates.mockResolvedValue([
+      {
+        id: "agent_profile_1",
+        role: "coordinator"
+      }
+    ]);
     routeMocks.resolveAgentOrchestrationContext.mockResolvedValue({
       workspace: {
         id: "00000000-0000-0000-0000-000000000001",
@@ -52,7 +62,11 @@ describe("agent mission run API", () => {
       },
       repositories: {
         missions: {
-          get: routeMocks.getMission
+          get: routeMocks.getMission,
+          save: routeMocks.saveMission
+        },
+        profiles: {
+          seedRoleTemplates: routeMocks.seedRoleTemplates
         }
       }
     });
@@ -140,5 +154,35 @@ describe("agent mission run API", () => {
     });
     expect(routeMocks.enqueueAgentMission).not.toHaveBeenCalled();
     expect(routeMocks.runMissionWorkflow).not.toHaveBeenCalled();
+  });
+
+  it("creates new missions with supervised autonomy when no policy override is provided", async () => {
+    const { POST } = await import("@/app/api/agents/missions/route");
+
+    const response = await POST(
+      new NextRequest("http://localhost/api/agents/missions", {
+        method: "POST",
+        body: JSON.stringify({
+          missionType: "content_pipeline",
+          title: "Supervised launch mission",
+          objective: "Create launch content with approval gates.",
+          brief: "Research, draft, and hold external actions for review."
+        })
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(payload.mission.policy).toMatchObject({
+      autonomy: "supervised",
+      requiresHumanApproval: false
+    });
+    expect(routeMocks.saveMission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        policy: expect.objectContaining({
+          autonomy: "supervised"
+        })
+      })
+    );
   });
 });

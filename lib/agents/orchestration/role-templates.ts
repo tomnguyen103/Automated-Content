@@ -10,17 +10,19 @@ import {
 
 function fullAutonomyPolicy({
   actions,
+  autonomy = "full",
   toolScopes,
   dailyActionCap,
   confidenceThreshold = 0.72
 }: {
   actions: AgentActionType[];
+  autonomy?: AgentAutonomyPolicy["autonomy"];
   toolScopes: string[];
   dailyActionCap: number;
   confidenceThreshold?: number;
 }): AgentAutonomyPolicy {
   return {
-    autonomy: "full",
+    autonomy,
     requiresHumanApproval: false,
     emergencyPaused: false,
     allowedActions: actions,
@@ -75,12 +77,14 @@ const rolePolicies = {
   }),
   publisher: fullAutonomyPolicy({
     actions: [...sharedMissionActions, "content.schedule", "content.publish"],
+    autonomy: "supervised",
     toolScopes: publisherToolScopes,
     dailyActionCap: 20,
     confidenceThreshold: 0.8
   }),
   engagement: fullAutonomyPolicy({
     actions: [...sharedMissionActions, "reply.send"],
+    autonomy: "supervised",
     toolScopes: engagementToolScopes,
     dailyActionCap: 50,
     confidenceThreshold: 0.72

@@ -77,7 +77,7 @@ export const quietHoursSchema = z.object({
 });
 
 export const agentAutonomyPolicySchema = z.object({
-  autonomy: autonomyModeSchema.default("full"),
+  autonomy: autonomyModeSchema.default("supervised"),
   requiresHumanApproval: z.boolean().default(false),
   emergencyPaused: z.boolean().default(false),
   allowedActions: z.array(agentActionTypeSchema).default([]),
@@ -94,7 +94,7 @@ export const agentAutonomyPolicySchema = z.object({
 });
 
 export const defaultAgentAutonomyPolicy = agentAutonomyPolicySchema.parse({
-  autonomy: "full",
+  autonomy: "supervised",
   requiresHumanApproval: false,
   emergencyPaused: false,
   allowedActions: [],
@@ -216,6 +216,8 @@ export const agentSimulationUsageEstimateSchema = z.object({
   sideEffectsSuppressed: z.number().int().nonnegative().default(0)
 });
 
+export const agentSimulationRiskLevelSchema = z.enum(["low", "medium", "high", "blocked"]);
+
 export const agentSimulationPlannedActionSchema = z.object({
   id: z.string().min(1),
   taskIndex: z.number().int().nonnegative(),
@@ -235,7 +237,26 @@ export const agentSimulationPlannedActionSchema = z.object({
     message: z.string().min(1)
   }),
   estimatedUsage: agentSimulationUsageEstimateSchema,
-  suppressedSideEffects: z.array(z.string().min(1)).default([])
+  suppressedSideEffects: z.array(z.string().min(1)).default([]),
+  approvalRequired: z.boolean().default(false),
+  blockedReasons: z.array(z.string().min(1)).default([]),
+  providerReadinessWarnings: z.array(z.string().min(1)).default([]),
+  promotable: z.boolean().default(false),
+  riskLevel: agentSimulationRiskLevelSchema.default("low")
+});
+
+export const agentN8nAuditEventSchema = z.object({
+  id: z.string().min(1),
+  direction: z.enum(["outbound", "callback"]),
+  eventType: z.string().min(1).optional(),
+  workflow: z.string().min(1).optional(),
+  status: z.string().min(1),
+  payload: jsonRecordSchema.default({}),
+  responseStatus: z.number().int().optional(),
+  error: z.string().min(1).optional(),
+  occurredAt: isoTimestampSchema.optional(),
+  createdAt: isoTimestampSchema,
+  updatedAt: isoTimestampSchema
 });
 
 export const agentMissionSimulationRunSchema = z.object({
@@ -269,5 +290,7 @@ export type AgentMission = z.infer<typeof agentMissionSchema>;
 export type AgentTaskRun = z.infer<typeof agentTaskRunSchema>;
 export type AgentPolicyEvent = z.infer<typeof agentPolicyEventSchema>;
 export type AgentSimulationUsageEstimate = z.infer<typeof agentSimulationUsageEstimateSchema>;
+export type AgentSimulationRiskLevel = z.infer<typeof agentSimulationRiskLevelSchema>;
 export type AgentSimulationPlannedAction = z.infer<typeof agentSimulationPlannedActionSchema>;
 export type AgentMissionSimulationRun = z.infer<typeof agentMissionSimulationRunSchema>;
+export type AgentN8nAuditEvent = z.infer<typeof agentN8nAuditEventSchema>;

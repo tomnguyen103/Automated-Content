@@ -72,12 +72,33 @@ const missionTypeOptions: Array<{ value: AgentMissionType; label: string }> = [
   { value: "research_topics", label: "Research topics" },
   { value: "content_pipeline", label: "Content pipeline" },
   { value: "content_remix", label: "Content remix" },
+  { value: "supervised_campaign", label: "Supervised campaign" },
   { value: "auto_publish", label: "Auto publish" },
   { value: "comment_engagement", label: "Comment engagement" },
   { value: "weekly_report", label: "Weekly report" }
 ];
 
 const platformOptions = ["linkedin", "x", "instagram", "facebook", "threads", "tiktok"] as const;
+
+const missionPresets: Partial<Record<AgentMissionType, {
+  blockedPhrases: string;
+  brief: string;
+  confidenceThreshold: number;
+  dailyActionCap: number;
+  platforms: string[];
+  title: string;
+  topic: string;
+}>> = {
+  supervised_campaign: {
+    blockedPhrases: "guarantee, risk-free, legal advice, refund",
+    brief: "Research a focused campaign, plan the angle, generate platform variants, prepare schedule suggestions, and stop for human approval before scheduling or publishing.",
+    confidenceThreshold: 0.82,
+    dailyActionCap: 8,
+    platforms: ["linkedin", "x"],
+    title: "Supervised campaign autopilot",
+    topic: "Governed AI content operations"
+  }
+};
 
 const statusTone = {
   active: "success",
@@ -377,10 +398,47 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
     }
   }
 
+  function selectMissionType(nextType: AgentMissionType) {
+    setMissionType(nextType);
+
+    const preset = missionPresets[nextType];
+    if (!preset) {
+      return;
+    }
+
+    setTitle(preset.title);
+    setTopic(preset.topic);
+    setBrief(preset.brief);
+    setSelectedPlatforms(preset.platforms);
+    setDailyActionCap(preset.dailyActionCap);
+    setConfidenceThreshold(preset.confidenceThreshold);
+    setBlockedPhrases(preset.blockedPhrases);
+  }
+
   async function createMission() {
     await withBusy("create_mission", async () => {
       const parsedMissionType = agentMissionTypeSchema.parse(missionType);
       const platforms = selectedPlatforms.length > 0 ? selectedPlatforms : ["linkedin"];
+      const campaignPolicy = parsedMissionType === "supervised_campaign"
+        ? {
+            allowedActions: [
+              "mission.run",
+              "research.collect",
+              "task.execute",
+              "content.generate",
+              "content.schedule",
+              "report.generate"
+            ],
+            allowedToolScopes: [
+              "mission.plan",
+              "research.topic",
+              "strategy.plan",
+              "content.generate",
+              "content.schedule",
+              "mission.report"
+            ]
+          }
+        : {};
 
       await readJson(
         await fetch("/api/agents/missions", {
@@ -415,7 +473,8 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
                 .map((phrase) => phrase.trim())
                 .filter(Boolean),
               platformScope: platforms,
-              maxTasksPerRun: 12
+              maxTasksPerRun: 12,
+              ...campaignPolicy
             }
           })
         })
@@ -600,7 +659,7 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
               <select
                 className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 text-sm font-normal"
                 value={missionType}
-                onChange={(event) => setMissionType(event.target.value as AgentMissionType)}
+                onChange={(event) => selectMissionType(event.target.value as AgentMissionType)}
               >
                 {missionTypeOptions.map((option) => (
                   <option key={option.value} value={option.value}>

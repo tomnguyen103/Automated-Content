@@ -82,6 +82,38 @@ const missionTaskTemplates: Record<AgentMissionType, Omit<MissionPlanTask, "inpu
       toolScope: "content.schedule"
     }
   ],
+  supervised_campaign: [
+    {
+      role: "researcher",
+      taskName: "Research campaign context",
+      action: "research.collect",
+      toolScope: "research.topic"
+    },
+    {
+      role: "strategist",
+      taskName: "Plan supervised campaign strategy",
+      action: "task.execute",
+      toolScope: "strategy.plan"
+    },
+    {
+      role: "remixer",
+      taskName: "Generate campaign variants",
+      action: "content.generate",
+      toolScope: "content.generate"
+    },
+    {
+      role: "publisher",
+      taskName: "Prepare approval-gated schedule",
+      action: "content.schedule",
+      toolScope: "content.schedule"
+    },
+    {
+      role: "reporter",
+      taskName: "Compile campaign readiness report",
+      action: "report.generate",
+      toolScope: "mission.report"
+    }
+  ],
   auto_publish: [
     {
       role: "publisher",

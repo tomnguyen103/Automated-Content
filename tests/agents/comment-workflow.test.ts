@@ -66,6 +66,7 @@ describe("comment reply workflow", () => {
 
     expect(result.status).toBe("sent");
     expect(result.reply.action).toBe("auto_reply");
+    expect(result.reply.triageLabel).toBe("safe_rule_match");
     expect(result.reply.approvalRequired).toBe(false);
     expect(result.providerReply?.providerReplyId).toContain("mock_reply_");
     expect(result.approval).toBeNull();
@@ -137,6 +138,7 @@ describe("comment reply workflow", () => {
 
     expect(result.status).toBe("awaiting_approval");
     expect(result.reply.action).toBe("approval_required");
+    expect(result.reply.triageLabel).toBe("needs_human_review");
     expect(result.providerReply).toBeNull();
     expect(result.approval).toMatchObject({
       status: "pending",
@@ -154,7 +156,7 @@ describe("comment reply workflow", () => {
     });
   });
 
-  it("sends approval-required suggestions when autonomous mode clears confidence threshold", async () => {
+  it("keeps non-keyword suggestions queued even when autonomous mode clears confidence threshold", async () => {
     const storage = createMemoryAgentStorage();
     const repository = createMemoryReplyRepositoryForTests();
     const provider = {
@@ -206,14 +208,14 @@ describe("comment reply workflow", () => {
       }
     );
 
-    expect(result.status).toBe("sent");
+    expect(result.status).toBe("awaiting_approval");
     expect(result.reply.action).toBe("approval_required");
-    expect(result.approval).toBeNull();
-    expect(result.providerReply?.providerReplyId).toContain("mock_reply_");
-    expect(result.attempt.audit.notes).toContain("Autonomous reply approved at confidence 0.91 with threshold 0.80.");
-    expect(provider.replyToComment).toHaveBeenCalledOnce();
-    expect(usageEnforcer).toHaveBeenCalledOnce();
-    expect(usageRecorder).toHaveBeenCalledOnce();
+    expect(result.reply.triageLabel).toBe("needs_human_review");
+    expect(result.approval?.status).toBe("pending");
+    expect(result.providerReply).toBeNull();
+    expect(provider.replyToComment).not.toHaveBeenCalled();
+    expect(usageEnforcer).not.toHaveBeenCalled();
+    expect(usageRecorder).not.toHaveBeenCalled();
   });
 
   it("holds keyword replies for approval when usage enforcement denies send", async () => {
@@ -238,10 +240,91 @@ describe("comment reply workflow", () => {
     });
 
     expect(result.status).toBe("awaiting_approval");
+    expect(result.reply.triageLabel).toBe("safe_rule_match");
     expect(result.approval?.status).toBe("pending");
     expect(provider.replyToComment).not.toHaveBeenCalled();
     await expect(repository.getConsoleState(workspaceId)).resolves.toMatchObject({
       approvals: [expect.objectContaining({ commentId: "comment_1", status: "pending" })]
     });
+  });
+
+  it("skips crisis, legal, refund, and brand-risk comments without provider sends", async () => {
+    const storage = createMemoryAgentStorage();
+    const repository = createMemoryReplyRepositoryForTests();
+    const provider = {
+      ...mockProvider,
+      replyToComment: vi.fn(mockProvider.replyToComment)
+    };
+
+    const result = await runCommentReplyWorkflow(
+      createInput({
+        comment: {
+          id: "comment_crisis",
+          provider: "mock",
+          providerCommentId: "provider_comment_crisis",
+          platform: "linkedin",
+          authorName: "Rina Patel",
+          text: "I want a refund before I call my attorney.",
+          receivedAt: "2026-06-20T12:03:00.000Z"
+        }
+      }),
+      {
+        userId,
+        workspaceId,
+        storage,
+        repository,
+        provider,
+        now: () => new Date("2026-06-20T12:03:00.000Z")
+      }
+    );
+
+    expect(result.status).toBe("ignored");
+    expect(result.reply.triageLabel).toBe("crisis_escalation");
+    expect(result.reply.safety.status).toBe("blocked");
+    expect(result.attempt.audit.action).toBe("crisis_escalation");
+    expect(provider.replyToComment).not.toHaveBeenCalled();
+  });
+
+  it("labels duplicate or rate-limited rule matches", async () => {
+    const storage = createMemoryAgentStorage();
+    const repository = createMemoryReplyRepositoryForTests();
+    const provider = {
+      ...mockProvider,
+      replyToComment: vi.fn(mockProvider.replyToComment)
+    };
+
+    const result = await runCommentReplyWorkflow(
+      createInput({
+        rules: [
+          {
+            ...pricingRule,
+            rateLimit: {
+              maxReplies: 1,
+              windowMinutes: 60
+            }
+          }
+        ],
+        recentAttempts: [
+          {
+            ruleId: "rule_pricing",
+            attemptedAt: "2026-06-20T11:30:00.000Z",
+            status: "sent"
+          }
+        ]
+      }),
+      {
+        userId,
+        workspaceId,
+        storage,
+        repository,
+        provider,
+        now: () => new Date("2026-06-20T12:00:00.000Z")
+      }
+    );
+
+    expect(result.status).toBe("ignored");
+    expect(result.reply.triageLabel).toBe("duplicate_or_rate_limited");
+    expect(result.attempt.audit.action).toBe("rate_limited");
+    expect(provider.replyToComment).not.toHaveBeenCalled();
   });
 });

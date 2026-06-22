@@ -1,10 +1,13 @@
 import { z } from "zod";
 import { replyPlatformSchema, type ReplyPlatform } from "@/lib/replies/rules";
 import type { ReplyRuleMatch } from "@/lib/replies/matcher";
+import { commentReplyTriageLabelSchema, type CommentReplyTriageLabel } from "@/lib/agents/schemas/comment-reply";
 
 export const replyAuditActionSchema = z.enum([
   "auto_reply_approved",
   "approval_required",
+  "blocked_policy",
+  "crisis_escalation",
   "ignored",
   "rate_limited",
   "sent",
@@ -18,6 +21,8 @@ export const replyAuditEntrySchema = z.object({
   platform: replyPlatformSchema,
   ruleId: z.string().min(1).optional(),
   keyword: z.string().min(1).optional(),
+  triageLabel: commentReplyTriageLabelSchema.optional(),
+  triageReason: z.string().min(1).max(500).optional(),
   replyPreview: z.string().min(1).optional(),
   providerReplyId: z.string().min(1).optional(),
   notes: z.array(z.string().min(1)),
@@ -35,6 +40,8 @@ export function createReplyAuditEntry({
   platform,
   providerReplyId,
   replyText,
+  triageLabel,
+  triageReason,
   now = new Date()
 }: {
   action: ReplyAuditAction;
@@ -44,6 +51,8 @@ export function createReplyAuditEntry({
   platform: ReplyPlatform;
   providerReplyId?: string;
   replyText?: string;
+  triageLabel?: CommentReplyTriageLabel;
+  triageReason?: string;
   now?: Date;
 }) {
   return replyAuditEntrySchema.parse({
@@ -53,6 +62,8 @@ export function createReplyAuditEntry({
     platform,
     ruleId: match?.rule.id,
     keyword: match?.keyword,
+    triageLabel,
+    triageReason,
     replyPreview: replyText?.slice(0, 160) ?? match?.replyText.slice(0, 160),
     providerReplyId,
     notes: [...(match?.auditNotes ?? []), ...notes],

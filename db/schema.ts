@@ -58,6 +58,7 @@ export const agentMissionTypeEnum = pgEnum("agent_mission_type", [
   "research_topics",
   "content_pipeline",
   "content_remix",
+  "supervised_campaign",
   "auto_publish",
   "comment_engagement",
   "weekly_report"

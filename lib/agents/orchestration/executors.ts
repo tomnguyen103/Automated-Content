@@ -5,7 +5,12 @@ import { runContentAgent, type ContentAgentResult } from "@/lib/agents/langchain
 import { createAgentStorage } from "@/lib/agents/langchain/storage";
 import { contentAgentInputSchema, type ContentPack } from "@/lib/agents/schemas/content-pack";
 import type { PlatformVariant, SocialPlatform } from "@/lib/agents/schemas/platform-variant";
-import type { AgentMission, AgentPolicyEvent, AgentProfile } from "@/lib/agents/schemas/orchestration";
+import type {
+  AgentMission,
+  AgentMissionSimulationRun,
+  AgentPolicyEvent,
+  AgentProfile
+} from "@/lib/agents/schemas/orchestration";
 import type { MissionTaskExecutionContext, MissionTaskExecutor } from "@/lib/agents/orchestration/runner";
 import {
   createPolicyEventFromDecision,
@@ -51,6 +56,8 @@ type ScheduledVariant = {
   provider: ProviderKey;
   connectedAccountId?: string | null;
   scheduledFor: Date;
+  suggestionReason?: string;
+  suggestionConfidence?: number;
   policy?: AgentPolicyDecision;
 };
 
@@ -221,13 +228,43 @@ function buildResearchOutput(mission: AgentMission) {
 }
 
 function buildStrategyOutput(mission: AgentMission) {
+  const platforms = readStringArray(mission.inputs, "platforms");
+  const audience = readString(mission.inputs, "audience") ?? "the target audience";
+  const topic = readString(mission.inputs, "topic") ?? mission.title;
+  const nextActions = (
+    mission.missionType === "supervised_campaign"
+      ? ["content.generate", "content.schedule", "report.generate"]
+      : ["content.generate", "content.schedule", "content.publish"]
+  ).filter((action) =>
+    mission.policy.allowedActions.length === 0 || mission.policy.allowedActions.includes(action as never)
+  );
+
+  if (mission.missionType === "supervised_campaign") {
+    return {
+      summary: `Prepared supervised campaign strategy for ${mission.title}.`,
+      objective: mission.objective,
+      priority: mission.priority,
+      campaignPlan: {
+        topic,
+        audience,
+        platformFocus: platforms.length > 0 ? platforms : ["linkedin"],
+        audiencePromise: `Help ${audience} act on ${topic} with a concrete next step.`,
+        reviewGate: "Generated variants and schedule suggestions stop for human approval before scheduling or publishing.",
+        successSignals: [
+          "Variants pass content policy review.",
+          "Schedule suggestions match platform scope and provider readiness.",
+          "Operator approves variants before durable scheduling."
+        ]
+      },
+      nextActions
+    };
+  }
+
   return {
     summary: `Planned autonomous handoff for ${mission.title}.`,
     objective: mission.objective,
     priority: mission.priority,
-    nextActions: ["content.generate", "content.schedule", "content.publish"].filter((action) =>
-      mission.policy.allowedActions.length === 0 || mission.policy.allowedActions.includes(action as never)
-    )
+    nextActions
   };
 }
 
@@ -273,7 +310,19 @@ async function executeContentGeneration(
       platform: variant.platform,
       policyStatus: variant.policyStatus,
       characterCount: variant.characterCount
-    }))
+    })),
+    scheduleSuggestions: result.contentPack.scheduleSuggestions.map((suggestion) => ({
+      id: suggestion.id,
+      platform: suggestion.platform,
+      scheduledFor: suggestion.scheduledFor,
+      timezone: suggestion.timezone,
+      reason: suggestion.reason,
+      confidence: suggestion.confidence
+    })),
+    approvalGate: {
+      scheduling: context.mission.policy.autonomy === "supervised" ? "requires_human_approval" : "policy_evaluated",
+      publishing: "requires_human_approval"
+    }
   };
 }
 
@@ -295,7 +344,9 @@ function buildSchedulesFromContentPack({
       platform: variant.platform,
       provider,
       connectedAccountId: resolveConnectedAccountId(inputs, provider, variant.platform),
-      scheduledFor: coerceFutureDate(readString(inputs, "scheduledFor") ?? suggestion?.scheduledFor, now, 5 + index)
+      scheduledFor: coerceFutureDate(readString(inputs, "scheduledFor") ?? suggestion?.scheduledFor, now, 5 + index),
+      suggestionReason: suggestion?.reason,
+      suggestionConfidence: suggestion?.confidence
     };
   });
 }
@@ -423,6 +474,7 @@ async function executeContentScheduling(
   if (schedules.length === 0) {
     return {
       summary: "No generated content or platformVariantIds were available for autonomous scheduling.",
+      scheduleSuggestions: [],
       scheduledJobs: [],
       skipped: []
     };
@@ -430,6 +482,15 @@ async function executeContentScheduling(
 
   const scheduledJobs: Array<Record<string, unknown>> = [];
   const skipped: Array<Record<string, unknown>> = [];
+  const scheduleSuggestions = schedules.map((schedule) => ({
+    platformVariantId: schedule.platformVariantId,
+    platform: schedule.platform,
+    provider: schedule.provider,
+    connectedAccountId: schedule.connectedAccountId ?? null,
+    scheduledFor: schedule.scheduledFor.toISOString(),
+    reason: schedule.suggestionReason ?? "Prepared from mission inputs or the latest content workflow suggestion.",
+    confidence: schedule.suggestionConfidence ?? null
+  }));
 
   for (const scheduledVariant of schedules) {
     const variant = contentPack?.variants.find((candidate) => candidate.id === scheduledVariant.platformVariantId);
@@ -444,6 +505,9 @@ async function executeContentScheduling(
     if (skippedDecision) {
       skipped.push({
         platformVariantId: scheduledVariant.platformVariantId,
+        platform: scheduledVariant.platform,
+        provider: scheduledVariant.provider,
+        scheduledFor: scheduledVariant.scheduledFor.toISOString(),
         policyKey: skippedDecision.policyKey,
         message: skippedDecision.message
       });
@@ -462,7 +526,11 @@ async function executeContentScheduling(
   }
 
   return {
-    summary: `Scheduled ${scheduledJobs.length} autonomous variants.`,
+    summary:
+      scheduledJobs.length > 0
+        ? `Scheduled ${scheduledJobs.length} autonomous variants.`
+        : `Prepared ${scheduleSuggestions.length} schedule suggestion(s); ${skipped.length} require approval or policy changes.`,
+    scheduleSuggestions,
     scheduledJobs,
     skipped
   };
@@ -509,6 +577,8 @@ async function executeEngagement(
     if (!decision.allowed) {
       blocked.push({
         commentId: comment.id,
+        triageLabel: "blocked_policy",
+        triageReason: decision.message,
         policyKey: decision.policyKey,
         message: decision.message
       });
@@ -561,6 +631,8 @@ async function executeEngagement(
         status: result.status,
         action: result.reply.action,
         confidence: result.reply.confidence,
+        triageLabel: result.reply.triageLabel,
+        triageReason: result.reply.triageReason,
         attemptId: result.attempt.id,
         providerReplyId: result.providerReply?.providerReplyId
       });
@@ -589,11 +661,37 @@ async function executeEngagement(
   };
 }
 
+type MissionReportEvidence = {
+  policyEvents: AgentPolicyEvent[];
+  simulations: AgentMissionSimulationRun[];
+};
+
+function reportPeriod(generatedAt: string) {
+  const end = new Date(generatedAt);
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - 7);
+
+  return {
+    startAt: start.toISOString(),
+    endAt: end.toISOString(),
+    timezone: "UTC",
+    label: "Trailing 7 days"
+  };
+}
+
+function simulationRiskFromSummary(simulation: AgentMissionSimulationRun) {
+  const risk = simulation.summary.riskLevel;
+
+  return typeof risk === "string" ? risk : "unknown";
+}
+
 function buildReportSummary({
+  evidence,
   mission,
   missions,
   snapshot
 }: {
+  evidence: MissionReportEvidence;
   mission: AgentMission;
   missions: AgentMission[];
   snapshot: AnalyticsSnapshot;
@@ -602,11 +700,26 @@ function buildReportSummary({
   const failedMissions = missions.filter((candidate) => candidate.status === "failed");
   const publishOutcomes = snapshot.posting.published + snapshot.posting.failed;
   const publishHealth = publishOutcomes > 0 ? Math.round((snapshot.posting.published / publishOutcomes) * 100) : null;
+  const blockedPolicyEvents = evidence.policyEvents.filter((event) => event.severity === "blocked");
+  const reviewPolicyEvents = evidence.policyEvents.filter((event) => event.action === "require_review");
+  const failedSimulations = evidence.simulations.filter((simulation) => simulation.status === "failed");
+  const simulationRiskCounts = evidence.simulations.reduce<Record<string, number>>((counts, simulation) => {
+    const risk = simulationRiskFromSummary(simulation);
+
+    return {
+      ...counts,
+      [risk]: (counts[risk] ?? 0) + 1
+    };
+  }, {});
+  const providerMetricsCaveat =
+    "Provider metrics are limited to internal scheduler, reply, usage, and agent audit records until live adapters expose impressions, engagement, and account analytics.";
 
   return {
     generatedAt: snapshot.generatedAt,
+    period: reportPeriod(snapshot.generatedAt),
     missionId: mission.id,
     missionTitle: mission.title,
+    providerMetricsCaveat,
     operatingSummary: {
       activeMissions: activeMissions.length,
       failedMissions: failedMissions.length,
@@ -617,12 +730,62 @@ function buildReportSummary({
       agentRuns: snapshot.agents.total,
       agentFailures: snapshot.failures.agents
     },
+    posting: {
+      ...snapshot.posting,
+      publishHealth,
+      pending: snapshot.posting.scheduled + snapshot.posting.queued + snapshot.posting.publishing
+    },
+    replies: snapshot.replies,
+    failures: {
+      ...snapshot.failures,
+      failedMissions: failedMissions.length,
+      failedSimulations: failedSimulations.length
+    },
+    usage: {
+      totalQuantity: snapshot.usage.totalQuantity,
+      byType: snapshot.usage.byType,
+      recentDaily: snapshot.usage.daily.slice(-7)
+    },
+    simulations: {
+      total: evidence.simulations.length,
+      failed: failedSimulations.length,
+      riskCounts: simulationRiskCounts,
+      recent: evidence.simulations.slice(0, 5).map((simulation) => ({
+        id: simulation.id,
+        missionId: simulation.missionId,
+        status: simulation.status,
+        riskLevel: simulationRiskFromSummary(simulation),
+        approvalRequiredCount:
+          typeof simulation.summary.approvalRequiredCount === "number" ? simulation.summary.approvalRequiredCount : 0,
+        sideEffectsSuppressed: simulation.estimatedUsage.sideEffectsSuppressed,
+        createdAt: simulation.createdAt,
+        completedAt: simulation.completedAt
+      }))
+    },
+    agentRuns: snapshot.agents,
+    policy: {
+      totalEvents: evidence.policyEvents.length,
+      blocked: blockedPolicyEvents.length,
+      reviewRequired: reviewPolicyEvents.length,
+      recent: evidence.policyEvents.slice(0, 10).map((event) => ({
+        id: event.id,
+        missionId: event.missionId,
+        severity: event.severity,
+        action: event.action,
+        policyKey: event.policyKey,
+        message: event.message,
+        occurredAt: event.occurredAt
+      }))
+    },
     topPlatforms: snapshot.platformBreakdown.slice(0, 5),
     recommendations: [
       snapshot.failures.total > 0 ? "Review failed publish, reply, and agent rows before raising autonomy caps." : null,
       snapshot.replies.awaitingApproval > 0 ? "Convert recurring approval reasons into safer reply rules or blocked phrases." : null,
       snapshot.posting.queued + snapshot.posting.scheduled === 0 ? "Create a content_pipeline mission for the next publishing window." : null,
-      activeMissions.some((candidate) => candidate.status === "paused") ? "Inspect paused missions before resuming provider-side actions." : null
+      activeMissions.some((candidate) => candidate.status === "paused") ? "Inspect paused missions before resuming provider-side actions." : null,
+      reviewPolicyEvents.length > 0 ? "Review policy-gated actions before promoting any supervised mission." : null,
+      failedSimulations.length > 0 ? "Re-run failed simulations after fixing the recorded storage or policy blocker." : null,
+      "Treat provider reach and engagement metrics as unavailable until a live provider adapter reports them."
     ].filter((recommendation): recommendation is string => Boolean(recommendation))
   };
 }
@@ -637,25 +800,57 @@ async function executeReport(
     getAnalyticsSnapshot: AnalyticsSnapshotReader;
   }
 ) {
-  const [snapshot, missions, policyEvents] = await Promise.all([
+  const [snapshot, missions] = await Promise.all([
     getAnalyticsSnapshot({
       workspaceId: context.mission.workspaceId,
       isLocalPreview: allowMemoryFallback,
       now: context.now()
     }),
-    context.repositories.missions.list(context.mission.workspaceId),
-    context.repositories.policyEvents.listForMission({
-      workspaceId: context.mission.workspaceId,
-      missionId: context.mission.id
-    })
+    context.repositories.missions.list(context.mission.workspaceId)
   ]);
-  const report = buildReportSummary({ mission: context.mission, missions, snapshot });
+  const evidenceRows = await Promise.all(
+    missions.map(async (missionRecord) => {
+      const [policyEvents, simulations] = await Promise.all([
+        context.repositories.policyEvents.listForMission({
+          workspaceId: context.mission.workspaceId,
+          missionId: missionRecord.id,
+          limit: 20
+        }),
+        context.repositories.simulationRuns.listForMission({
+          workspaceId: context.mission.workspaceId,
+          missionId: missionRecord.id,
+          limit: 10
+        })
+      ]);
+
+      return { policyEvents, simulations };
+    })
+  );
+  const evidence = {
+    policyEvents: evidenceRows
+      .flatMap((row) => row.policyEvents)
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)),
+    simulations: evidenceRows
+      .flatMap((row) => row.simulations)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  };
+  const report = buildReportSummary({ evidence, mission: context.mission, missions, snapshot });
+
+  emitAgentOrchestrationEvent("agent.report.generated", {
+    agentFailures: report.failures.agents,
+    failedSimulations: report.simulations.failed,
+    missionId: context.mission.id,
+    policyReviewRequired: report.policy.reviewRequired,
+    recommendations: report.recommendations.length,
+    workspaceId: context.mission.workspaceId
+  });
 
   return {
     summary: `Compiled report with ${report.recommendations.length} next recommendations.`,
     report,
-    policyEvents: policyEvents.slice(0, 20).map((event) => ({
+    policyEvents: evidence.policyEvents.slice(0, 20).map((event) => ({
       id: event.id,
+      missionId: event.missionId,
       severity: event.severity,
       action: event.action,
       policyKey: event.policyKey,

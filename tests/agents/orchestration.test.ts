@@ -30,6 +30,7 @@ import {
 } from "@/lib/agents/orchestration/runner";
 import { simulateAgentMission } from "@/lib/agents/orchestration/simulation";
 import { createAutonomousMissionTaskExecutor } from "@/lib/agents/orchestration/executors";
+import type { AnalyticsSnapshot } from "@/lib/analytics/metrics";
 
 const workspaceId = "00000000-0000-0000-0000-000000000001";
 const otherWorkspaceId = "00000000-0000-0000-0000-000000000002";
@@ -449,6 +450,231 @@ describe("agent orchestration foundation", () => {
     expect(result.policyEvents.map((event) => event.action)).toContain("allow");
   });
 
+  it("compiles weekly operator reports with simulations, policy events, usage, and caveats", async () => {
+    const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
+    const seeded = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_1",
+      now: new Date(timestamp)
+    });
+    const coordinator = seeded.find((profile) => profile.role === "coordinator")!;
+    const policy = agentAutonomyPolicySchema.parse({
+      autonomy: "full",
+      allowedActions: ["mission.run", "report.generate"],
+      allowedToolScopes: ["mission.plan", "mission.report"]
+    });
+    const snapshot = {
+      generatedAt: timestamp,
+      posting: {
+        total: 6,
+        scheduled: 2,
+        queued: 1,
+        publishing: 0,
+        published: 2,
+        failed: 1,
+        canceled: 0
+      },
+      failures: {
+        total: 3,
+        publishing: 1,
+        replies: 1,
+        agents: 1
+      },
+      replies: {
+        comments: 9,
+        matched: 5,
+        awaitingApproval: 2,
+        sent: 3,
+        failed: 1
+      },
+      usage: {
+        totalQuantity: 14,
+        byType: [
+          {
+            type: "ai_generation",
+            label: "AI generations",
+            quantity: 8
+          },
+          {
+            type: "auto_reply",
+            label: "Auto replies",
+            quantity: 6
+          }
+        ],
+        daily: [
+          {
+            date: "2026-06-20",
+            label: "Jun 20",
+            quantity: 14
+          }
+        ]
+      },
+      agents: {
+        total: 4,
+        running: 0,
+        succeeded: 3,
+        failed: 1,
+        averageToolCalls: 2.25,
+        recent: [
+          {
+            id: "run_recent_report_1",
+            traceId: "trace_recent_report_1",
+            status: "failed",
+            provider: "gemini",
+            model: "mock-gemini",
+            toolCallCount: 2,
+            durationMs: 1000,
+            startedAt: timestamp,
+            completedAt: "2026-06-21T12:00:01.000Z",
+            error: "Provider metrics unavailable"
+          }
+        ]
+      },
+      platformBreakdown: [
+        {
+          platform: "LinkedIn",
+          posts: 4,
+          published: 2,
+          comments: 5,
+          replies: 2,
+          failures: 1
+        }
+      ]
+    } satisfies AnalyticsSnapshot;
+
+    await repositories.missions.save({
+      id: "mission_report_source_1",
+      workspaceId,
+      createdByUserId: "user_1",
+      coordinatorProfileId: coordinator.id,
+      missionType: "content_pipeline",
+      title: "Campaign source mission",
+      objective: "Provide evidence for reporting.",
+      brief: "A mission with review-gated scheduling evidence.",
+      status: "paused",
+      priority: 70,
+      inputs: {},
+      context: {},
+      policy,
+      requestedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    await repositories.policyEvents.record({
+      id: "policy_report_source_1",
+      workspaceId,
+      missionId: "mission_report_source_1",
+      severity: "warning",
+      action: "require_review",
+      policyKey: "supervised_external_action",
+      message: "Schedule suggestion needs approval before writing a durable job.",
+      details: {},
+      occurredAt: timestamp,
+      createdAt: timestamp
+    });
+    await repositories.simulationRuns.save({
+      id: "simulation_report_source_1",
+      workspaceId,
+      missionId: "mission_report_source_1",
+      requestedByUserId: "user_1",
+      status: "succeeded",
+      plannedActions: [],
+      policyEvents: [],
+      estimatedUsage: {
+        modelCalls: 0,
+        toolCalls: 0,
+        estimatedCostCents: 0,
+        usageLedgerWrites: 0,
+        scheduledPostWrites: 0,
+        publishEnqueues: 0,
+        replySends: 0,
+        providerRequests: 0,
+        sideEffectsSuppressed: 3
+      },
+      summary: {
+        riskLevel: "high",
+        approvalRequiredCount: 1
+      },
+      createdAt: timestamp,
+      completedAt: timestamp
+    });
+    await repositories.missions.save({
+      id: "mission_weekly_operator_report_1",
+      workspaceId,
+      createdByUserId: "user_1",
+      coordinatorProfileId: coordinator.id,
+      missionType: "weekly_report",
+      title: "Weekly operator report",
+      objective: "Summarize operations for human review.",
+      brief: "Compile posting, replies, failures, usage, simulations, agent runs, and policy events.",
+      status: "queued",
+      priority: 50,
+      inputs: {},
+      context: {},
+      policy,
+      requestedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+
+    const result = await runAgentMission({
+      workspaceId,
+      missionId: "mission_weekly_operator_report_1",
+      repositories,
+      executeTask: createAutonomousMissionTaskExecutor({
+        allowMemoryFallback: true,
+        getAnalyticsSnapshot: vi.fn(async () => snapshot)
+      }),
+      now: () => new Date(timestamp)
+    });
+    const reportOutput = result.tasks[0].output as Record<string, unknown>;
+
+    expect(result.mission.status).toBe("succeeded");
+    expect(reportOutput).toMatchObject({
+      report: {
+        period: {
+          timezone: "UTC"
+        },
+        posting: {
+          published: 2,
+          failed: 1,
+          pending: 3
+        },
+        replies: {
+          awaitingApproval: 2,
+          sent: 3
+        },
+        failures: {
+          total: 3,
+          failedSimulations: 0
+        },
+        usage: {
+          totalQuantity: 14
+        },
+        simulations: {
+          total: 1,
+          riskCounts: {
+            high: 1
+          }
+        },
+        agentRuns: {
+          total: 4,
+          failed: 1
+        },
+        policy: {
+          reviewRequired: 1
+        },
+        providerMetricsCaveat: expect.stringContaining("Provider metrics")
+      },
+      policyEvents: expect.arrayContaining([
+        expect.objectContaining({
+          missionId: "mission_report_source_1",
+          policyKey: "supervised_external_action"
+        })
+      ])
+    });
+  });
+
   it("runs autonomous content missions through content generation and scheduling executors", async () => {
     const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
     const seeded = await repositories.profiles.seedRoleTemplates({
@@ -617,6 +843,219 @@ describe("agent orchestration foundation", () => {
         })
       })
     );
+  });
+
+  it("runs supervised campaign missions through approval-gated scheduling and report tasks", async () => {
+    const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
+    const seeded = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_1",
+      now: new Date(timestamp)
+    });
+    const coordinator = seeded.find((profile) => profile.role === "coordinator")!;
+    const contentPack = contentPackSchema.parse({
+      id: "pack_campaign_1",
+      topic: "Governed AI content operations",
+      summary: "A supervised campaign pack.",
+      audience: "founders",
+      tone: "practical",
+      goal: "educate",
+      ideas: [
+        {
+          id: "idea_campaign_1",
+          title: "Approval gates build trust",
+          angle: "Show governed scheduling before publishing",
+          audiencePromise: "Know what needs approval"
+        }
+      ],
+      captions: ["Governed campaigns work best when approval gates are visible."],
+      variants: [
+        {
+          id: "variant_campaign_linkedin",
+          platform: "linkedin",
+          title: "Supervised campaign",
+          hook: "Campaign agents need human-visible approval gates.",
+          body: "Research, strategy, content, schedule suggestions, and reports should be inspectable before anything posts.",
+          cta: "Review the campaign plan before scheduling.",
+          hashtags: ["#AI", "#ContentOps"],
+          media: [],
+          mediaPrompt: "A clean campaign operations desk.",
+          characterCount: 138,
+          policyStatus: "pass",
+          policyWarnings: []
+        }
+      ],
+      hashtags: ["#AI", "#ContentOps"],
+      ctaOptions: ["Review the campaign plan before scheduling."],
+      scheduleSuggestions: [
+        {
+          id: "schedule_campaign_linkedin",
+          platform: "linkedin",
+          scheduledFor: "2026-06-22T17:00:00.000Z",
+          timezone: "America/Chicago",
+          reason: "Best weekday operator review window.",
+          confidence: 0.82
+        }
+      ],
+      warnings: [],
+      createdAt: timestamp,
+      metadata: {
+        provider: "gemini",
+        model: "mock-gemini",
+        traceId: "trace_campaign_content",
+        toolCallCount: 1
+      }
+    });
+    const run = agentRunSchema.parse({
+      id: "run_campaign_content_1",
+      traceId: "trace_campaign_content",
+      status: "succeeded",
+      provider: "gemini",
+      model: "mock-gemini",
+      userId: "user_1",
+      workspaceId,
+      input: {
+        topic: contentPack.topic,
+        platforms: ["linkedin"]
+      },
+      output: contentPack,
+      toolCalls: [],
+      startedAt: timestamp,
+      completedAt: timestamp
+    });
+    const runContent = vi.fn(async () => ({
+      run,
+      contentPack,
+      draft: {
+        draftId: "draft_campaign_1",
+        status: "saved" as const,
+        savedAt: timestamp
+      }
+    }));
+    const schedulePost = vi.fn(async () => {
+      throw new Error("Supervised campaign scheduling must stop for approval.");
+    }) as never;
+
+    await repositories.missions.save({
+      id: "mission_supervised_campaign_1",
+      workspaceId,
+      createdByUserId: "user_1",
+      coordinatorProfileId: coordinator.id,
+      missionType: "supervised_campaign",
+      title: "Supervised campaign autopilot",
+      objective: "Produce campaign assets without scheduling until approval.",
+      brief: "Research, plan, generate, prepare schedule suggestions, and report readiness.",
+      status: "queued",
+      priority: 85,
+      inputs: {
+        topic: "Governed AI content operations",
+        platforms: ["linkedin"]
+      },
+      context: {},
+      policy: agentAutonomyPolicySchema.parse({
+        autonomy: "supervised",
+        allowedActions: [
+          "mission.run",
+          "research.collect",
+          "task.execute",
+          "content.generate",
+          "content.schedule",
+          "report.generate"
+        ],
+        allowedToolScopes: [
+          "mission.plan",
+          "research.topic",
+          "strategy.plan",
+          "content.generate",
+          "content.schedule",
+          "mission.report"
+        ],
+        platformScope: ["linkedin"],
+        allowedProviders: ["linkedin"]
+      }),
+      requestedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+
+    const simulation = await simulateAgentMission({
+      workspaceId,
+      missionId: "mission_supervised_campaign_1",
+      repositories,
+      requestedByUserId: "user_1",
+      now: () => new Date(timestamp)
+    });
+    expect(simulation.simulationRun.plannedActions.map((action) => action.action)).toEqual([
+      "research.collect",
+      "task.execute",
+      "content.generate",
+      "content.schedule",
+      "report.generate"
+    ]);
+    expect(simulation.simulationRun.plannedActions.find((action) => action.action === "content.schedule")).toMatchObject({
+      status: "would_require_review",
+      approvalRequired: true,
+      policy: {
+        policyKey: "supervised_external_action"
+      }
+    });
+
+    const result = await runAgentMission({
+      workspaceId,
+      missionId: "mission_supervised_campaign_1",
+      repositories,
+      executeTask: createAutonomousMissionTaskExecutor({
+        allowMemoryFallback: true,
+        runContent,
+        schedulePost
+      }),
+      now: () => new Date(timestamp)
+    });
+    const contentTask = result.tasks.find((task) => task.taskName === "Generate campaign variants");
+    const scheduleTask = result.tasks.find((task) => task.taskName === "Prepare approval-gated schedule");
+    const reportTask = result.tasks.find((task) => task.taskName === "Compile campaign readiness report");
+
+    expect(result.mission.status).toBe("succeeded");
+    expect(result.tasks.map((task) => task.taskName)).toEqual([
+      "Research campaign context",
+      "Plan supervised campaign strategy",
+      "Generate campaign variants",
+      "Prepare approval-gated schedule",
+      "Compile campaign readiness report"
+    ]);
+    expect(contentTask?.output).toMatchObject({
+      generatedVariants: [
+        {
+          id: "variant_campaign_linkedin",
+          policyStatus: "pass"
+        }
+      ],
+      scheduleSuggestions: [
+        {
+          id: "schedule_campaign_linkedin",
+          platform: "linkedin"
+        }
+      ],
+      approvalGate: {
+        scheduling: "requires_human_approval",
+        publishing: "requires_human_approval"
+      }
+    });
+    expect(scheduleTask).toMatchObject({
+      status: "skipped",
+      output: {
+        policy: {
+          key: "supervised_external_action",
+          action: "require_review"
+        }
+      }
+    });
+    expect(reportTask?.output).toMatchObject({
+      report: expect.objectContaining({
+        providerMetricsCaveat: expect.stringContaining("Provider metrics")
+      })
+    });
+    expect(schedulePost).not.toHaveBeenCalled();
   });
 
   it("simulates publish missions without invoking scheduling or publish executors", async () => {

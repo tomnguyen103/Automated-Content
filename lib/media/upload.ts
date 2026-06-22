@@ -48,6 +48,23 @@ async function getImageDimensions(file: File, url: string) {
   });
 }
 
+async function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("Unable to read local preview media file."));
+    };
+    reader.onerror = () => reject(new Error("Unable to read local preview media file."));
+    reader.readAsDataURL(file);
+  });
+}
+
 function createBaseAsset({
   auth,
   file,
@@ -99,7 +116,7 @@ function createBaseAsset({
 }
 
 async function createLocalPreviewAsset(file: File, auth: ImageKitUploadAuth): Promise<MediaAsset> {
-  const url = URL.createObjectURL(file);
+  const url = await fileToDataUrl(file);
   const dimensions = await getImageDimensions(file, url);
   const mediaType = getMediaType(file);
 

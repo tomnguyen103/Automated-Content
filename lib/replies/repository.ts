@@ -9,7 +9,11 @@ import {
   workflowCheckpoints
 } from "@/db/schema";
 import type { AgentRun } from "@/lib/agents/schemas/agent-run";
-import type { CommentReplyInput, CommentReplyOutput } from "@/lib/agents/schemas/comment-reply";
+import type {
+  CommentReplyInput,
+  CommentReplyOutput,
+  CommentReplyTriageLabel
+} from "@/lib/agents/schemas/comment-reply";
 import { isDatabaseConfigured } from "@/lib/env";
 import type { ProviderReplyResult } from "@/lib/providers/types";
 import { approveReplySuggestion, createReplyApprovalItem, type ReplyApprovalItem } from "@/lib/replies/approval";
@@ -34,6 +38,8 @@ export type PersistedReplyAttemptInput = {
   status: "sent" | "awaiting_approval" | "failed" | "skipped";
   replyText: string | null;
   providerReplyId?: string;
+  triageLabel?: CommentReplyTriageLabel;
+  triageReason?: string;
   error?: string;
   audit: ReplyAuditEntry;
   createdAt: string;
@@ -112,6 +118,8 @@ type StoredReplyAttempt = {
   approvedByUserId?: string;
   providerReplyId?: string;
   providerResponse?: Record<string, unknown>;
+  triageLabel?: CommentReplyTriageLabel;
+  triageReason?: string;
   audit: ReplyAuditEntry;
   error?: string;
   sentAt?: string;
@@ -253,6 +261,8 @@ function toLogEntry({
     commentText: comment.text,
     replyText: attempt.status === "skipped" ? null : attempt.replyText,
     ruleName: rule?.name ?? (attempt.status === "awaiting_approval" ? "Pending approval" : undefined),
+    triageLabel: attempt.triageLabel ?? attempt.audit.triageLabel,
+    triageReason: attempt.triageReason ?? attempt.audit.triageReason,
     auditNotes: attempt.audit.notes
   };
 }
@@ -268,6 +278,8 @@ function toApprovalItem(attempt: StoredReplyAttempt, comment: InboxComment): Rep
     commentText: comment.text,
     suggestedReply: attempt.replyText,
     confidence: 0.72,
+    triageLabel: attempt.triageLabel ?? attempt.audit.triageLabel,
+    triageReason: attempt.triageReason ?? attempt.audit.triageReason,
     auditNotes: attempt.audit.notes,
     now: new Date(attempt.createdAt)
   });
@@ -336,6 +348,8 @@ function createStoredAttempt({
     approvalRequired: persist.status === "awaiting_approval",
     providerReplyId: persist.providerReply?.providerReplyId,
     providerResponse: persist.providerReply?.raw,
+    triageLabel: persist.attempt.triageLabel ?? persist.attempt.audit.triageLabel ?? persist.reply.triageLabel,
+    triageReason: persist.attempt.triageReason ?? persist.attempt.audit.triageReason ?? persist.reply.triageReason,
     audit: persist.attempt.audit,
     error: persist.attempt.error,
     sentAt: persist.attempt.sentAt,

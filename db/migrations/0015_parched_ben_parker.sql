@@ -1,0 +1,1 @@
+ALTER TYPE "public"."agent_mission_type" ADD VALUE 'supervised_campaign' BEFORE 'auto_publish';

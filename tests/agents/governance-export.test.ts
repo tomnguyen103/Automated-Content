@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearAgentOrchestrationRepositoriesForTests,
   createAgentOrchestrationRepositories
@@ -93,13 +93,48 @@ describe("agent governance export", () => {
       allowMemoryFallback: true,
       now: new Date(timestamp)
     }) as {
-      summary: { missions: number };
+      accessIssues: unknown[];
+      summary: { degraded: boolean; missions: number };
       missions: Array<{ mission: { context: Record<string, unknown> } }>;
       usage: { records: unknown[] };
     };
 
+    expect(payload.accessIssues).toEqual([]);
+    expect(payload.summary.degraded).toBe(false);
     expect(payload.summary.missions).toBe(1);
     expect(payload.missions[0].mission.context.webhookSecret).toBe("[redacted]");
     expect(payload.usage.records).toEqual([]);
+  });
+
+  it("marks the export as degraded when an optional section falls back", async () => {
+    const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      const payload = await buildAgentGovernanceExport({
+        workspaceId,
+        requestedByUserId: "user_1",
+        repositories,
+        allowMemoryFallback: true,
+        now: new Date(timestamp),
+        loadUsageRecords: () => Promise.reject(new Error("usage ledger unavailable")),
+        loadBillingState: () => Promise.resolve(null)
+      }) as {
+        accessIssues: Array<{ message: string; section: string }>;
+        summary: { degraded: boolean };
+        usage: { records: unknown[] };
+      };
+
+      expect(payload.summary.degraded).toBe(true);
+      expect(payload.accessIssues).toEqual([
+        {
+          message: "Unable to load usage records; this section contains fallback data.",
+          section: "usage records"
+        }
+      ]);
+      expect(payload.usage.records).toEqual([]);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

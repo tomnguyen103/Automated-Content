@@ -23,8 +23,10 @@ export async function GET() {
 
   return new NextResponse(JSON.stringify(payload, null, 2), {
     headers: {
+      "Cache-Control": "private, no-store, max-age=0",
       "Content-Disposition": `attachment; filename="agent-governance-${generatedAt}.json"`,
-      "Content-Type": "application/json; charset=utf-8"
+      "Content-Type": "application/json; charset=utf-8",
+      Pragma: "no-cache"
     }
   });
 }

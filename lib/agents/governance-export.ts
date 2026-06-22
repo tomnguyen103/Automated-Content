@@ -33,6 +33,15 @@ export function redactSensitive(value: unknown): unknown {
   );
 }
 
+async function loadOptionalExportSection<T>(label: string, loader: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await loader;
+  } catch (error) {
+    console.error(`Unable to load governance export ${label}`, error);
+    return fallback;
+  }
+}
+
 export async function buildAgentGovernanceExport({
   allowMemoryFallback = false,
   now = new Date(),
@@ -62,15 +71,23 @@ export async function buildAgentGovernanceExport({
       limit: 100
     }),
     replyRepository.getConsoleState(workspaceId),
-    listUsageLedgerRecords({
-      workspaceId,
-      limit: 200
-    }).catch(() => []),
+    loadOptionalExportSection(
+      "usage records",
+      listUsageLedgerRecords({
+        workspaceId,
+        limit: 200
+      }),
+      []
+    ),
     isDatabaseConfigured
-      ? getWorkspaceBillingState({
-          workspaceId,
-          now
-        }).catch(() => null)
+      ? loadOptionalExportSection(
+          "billing state",
+          getWorkspaceBillingState({
+            workspaceId,
+            now
+          }),
+          null
+        )
       : Promise.resolve(null)
   ]);
 

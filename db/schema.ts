@@ -696,7 +696,7 @@ export const brandMemoryProposals = pgTable(
     check("brand_memory_proposals_confidence_range_check", sql`${table.confidence} >= 0 and ${table.confidence} <= 100`),
     index("brand_memory_proposals_workspace_status_idx").on(table.workspaceId, table.status),
     index("brand_memory_proposals_source_run_idx").on(table.sourceAgentRunId),
-    index("brand_memory_proposals_created_at_idx").on(table.createdAt)
+    index("brand_memory_proposals_workspace_created_at_idx").on(table.workspaceId, table.createdAt)
   ]
 );
 

@@ -68,7 +68,7 @@ async function createBrandMemoryProposals({
     );
   } catch (error) {
     console.error("Unable to create brand memory proposals", error);
-    return [];
+    throw error;
   }
 }
 

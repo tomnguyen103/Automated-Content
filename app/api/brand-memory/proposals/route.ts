@@ -13,23 +13,28 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Authentication is required." }, { status: 401 });
   }
 
-  const workspace = await resolvePersonalWorkspaceForUser(user);
-  const rawStatus = request.nextUrl.searchParams.get("status") ?? undefined;
-  const statusResult = rawStatus ? brandMemoryProposalStatusSchema.safeParse(rawStatus) : null;
+  try {
+    const workspace = await resolvePersonalWorkspaceForUser(user);
+    const rawStatus = request.nextUrl.searchParams.get("status") ?? undefined;
+    const statusResult = rawStatus ? brandMemoryProposalStatusSchema.safeParse(rawStatus) : null;
 
-  if (statusResult && !statusResult.success) {
-    return NextResponse.json({ error: "Invalid proposal status." }, { status: 400 });
+    if (statusResult && !statusResult.success) {
+      return NextResponse.json({ error: "Invalid proposal status." }, { status: 400 });
+    }
+
+    const status = statusResult?.data;
+    const proposals = await createBrandMemoryProposalRepository({
+      allowMemoryFallback: workspace.isLocalPreview,
+      preferMemoryFallback: workspace.isLocalPreview
+    }).list({
+      workspaceId: workspace.id,
+      status,
+      limit: 50
+    });
+
+    return NextResponse.json({ proposals });
+  } catch (error) {
+    console.error("Unable to list brand memory proposals", error);
+    return NextResponse.json({ error: "Unable to list brand memory proposals." }, { status: 500 });
   }
-
-  const status = statusResult?.data;
-  const proposals = await createBrandMemoryProposalRepository({
-    allowMemoryFallback: workspace.isLocalPreview,
-    preferMemoryFallback: workspace.isLocalPreview
-  }).list({
-    workspaceId: workspace.id,
-    status,
-    limit: 50
-  });
-
-  return NextResponse.json({ proposals });
 }

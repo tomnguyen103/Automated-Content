@@ -1841,9 +1841,15 @@
           "method": "btree",
           "with": {}
         },
-        "brand_memory_proposals_created_at_idx": {
-          "name": "brand_memory_proposals_created_at_idx",
+        "brand_memory_proposals_workspace_created_at_idx": {
+          "name": "brand_memory_proposals_workspace_created_at_idx",
           "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
             {
               "expression": "created_at",
               "isExpression": false,

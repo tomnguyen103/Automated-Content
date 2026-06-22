@@ -37,7 +37,7 @@ export function createReadBrandProfileTool(
         return readBrandProfile(input);
       }
 
-      return defaultBrandProfile;
+      return brandProfileOutputSchema.parse(defaultBrandProfile);
     }
   };
 }

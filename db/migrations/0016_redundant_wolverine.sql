@@ -29,4 +29,4 @@ ALTER TABLE "brand_memory_proposals" ADD CONSTRAINT "brand_memory_proposals_revi
 CREATE UNIQUE INDEX "brand_memory_proposals_workspace_id_id_idx" ON "brand_memory_proposals" USING btree ("workspace_id","id");--> statement-breakpoint
 CREATE INDEX "brand_memory_proposals_workspace_status_idx" ON "brand_memory_proposals" USING btree ("workspace_id","status");--> statement-breakpoint
 CREATE INDEX "brand_memory_proposals_source_run_idx" ON "brand_memory_proposals" USING btree ("source_agent_run_id");--> statement-breakpoint
-CREATE INDEX "brand_memory_proposals_created_at_idx" ON "brand_memory_proposals" USING btree ("created_at");
+CREATE INDEX "brand_memory_proposals_workspace_created_at_idx" ON "brand_memory_proposals" USING btree ("workspace_id","created_at");

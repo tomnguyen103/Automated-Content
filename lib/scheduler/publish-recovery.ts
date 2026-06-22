@@ -57,21 +57,21 @@ export function classifyPublishFailure({
     };
   }
 
+  if (/capability|unsupported|cannot publish|provider mismatch|does not expose/i.test(combined)) {
+    return {
+      category: "provider_capability",
+      retryable: false,
+      recommendation: "Choose a compatible provider or platform before rescheduling.",
+      actions: ["reschedule", "manual_review"]
+    };
+  }
+
   if (/configuration|credentials|account|connect|token/i.test(combined)) {
     return {
       category: "provider_config",
       retryable: false,
       recommendation: "Reconnect or configure the provider account before retrying the publish.",
       actions: ["reconnect_provider", "manual_review"]
-    };
-  }
-
-  if (/capability|unsupported|cannot publish|provider mismatch/i.test(combined)) {
-    return {
-      category: "provider_capability",
-      retryable: false,
-      recommendation: "Choose a compatible provider or platform before rescheduling.",
-      actions: ["reschedule", "manual_review"]
     };
   }
 

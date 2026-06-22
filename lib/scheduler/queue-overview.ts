@@ -1,8 +1,8 @@
 import "server-only";
 
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
-import { connectedAccounts, platformVariants, scheduledJobs } from "@/db/schema";
+import { connectedAccounts, platformVariants, publishAttempts, scheduledJobs } from "@/db/schema";
 import { isDatabaseConfigured } from "@/lib/env";
 import {
   classifyPublishFailure,
@@ -101,7 +101,8 @@ export async function getQueueRows({
     return [];
   }
 
-  const rows = await getDb()
+  const db = getDb();
+  const rows = await db
     .select({
       id: scheduledJobs.id,
       title: platformVariants.title,
@@ -132,12 +133,40 @@ export async function getQueueRows({
     .orderBy(asc(scheduledJobs.scheduledFor))
     .limit(limit);
 
+  const failedJobIds = rows.filter((row) => row.status === "failed").map((row) => row.id);
+  const failedAttempts =
+    failedJobIds.length > 0
+      ? await db
+          .select({
+            scheduledJobId: publishAttempts.scheduledJobId,
+            errorCode: publishAttempts.errorCode,
+            errorMessage: publishAttempts.errorMessage
+          })
+          .from(publishAttempts)
+          .where(
+            and(
+              eq(publishAttempts.workspaceId, workspaceId),
+              eq(publishAttempts.status, "failed"),
+              inArray(publishAttempts.scheduledJobId, failedJobIds)
+            )
+          )
+          .orderBy(desc(publishAttempts.completedAt), desc(publishAttempts.createdAt))
+      : [];
+  const latestFailedAttemptByJobId = new Map<string, (typeof failedAttempts)[number]>();
+
+  for (const attempt of failedAttempts) {
+    if (!latestFailedAttemptByJobId.has(attempt.scheduledJobId)) {
+      latestFailedAttemptByJobId.set(attempt.scheduledJobId, attempt);
+    }
+  }
+
   return rows.map((row) => {
+    const failedAttempt = latestFailedAttemptByJobId.get(row.id);
     const recovery =
       row.enqueueStatus === "failed" || row.status === "failed"
         ? classifyPublishFailure({
-            errorCode: row.enqueueStatus === "failed" ? "queue_enqueue" : undefined,
-            errorMessage: row.enqueueError
+            errorCode: row.enqueueStatus === "failed" ? "queue_enqueue" : failedAttempt?.errorCode,
+            errorMessage: row.enqueueStatus === "failed" ? row.enqueueError : failedAttempt?.errorMessage
           })
         : null;
 

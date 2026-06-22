@@ -104,6 +104,38 @@ async function loadConnectedAccountForWorkspace({
   return account ?? null;
 }
 
+async function loadDefaultConnectedAccountForWorkspace({
+  provider,
+  workspaceId
+}: {
+  provider: ProviderKey;
+  workspaceId: string;
+}): Promise<ProviderHealthAccount | null> {
+  if (!isDatabaseConfigured) {
+    return null;
+  }
+
+  const [account] = await getDb()
+    .select({
+      id: connectedAccounts.id,
+      status: connectedAccounts.status,
+      scopes: connectedAccounts.scopes,
+      capabilities: connectedAccounts.capabilities,
+      lastValidatedAt: connectedAccounts.lastValidatedAt
+    })
+    .from(connectedAccounts)
+    .where(
+      and(
+        eq(connectedAccounts.workspaceId, workspaceId),
+        eq(connectedAccounts.provider, provider),
+        eq(connectedAccounts.status, "connected")
+      )
+    )
+    .limit(1);
+
+  return account ?? null;
+}
+
 export async function POST(
   request: NextRequest,
   {
@@ -162,11 +194,17 @@ export async function POST(
       );
     }
 
-    const connectedAccount = await loadConnectedAccountForWorkspace({
-      connectedAccountId: input.connectedAccountId,
-      provider: input.provider,
-      workspaceId: workspace.id
-    });
+    const connectedAccount = input.connectedAccountId
+      ? await loadConnectedAccountForWorkspace({
+          connectedAccountId: input.connectedAccountId,
+          provider: input.provider,
+          workspaceId: workspace.id
+        })
+      : await loadDefaultConnectedAccountForWorkspace({
+          provider: input.provider,
+          workspaceId: workspace.id
+        });
+    const resolvedConnectedAccountId = connectedAccount?.id ?? input.connectedAccountId ?? null;
 
     if (input.connectedAccountId && !connectedAccount && isDatabaseConfigured) {
       return NextResponse.json({ error: "Connected account not found." }, { status: 404 });
@@ -176,7 +214,7 @@ export async function POST(
       adapter: getProviderAdapter(input.provider),
       allowMock: workspace.isLocalPreview,
       connectedAccount,
-      connectedAccountId: input.connectedAccountId ?? null,
+      connectedAccountId: resolvedConnectedAccountId,
       requiredCapability: "scheduled_publish"
     });
 
@@ -207,7 +245,7 @@ export async function POST(
         workspaceId: workspace.id,
         platformVariantId,
         provider: input.provider,
-        connectedAccountId: input.connectedAccountId ?? null,
+        connectedAccountId: resolvedConnectedAccountId,
         scheduledFor,
         metadata: {
           ...input.metadata,

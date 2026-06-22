@@ -231,24 +231,39 @@ export function BriefForm() {
         };
       }
 
-      const response = await fetch(`/api/posts/${variant.id}/schedule`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
+      let response: Response;
+      let payload: ScheduleResponsePayload;
+
+      try {
+        response = await fetch(`/api/posts/${variant.id}/schedule`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            provider,
+            connectedAccountId: null,
+            scheduledFor: suggestion.scheduledFor,
+            metadata: {
+              confirmation: "create-review-approved-variants",
+              contentPackId: contentPack.id,
+              runId: workflow.runId,
+              scheduleSuggestionId: suggestion.id,
+              source: "create-review"
+            }
+          })
+        });
+        payload = (await response.json()) as ScheduleResponsePayload;
+      } catch (caughtError) {
+        return {
+          variantId: variant.id,
+          platform: variant.platform,
           provider,
           scheduledFor: suggestion.scheduledFor,
-          metadata: {
-            confirmation: "create-review-approved-variants",
-            contentPackId: contentPack.id,
-            runId: workflow.runId,
-            scheduleSuggestionId: suggestion.id,
-            source: "create-review"
-          }
-        })
-      });
-      const payload = (await response.json()) as ScheduleResponsePayload;
+          status: "needs_attention" as const,
+          message: caughtError instanceof Error ? caughtError.message : "Schedule request failed."
+        };
+      }
 
       if (!response.ok) {
         return {

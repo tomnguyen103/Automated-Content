@@ -723,6 +723,67 @@ describe("agent orchestration foundation", () => {
     );
   });
 
+  it("warns when a single selected provider is incompatible with requested platforms", async () => {
+    const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
+    const seeded = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_1",
+      now: new Date(timestamp)
+    });
+    const coordinator = seeded.find((profile) => profile.role === "coordinator")!;
+
+    await repositories.missions.save({
+      id: "mission_single_provider_compatibility_1",
+      workspaceId,
+      createdByUserId: "user_1",
+      coordinatorProfileId: coordinator.id,
+      missionType: "content_pipeline",
+      title: "Provider compatibility simulation",
+      objective: "Preview provider-platform mismatches before scheduling.",
+      brief: "Detect an X provider mismatch for LinkedIn variants.",
+      status: "queued",
+      priority: 80,
+      inputs: {
+        topic: "Provider checks",
+        provider: "x",
+        platforms: ["linkedin"],
+        connectedAccountId: "account_x_1",
+        connectedAccount: {
+          id: "account_x_1",
+          status: "connected",
+          scopes: ["publish"],
+          capabilities: ["scheduled_publish"],
+          lastValidatedAt: timestamp
+        }
+      },
+      context: {},
+      policy: agentAutonomyPolicySchema.parse({
+        autonomy: "full",
+        allowedActions: ["mission.run", "research.collect", "task.execute", "content.generate", "content.publish"],
+        allowedToolScopes: ["mission.plan", "research.topic", "strategy.plan", "content.generate", "content.publish"],
+        platformScope: ["linkedin"],
+        allowedProviders: ["x"]
+      }),
+      requestedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+
+    const result = await simulateAgentMission({
+      workspaceId,
+      missionId: "mission_single_provider_compatibility_1",
+      repositories,
+      now: () => new Date(timestamp)
+    });
+
+    expect(result.simulationRun.summary.providerReadinessWarnings).toEqual(
+      expect.arrayContaining(["Provider x cannot publish linkedin variants."])
+    );
+    expect(result.simulationRun.summary.providerReadinessWarnings).not.toContain(
+      "No connected account is selected for readiness validation."
+    );
+  });
+
   it("keeps supervised simulations inspectable while requiring review for external actions", async () => {
     const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
     const seeded = await repositories.profiles.seedRoleTemplates({

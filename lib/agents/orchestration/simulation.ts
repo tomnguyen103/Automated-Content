@@ -34,6 +34,8 @@ import {
   isProviderCompatibleWithPlatform
 } from "@/lib/providers/platform-compatibility";
 import { getProviderAdapter, isProviderKey } from "@/lib/providers/registry";
+import type { ProviderHealthAccount } from "@/lib/providers/health";
+import type { ProviderKey } from "@/lib/providers/types";
 
 export type SimulateAgentMissionOptions = {
   workspaceId: string;
@@ -103,6 +105,21 @@ function readStringMap(input: Record<string, unknown>, key: string) {
   );
 }
 
+function readRecordMap(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, Record<string, unknown>] =>
+        Boolean(entry[1]) && typeof entry[1] === "object" && !Array.isArray(entry[1])
+    )
+  );
+}
+
 function readBoolean(input: Record<string, unknown>, key: string) {
   const value = input[key];
 
@@ -111,6 +128,108 @@ function readBoolean(input: Record<string, unknown>, key: string) {
 
 function readPlatforms(input: Record<string, unknown>) {
   return readStringArray(input, "platforms").filter((platform): platform is SocialPlatform => platform in defaultProviderByPlatform);
+}
+
+const providerConnectionStatuses = ["connected", "requires_configuration", "unsupported", "disconnected", "error"] as const;
+
+function readProviderHealthAccount(value: unknown): ProviderHealthAccount | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === "string" && record.id.trim() ? record.id.trim() : null;
+  const status = providerConnectionStatuses.find((candidate) => candidate === record.status);
+
+  if (!id || !status) {
+    return null;
+  }
+
+  const lastValidatedAt =
+    record.lastValidatedAt instanceof Date
+      ? record.lastValidatedAt
+      : typeof record.lastValidatedAt === "string" && record.lastValidatedAt.trim()
+        ? new Date(record.lastValidatedAt)
+        : null;
+
+  return {
+    id,
+    status,
+    scopes: Array.isArray(record.scopes) ? record.scopes.filter((scope): scope is string => typeof scope === "string") : [],
+    capabilities: Array.isArray(record.capabilities)
+      ? record.capabilities.filter((capability): capability is string => typeof capability === "string")
+      : [],
+    lastValidatedAt: lastValidatedAt && !Number.isNaN(lastValidatedAt.getTime()) ? lastValidatedAt : null
+  };
+}
+
+function resolveConnectedAccountId({
+  input,
+  platform,
+  provider
+}: {
+  input: Record<string, unknown>;
+  platform?: SocialPlatform;
+  provider: ProviderKey;
+}) {
+  const accountByProvider = readStringMap(input, "connectedAccountIdsByProvider");
+  const accountByPlatform = readStringMap(input, "connectedAccountIdsByPlatform");
+
+  return (platform ? accountByPlatform[platform] : undefined) ?? accountByProvider[provider] ?? readString(input, "connectedAccountId");
+}
+
+function resolveConnectedAccount({
+  connectedAccountId,
+  input,
+  platform,
+  provider
+}: {
+  connectedAccountId?: string;
+  input: Record<string, unknown>;
+  platform?: SocialPlatform;
+  provider: ProviderKey;
+}) {
+  const accountByProvider = readRecordMap(input, "connectedAccountsByProvider");
+  const accountByPlatform = readRecordMap(input, "connectedAccountsByPlatform");
+  const account =
+    readProviderHealthAccount(platform ? accountByPlatform[platform] : undefined)
+    ?? readProviderHealthAccount(accountByProvider[provider])
+    ?? readProviderHealthAccount(input.connectedAccount);
+
+  if (!account || (connectedAccountId && account.id !== connectedAccountId)) {
+    return null;
+  }
+
+  return account;
+}
+
+function hasConnectedAccountSelection(input: Record<string, unknown>) {
+  return Boolean(
+    readString(input, "connectedAccountId")
+      || Object.keys(readStringMap(input, "connectedAccountIdsByProvider")).length > 0
+      || Object.keys(readStringMap(input, "connectedAccountIdsByPlatform")).length > 0
+      || readProviderHealthAccount(input.connectedAccount)
+      || Object.keys(readRecordMap(input, "connectedAccountsByProvider")).length > 0
+      || Object.keys(readRecordMap(input, "connectedAccountsByPlatform")).length > 0
+  );
+}
+
+function platformForProvider({
+  platformProvider,
+  platforms,
+  provider,
+  providerByPlatform
+}: {
+  platformProvider?: string;
+  platforms: SocialPlatform[];
+  provider?: string;
+  providerByPlatform: Record<string, string>;
+}) {
+  return platforms.find((platform) => {
+    const mappedProvider = providerByPlatform[platform] ?? provider ?? defaultProviderByPlatform[platform];
+
+    return mappedProvider === platformProvider;
+  });
 }
 
 function estimatePlatformActionCount(mission: AgentMission) {
@@ -306,7 +425,6 @@ function providerReadinessWarningsForTask(mission: AgentMission, task: MissionPl
   const provider = readString(mission.inputs, "provider");
   const providerByPlatform = readStringMap(mission.inputs, "providerByPlatform");
   const platforms = readPlatforms(mission.inputs);
-  const connectedAccountId = readString(mission.inputs, "connectedAccountId");
   const localPreview = readBoolean(mission.inputs, "localPreview");
   const requiredCapability = task.action === "reply.send" ? "comment_reply" : "scheduled_publish";
   const providers = [
@@ -322,14 +440,17 @@ function providerReadinessWarningsForTask(mission: AgentMission, task: MissionPl
     warnings.push("No provider is selected for this external action.");
   }
 
-  if (platforms.length > 0 && Object.keys(providerByPlatform).length > 0) {
+  if (platforms.length > 0) {
+    const hasProviderMap = Object.keys(providerByPlatform).length > 0;
+
     for (const platform of platforms) {
-      if (!providerByPlatform[platform]) {
+      const mappedProvider = providerByPlatform[platform] ?? provider ?? (hasProviderMap ? undefined : defaultProviderByPlatform[platform]);
+
+      if (!mappedProvider) {
         warnings.push(`No provider mapping is configured for ${platform}.`);
         continue;
       }
 
-      const mappedProvider = providerByPlatform[platform];
       if (
         isProviderKey(mappedProvider) &&
         !isProviderCompatibleWithPlatform({
@@ -343,7 +464,7 @@ function providerReadinessWarningsForTask(mission: AgentMission, task: MissionPl
     }
   }
 
-  if (!connectedAccountId) {
+  if (!hasConnectedAccountSelection(mission.inputs)) {
     warnings.push("No connected account is selected for readiness validation.");
   }
 
@@ -353,10 +474,28 @@ function providerReadinessWarningsForTask(mission: AgentMission, task: MissionPl
       continue;
     }
 
+    const platform = platformForProvider({
+      platformProvider: providerKey,
+      platforms,
+      provider,
+      providerByPlatform
+    });
+    const connectedAccountId = resolveConnectedAccountId({
+      input: mission.inputs,
+      platform,
+      provider: providerKey
+    });
+    const connectedAccount = resolveConnectedAccount({
+      connectedAccountId,
+      input: mission.inputs,
+      platform,
+      provider: providerKey
+    });
     const health = evaluateProviderHealth({
       adapter: getProviderAdapter(providerKey),
       allowMock: localPreview,
-      connectedAccountId: connectedAccountId ?? null,
+      connectedAccount,
+      connectedAccountId: connectedAccount?.id ?? connectedAccountId ?? null,
       requiredCapability
     });
 

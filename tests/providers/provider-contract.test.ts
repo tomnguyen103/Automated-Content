@@ -110,6 +110,11 @@ describe("provider adapter contract", () => {
   });
 
   it("reports provider readiness without live provider calls", () => {
+    const liveProvider = {
+      ...mockProvider,
+      displayName: "Live Provider",
+      implementationStatus: "live" as const
+    };
     const mockHealth = evaluateProviderHealth({
       adapter: mockProvider,
       allowMock: true,
@@ -137,6 +142,42 @@ describe("provider adapter contract", () => {
     expect(xReplyHealth).toMatchObject({
       configured: false,
       status: "capability_unsupported"
+    });
+
+    expect(
+      evaluateProviderHealth({
+        adapter: liveProvider,
+        connectedAccount: {
+          id: "account_missing_scopes",
+          status: "connected",
+          scopes: [],
+          capabilities: ["scheduled_publish"],
+          lastValidatedAt: new Date("2026-06-22T12:00:00.000Z")
+        },
+        requiredCapability: "scheduled_publish"
+      })
+    ).toMatchObject({
+      configured: false,
+      status: "scope_missing",
+      blockingReason: "Connected account account_missing_scopes is missing required scopes: publish."
+    });
+
+    expect(
+      evaluateProviderHealth({
+        adapter: liveProvider,
+        connectedAccount: {
+          id: "account_missing_capability",
+          status: "connected",
+          scopes: ["publish"],
+          capabilities: [],
+          lastValidatedAt: new Date("2026-06-22T12:00:00.000Z")
+        },
+        requiredCapability: "scheduled_publish"
+      })
+    ).toMatchObject({
+      configured: false,
+      status: "capability_unsupported",
+      blockingReason: "Connected account account_missing_capability does not expose scheduled_publish."
     });
   });
 });

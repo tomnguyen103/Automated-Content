@@ -240,6 +240,27 @@ export function createPublishJobRepository(db: DatabaseClient = getDb()) {
       const now = new Date();
 
       await db.transaction(async (tx) => {
+        const [job] = await tx
+          .update(scheduledJobs)
+          .set({
+            status: "failed",
+            lockedAt: null,
+            failedAt: now,
+            updatedAt: now
+          })
+          .where(
+            and(
+              eq(scheduledJobs.workspaceId, workspaceId),
+              eq(scheduledJobs.id, scheduledJobId),
+              inArray(scheduledJobs.status, [...publishableJobStatuses])
+            )
+          )
+          .returning({ id: scheduledJobs.id });
+
+        if (!job) {
+          return;
+        }
+
         await tx.insert(publishAttempts).values({
           workspaceId,
           scheduledJobId,
@@ -251,16 +272,6 @@ export function createPublishJobRepository(db: DatabaseClient = getDb()) {
           completedAt: now,
           updatedAt: now
         });
-
-        await tx
-          .update(scheduledJobs)
-          .set({
-            status: "failed",
-            lockedAt: null,
-            failedAt: now,
-            updatedAt: now
-          })
-          .where(and(eq(scheduledJobs.workspaceId, workspaceId), eq(scheduledJobs.id, scheduledJobId)));
       });
     }
   };

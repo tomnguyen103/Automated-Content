@@ -43,19 +43,31 @@ const capabilityRequiredScopes: Partial<Record<ProviderCapability, string[]>> = 
 };
 
 function missingRequiredScopes(requiredScopes: string[], account?: ProviderHealthAccount | null) {
-  if (requiredScopes.length === 0 || !account?.scopes || account.scopes.length === 0) {
+  if (requiredScopes.length === 0) {
     return [];
   }
 
-  return requiredScopes.filter((scope) => !account.scopes?.includes(scope));
+  const grantedScopes = account?.scopes ?? [];
+
+  if (grantedScopes.length === 0) {
+    return requiredScopes;
+  }
+
+  return requiredScopes.filter((scope) => !grantedScopes.includes(scope));
 }
 
 function accountSupportsCapability(requiredCapability: ProviderCapability | undefined, account?: ProviderHealthAccount | null) {
-  if (!requiredCapability || !account?.capabilities || account.capabilities.length === 0) {
+  if (!requiredCapability) {
     return true;
   }
 
-  return account.capabilities.includes(requiredCapability);
+  const capabilities = account?.capabilities ?? [];
+
+  if (capabilities.length === 0) {
+    return false;
+  }
+
+  return capabilities.includes(requiredCapability);
 }
 
 export function evaluateProviderHealth({

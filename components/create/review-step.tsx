@@ -60,6 +60,7 @@ function ScheduleApprovedVariantsPanel({
   const [pending, setPending] = useState(false);
   const [results, setResults] = useState<ApprovedVariantScheduleResult[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const hasPersistedSchedule = results.some((result) => result.status === "queued" || Boolean(result.scheduledJobId));
   const canSchedule =
     workflow.status === "succeeded" &&
     workflow.approvalStatus === "approved" &&
@@ -70,7 +71,7 @@ function ScheduleApprovedVariantsPanel({
   }
 
   const schedule = async () => {
-    if (!onScheduleApprovedVariants || !confirmed) {
+    if (!onScheduleApprovedVariants || !confirmed || hasPersistedSchedule) {
       return;
     }
 
@@ -102,7 +103,7 @@ function ScheduleApprovedVariantsPanel({
           id="confirm-schedule-approved"
           className="mt-1 size-4 rounded border-[var(--color-border)]"
           checked={confirmed}
-          disabled={disabled || pending}
+          disabled={disabled || pending || hasPersistedSchedule}
           type="checkbox"
           onChange={(event) => setConfirmed(event.target.checked)}
         />
@@ -148,9 +149,9 @@ function ScheduleApprovedVariantsPanel({
       ) : null}
 
       <div className="mt-4 flex justify-end">
-        <Button disabled={disabled || pending || !confirmed} type="button" onClick={schedule}>
+        <Button disabled={disabled || pending || !confirmed || hasPersistedSchedule} type="button" onClick={schedule}>
           {pending ? <Loader2 className="animate-spin" size={16} aria-hidden="true" /> : <CalendarPlus size={16} aria-hidden="true" />}
-          {pending ? "Scheduling" : "Schedule approved variants"}
+          {hasPersistedSchedule ? "Scheduling complete" : pending ? "Scheduling" : "Schedule approved variants"}
         </Button>
       </div>
     </div>

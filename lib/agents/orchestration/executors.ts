@@ -382,7 +382,8 @@ async function scheduleOneVariant({
         agentTaskRunId: context.taskRun.id,
         agentProfileId: context.profile.id,
         missionType: context.mission.missionType,
-        autonomous: true
+        autonomous: true,
+        localPreview: allowMemoryFallback
       }
     },
     repository: createSchedulerRepository({ allowMemoryFallback }),

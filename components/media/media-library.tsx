@@ -145,7 +145,9 @@ export function MediaLibrary() {
           <MediaGrid assets={assets} selectedId={displayedSelectedId} onSelect={(asset) => setSelectedId(asset.id)} />
         </div>
         <div id="transforms" className="scroll-mt-20">
-          <TransformPanel asset={selectedAsset} />
+          <div id="crops" className="scroll-mt-20">
+            <TransformPanel asset={selectedAsset} />
+          </div>
         </div>
       </div>
     </div>

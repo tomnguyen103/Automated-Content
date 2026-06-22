@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ConnectedAccount, PlatformVariantRow, ScheduledJob } from "@/db/schema";
+import type { ConnectedAccount, PlatformVariantRow, PublishAttempt, ScheduledJob } from "@/db/schema";
 import { publishScheduledPostJob } from "@/workers/jobs/publish-post";
 
 type PublishRepository = NonNullable<Parameters<typeof publishScheduledPostJob>[0]["repository"]>;
@@ -79,6 +79,28 @@ function createAccount(overrides: Partial<ConnectedAccount> = {}): ConnectedAcco
   };
 }
 
+function createPublishAttempt(overrides: Partial<PublishAttempt> = {}): PublishAttempt {
+  const now = new Date("2026-06-20T12:00:00.000Z");
+
+  return {
+    id: "attempt_1",
+    workspaceId,
+    scheduledJobId,
+    provider: "mock",
+    status: "publishing",
+    providerPostId: null,
+    providerResponse: null,
+    errorCode: null,
+    errorMessage: null,
+    retryAt: null,
+    startedAt: now,
+    completedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides
+  };
+}
+
 function createRepository({
   job,
   account = createAccount(),
@@ -88,7 +110,7 @@ function createRepository({
   account?: ConnectedAccount | null;
   variant?: PlatformVariantRow;
 }) {
-  const startAttempt = vi.fn();
+  const startAttempt = vi.fn(async () => createPublishAttempt());
   const repository: PublishRepository = {
     loadScheduledPost: vi.fn(async () => ({
       job,
@@ -233,5 +255,34 @@ describe("publishScheduledPostJob", () => {
       })
     ).rejects.toThrow("Provider x cannot publish linkedin variants");
     expect(startAttempt).not.toHaveBeenCalled();
+  });
+
+  it("allows mock providers for local-preview jobs", async () => {
+    const { repository, startAttempt } = createRepository({
+      job: createScheduledJob({
+        metadata: {
+          localPreview: true
+        },
+        provider: "mock"
+      }),
+      variant: createVariant({
+        platform: "linkedin"
+      })
+    });
+
+    await expect(
+      publishScheduledPostJob({
+        data: {
+          scheduledJobId,
+          workspaceId,
+          provider: "mock"
+        },
+        repository
+      })
+    ).resolves.toMatchObject({
+      status: "published"
+    });
+    expect(startAttempt).toHaveBeenCalledOnce();
+    expect(repository.markSucceeded).toHaveBeenCalledOnce();
   });
 });

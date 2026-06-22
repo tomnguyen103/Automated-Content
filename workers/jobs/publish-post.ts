@@ -33,6 +33,10 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unable to publish scheduled post.";
 }
 
+function isLocalPreviewJob(job: ScheduledJob) {
+  return job.metadata.localPreview === true;
+}
+
 export function createPublishJobRepository(db: DatabaseClient = getDb()) {
   return {
     async loadScheduledPost(data: PublishPostJobData) {
@@ -233,6 +237,7 @@ export async function publishScheduledPostJob({
 
   if (
     !isProviderCompatibleWithPlatform({
+      allowMock: isLocalPreviewJob(loaded.job),
       platform: loaded.variant.platform,
       provider: loaded.job.provider
     })

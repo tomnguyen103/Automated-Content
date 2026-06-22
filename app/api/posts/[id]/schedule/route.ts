@@ -180,7 +180,10 @@ export async function POST(
         provider: input.provider,
         connectedAccountId: input.connectedAccountId ?? null,
         scheduledFor,
-        metadata: input.metadata
+        metadata: {
+          ...input.metadata,
+          localPreview: workspace.isLocalPreview
+        }
       },
       repository: createSchedulerRepository({
         allowMemoryFallback: workspace.isLocalPreview

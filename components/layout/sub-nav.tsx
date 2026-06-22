@@ -20,7 +20,7 @@ export function SubNav({ items }: SubNavProps) {
             isDisabled && "cursor-not-allowed text-[var(--color-text-muted)] opacity-60"
           );
 
-          if (item.href) {
+          if (item.href && !isDisabled) {
             return (
               <Link
                 key={item.label}

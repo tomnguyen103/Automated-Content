@@ -10,7 +10,7 @@ export default function MediaPage() {
           { label: "Library", href: "#library", active: true },
           { label: "Uploads", href: "#uploads" },
           { label: "AI Transforms", href: "#transforms" },
-          { label: "Platform Crops", href: "#transforms" }
+          { label: "Platform Crops", href: "#crops" }
         ]}
       />
       <PageShell

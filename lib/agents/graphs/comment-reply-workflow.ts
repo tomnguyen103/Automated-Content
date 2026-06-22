@@ -42,6 +42,8 @@ export type CommentReplyAttemptSummary = {
   audit: ReplyAuditEntry;
   createdAt: string;
   sentAt?: string;
+  triageLabel: CommentReplyOutput["triageLabel"];
+  triageReason: string;
 };
 
 export type CommentReplyWorkflowResult = {
@@ -79,7 +81,39 @@ function canSendApprovalDraftAutonomously(reply: CommentReplyOutput, options: Ru
     return false;
   }
 
+  if (!reply.matchedRuleId || reply.triageLabel !== "safe_rule_match") {
+    return false;
+  }
+
   return reply.confidence >= (options.autonomous.confidenceThreshold ?? 0.7);
+}
+
+function triageAuditNotes(reply: CommentReplyOutput) {
+  return [`Triage: ${reply.triageLabel}. ${reply.triageReason}`];
+}
+
+function ignoredAuditAction(reply: CommentReplyOutput) {
+  if (reply.triageLabel === "crisis_escalation") {
+    return "crisis_escalation" as const;
+  }
+
+  if (reply.triageLabel === "blocked_policy") {
+    return "blocked_policy" as const;
+  }
+
+  if (reply.triageLabel === "duplicate_or_rate_limited") {
+    return "rate_limited" as const;
+  }
+
+  return "ignored" as const;
+}
+
+function approvalAuditAction(reply: CommentReplyOutput) {
+  if (reply.triageLabel === "crisis_escalation") {
+    return "crisis_escalation" as const;
+  }
+
+  return "approval_required" as const;
 }
 
 function createAttempt({
@@ -109,7 +143,9 @@ function createAttempt({
     error,
     audit,
     createdAt: now.toISOString(),
-    sentAt: status === "sent" ? now.toISOString() : undefined
+    sentAt: status === "sent" ? now.toISOString() : undefined,
+    triageLabel: reply.triageLabel,
+    triageReason: reply.triageReason
   };
 }
 
@@ -176,9 +212,11 @@ export async function runCommentReplyWorkflow(
         action: "failed",
         commentId: input.comment.id,
         match: matchedRule,
-        notes: [...auditNotes, message],
+        notes: [...triageAuditNotes(reply), ...auditNotes, message],
         platform: input.comment.platform,
         replyText: replyDraft,
+        triageLabel: reply.triageLabel,
+        triageReason: reply.triageReason,
         now: now()
       });
       const attempt = createAttempt({
@@ -206,9 +244,11 @@ export async function runCommentReplyWorkflow(
         action: "approval_required",
         commentId: input.comment.id,
         match: matchedRule,
-        notes: [...auditNotes, usageReason],
+        notes: [...triageAuditNotes(reply), ...auditNotes, usageReason],
         platform: input.comment.platform,
         replyText: replyDraft,
+        triageLabel: reply.triageLabel,
+        triageReason: reply.triageReason,
         now: now()
       });
       const attempt = createAttempt({
@@ -228,6 +268,8 @@ export async function runCommentReplyWorkflow(
         commentText: input.comment.text,
         suggestedReply: replyDraft,
         confidence: reply.confidence,
+        triageLabel: reply.triageLabel,
+        triageReason: reply.triageReason,
         auditNotes: audit.notes,
         now: new Date(attempt.createdAt)
       });
@@ -274,12 +316,15 @@ export async function runCommentReplyWorkflow(
         commentId: input.comment.id,
         match: matchedRule,
         notes: [
+          ...triageAuditNotes(reply),
           ...auditNotes,
           ...(usageRecordError ? [`Usage recording failed after provider send: ${usageRecordError}`] : [])
         ],
         platform: input.comment.platform,
         providerReplyId: providerReply.providerReplyId,
         replyText: replyDraft,
+        triageLabel: reply.triageLabel,
+        triageReason: reply.triageReason,
         now: providerReply.sentAt
       });
       const attempt = createAttempt({
@@ -306,9 +351,11 @@ export async function runCommentReplyWorkflow(
         action: "failed",
         commentId: input.comment.id,
         match: matchedRule,
-        notes: [...auditNotes, message],
+        notes: [...triageAuditNotes(reply), ...auditNotes, message],
         platform: input.comment.platform,
         replyText: replyDraft,
+        triageLabel: reply.triageLabel,
+        triageReason: reply.triageReason,
         now: now()
       });
       const attempt = createAttempt({
@@ -346,12 +393,14 @@ export async function runCommentReplyWorkflow(
 
   if (reply.action === "approval_required" && reply.replyDraft) {
     const audit = createReplyAuditEntry({
-      action: "approval_required",
+      action: approvalAuditAction(reply),
       commentId: input.comment.id,
       match: matchedRule,
-      notes: reply.auditNotes,
+      notes: [...triageAuditNotes(reply), ...reply.auditNotes],
       platform: input.comment.platform,
       replyText: reply.replyDraft,
+      triageLabel: reply.triageLabel,
+      triageReason: reply.triageReason,
       now: now()
     });
     const attempt = createAttempt({
@@ -371,6 +420,8 @@ export async function runCommentReplyWorkflow(
       commentText: input.comment.text,
       suggestedReply: reply.replyDraft,
       confidence: reply.confidence,
+      triageLabel: reply.triageLabel,
+      triageReason: reply.triageReason,
       auditNotes: audit.notes,
       now: new Date(attempt.createdAt)
     });
@@ -387,11 +438,13 @@ export async function runCommentReplyWorkflow(
   }
 
   const audit = createReplyAuditEntry({
-    action: reply.safety.status === "blocked" ? "rate_limited" : "ignored",
+    action: ignoredAuditAction(reply),
     commentId: input.comment.id,
     match: matchedRule,
-    notes: reply.auditNotes,
+    notes: [...triageAuditNotes(reply), ...reply.auditNotes],
     platform: input.comment.platform,
+    triageLabel: reply.triageLabel,
+    triageReason: reply.triageReason,
     now: now()
   });
   const attempt = createAttempt({

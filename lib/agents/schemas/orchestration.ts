@@ -27,6 +27,7 @@ export const agentMissionTypeSchema = z.enum([
   "research_topics",
   "content_pipeline",
   "content_remix",
+  "supervised_campaign",
   "auto_publish",
   "comment_engagement",
   "weekly_report"

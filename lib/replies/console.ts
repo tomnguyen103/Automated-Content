@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { commentReplyTriageLabelSchema } from "@/lib/agents/schemas/comment-reply";
 import { providerKeys } from "@/lib/providers/types";
 import { replyApprovalItemSchema } from "@/lib/replies/approval";
 import {
@@ -37,6 +38,8 @@ export const replyLogEntrySchema = z.object({
   commentText: z.string().min(1),
   replyText: z.string().min(1).nullable(),
   ruleName: z.string().min(1).optional(),
+  triageLabel: commentReplyTriageLabelSchema.optional(),
+  triageReason: z.string().min(1).max(500).optional(),
   auditNotes: z.array(z.string().min(1))
 });
 

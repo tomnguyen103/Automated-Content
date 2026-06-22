@@ -25,7 +25,14 @@ test.afterEach(({ consoleIssues }) => {
   expect(consoleIssues).toEqual([]);
 });
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 test("media page supports mocked upload, browse, select, and transform preview", async ({ page }, testInfo) => {
+  const assetName = `phase-five-card-${testInfo.project.name}`;
+  const assetPattern = new RegExp(escapeRegExp(assetName));
+
   await page.goto("/media");
 
   await expect(page.getByRole("heading", { name: "Media" })).toBeVisible();
@@ -34,7 +41,7 @@ test("media page supports mocked upload, browse, select, and transform preview",
   await expect(page.getByRole("link", { name: "Platform Crops" })).toHaveAttribute("href", "#crops");
 
   await page.getByLabel("Upload media file").setInputFiles({
-    name: "phase-five-card.png",
+    name: `${assetName}.png`,
     mimeType: "image/png",
     buffer: Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lwqW9QAAAABJRU5ErkJggg==",
@@ -42,7 +49,7 @@ test("media page supports mocked upload, browse, select, and transform preview",
     )
   });
 
-  const uploadedCard = page.getByRole("button", { name: /phase-five-card/ });
+  const uploadedCard = page.getByRole("button", { name: assetPattern });
 
   await expect(uploadedCard).toBeVisible();
   await uploadedCard.click();
@@ -59,11 +66,11 @@ test("media page supports mocked upload, browse, select, and transform preview",
   await page.getByRole("button", { name: "Run workflow" }).click();
   await expect(page.getByText("awaiting_review")).toBeVisible();
 
-  const composerAsset = page.getByRole("button", { name: /phase-five-card/ });
+  const composerAsset = page.getByRole("button", { name: assetPattern });
 
   await expect(composerAsset).toBeVisible();
   await composerAsset.click();
-  await expect(page.getByText("phase-five-card", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(assetName, { exact: true }).first()).toBeVisible();
 
   await page.screenshot({
     path: testInfo.outputPath(`media-${testInfo.project.name}.png`),

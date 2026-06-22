@@ -78,6 +78,8 @@ describe("reply repository", () => {
           replyDraft: approval.suggestedReply,
           confidence: approval.confidence,
           approvalRequired: true,
+          triageLabel: "needs_human_review",
+          triageReason: "No safe keyword automation rule matched, so the generated reply must be approved.",
           auditNotes: audit.notes,
           safety: {
             status: "needs_review",
@@ -93,6 +95,8 @@ describe("reply repository", () => {
         replyDraft: approval.suggestedReply,
         confidence: approval.confidence,
         approvalRequired: true,
+        triageLabel: "needs_human_review",
+        triageReason: "No safe keyword automation rule matched, so the generated reply must be approved.",
         auditNotes: audit.notes,
         safety: {
           status: "needs_review",
@@ -106,6 +110,8 @@ describe("reply repository", () => {
         commentId: "comment_approval",
         status: "awaiting_approval",
         replyText: approval.suggestedReply,
+        triageLabel: "needs_human_review",
+        triageReason: "No safe keyword automation rule matched, so the generated reply must be approved.",
         audit,
         createdAt: "2026-06-20T12:00:00.000Z"
       },

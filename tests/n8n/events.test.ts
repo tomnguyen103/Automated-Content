@@ -90,6 +90,41 @@ describe("n8n event integration", () => {
     ]);
   });
 
+  it("dispatches report generated workflow events", async () => {
+    const { createN8nClient, eventLog } = await loadN8nModules();
+    eventLog.clearN8nEventsForTests();
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 202 }));
+    const client = createN8nClient({
+      fetcher,
+      secret,
+      webhookUrl: "https://n8n.example.test/webhook/app-events",
+      now: () => new Date("2026-06-20T12:00:00.000Z")
+    });
+
+    await expect(
+      client.emit({
+        id: "evt_report_generated",
+        event: "agent.report.generated",
+        workspaceId: "workspace_1",
+        data: {
+          missionId: "mission_report_1",
+          recommendations: 3
+        }
+      })
+    ).resolves.toMatchObject({
+      eventId: "evt_report_generated",
+      status: "delivered",
+      responseStatus: 202
+    });
+    expect(eventLog.listN8nEventsForTests()).toEqual([
+      expect.objectContaining({
+        eventType: "agent.report.generated",
+        status: "delivered",
+        workspaceId: "workspace_1"
+      })
+    ]);
+  });
+
   it("keeps dispatching when audit logging fails", async () => {
     vi.resetModules();
     vi.doMock("@/lib/n8n/event-log", () => ({

@@ -36,6 +36,14 @@ export const commentReplySafetySchema = z.object({
   warnings: z.array(z.string().min(1))
 });
 
+export const commentReplyTriageLabelSchema = z.enum([
+  "safe_rule_match",
+  "needs_human_review",
+  "blocked_policy",
+  "crisis_escalation",
+  "duplicate_or_rate_limited"
+]);
+
 export const commentReplyOutputSchema = z.object({
   action: z.enum(["auto_reply", "approval_required", "ignore"]),
   replyDraft: z.string().min(1).max(500).nullable(),
@@ -43,6 +51,8 @@ export const commentReplyOutputSchema = z.object({
   approvalRequired: z.boolean(),
   matchedRuleId: z.string().min(1).optional(),
   matchedKeyword: z.string().min(1).optional(),
+  triageLabel: commentReplyTriageLabelSchema,
+  triageReason: z.string().min(1).max(500),
   auditNotes: z.array(z.string().min(1)),
   safety: commentReplySafetySchema
 });
@@ -50,4 +60,5 @@ export const commentReplyOutputSchema = z.object({
 export type CommentReplyComment = z.infer<typeof commentReplyCommentSchema>;
 export type CommentReplyInput = z.infer<typeof commentReplyInputSchema>;
 export type CommentReplySafety = z.infer<typeof commentReplySafetySchema>;
+export type CommentReplyTriageLabel = z.infer<typeof commentReplyTriageLabelSchema>;
 export type CommentReplyOutput = z.infer<typeof commentReplyOutputSchema>;

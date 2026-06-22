@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { replyPlatformSchema } from "@/lib/replies/rules";
 import { providerKeys } from "@/lib/providers/types";
+import { commentReplyTriageLabelSchema } from "@/lib/agents/schemas/comment-reply";
 
 const providerKeySchema = z.enum(providerKeys);
 
@@ -16,6 +17,8 @@ export const replyApprovalItemSchema = z.object({
   commentText: z.string().min(1),
   suggestedReply: z.string().min(1).max(500),
   confidence: z.number().min(0).max(1),
+  triageLabel: commentReplyTriageLabelSchema.optional(),
+  triageReason: z.string().min(1).max(500).optional(),
   status: replyApprovalStatusSchema,
   auditNotes: z.array(z.string().min(1)),
   createdAt: z.string().min(1),

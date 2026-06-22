@@ -174,6 +174,17 @@ function createSafetyCheckTool() {
   } satisfies AgentTool<typeof safetyCheckInputSchema, typeof safetyCheckOutputSchema>;
 }
 
+const escalationPatterns = [
+  /\b(attorneys?|lawsuits?|legal action|lawyers?|sue|sued|suing|regulators?|regulatory|compliance)\b/i,
+  /\b(refunds?|chargebacks?|(?:cancel(?: my)?|cancell?ing(?: my)?) subscription|billing disputes?|unauthorized charges?)\b/i,
+  /\b(crisis|emergenc(?:y|ies)|unsafe|harm|self[-\s]?harm|suicid(?:e|al)|threat(?:s|en(?:ed|ing)?)?)\b/i,
+  /\b(scams?|fraud(?:ulent)?|boycotts?|press|journalists?|viral complaints?|public complaints?)\b/i
+];
+
+function detectEscalationRisk(text: string) {
+  return escalationPatterns.some((pattern) => pattern.test(text));
+}
+
 function createStartedRun(input: CommentReplyInput, model: CommentModel, options: RunCommentAgentOptions, traceId: string) {
   return agentRunSchema.parse({
     id: `run_${crypto.randomUUID()}`,
@@ -229,22 +240,41 @@ export async function runCommentAgent(
     const blocked = evaluationRef.current?.blocked ?? [];
     let reply: CommentReplyOutput;
 
-    if (selected && keywordMatch.selected) {
+    if (detectEscalationRisk(input.comment.text)) {
+      reply = commentReplyOutputSchema.parse({
+        action: "approval_required",
+        replyDraft: "Thanks for flagging this. A teammate will review and follow up directly.",
+        confidence: 0.2,
+        approvalRequired: true,
+        triageLabel: "crisis_escalation",
+        triageReason: "Comment contains crisis, legal, refund, or brand-risk language and needs human escalation.",
+        auditNotes: ["Comment escalated to the approval queue; no automated reply was sent."],
+        safety: {
+          status: "blocked",
+          warnings: ["Crisis, legal, refund, and brand-risk comments cannot be handled automatically."]
+        }
+      });
+    } else if (selected && keywordMatch.selected) {
       const safety = await recorder.execute(createSafetyCheckTool(), {
         replyText: selected.replyText,
         source: "template"
       });
+      const safeTemplate = safety.status === "safe";
 
       reply = commentReplyOutputSchema.parse({
-        action: safety.status === "safe" ? "auto_reply" : "approval_required",
+        action: safeTemplate ? "auto_reply" : "approval_required",
         replyDraft: selected.replyText,
         confidence: 0.94,
-        approvalRequired: safety.status !== "safe",
+        approvalRequired: !safeTemplate,
         matchedRuleId: selected.rule.id,
         matchedKeyword: selected.keyword,
+        triageLabel: safeTemplate ? "safe_rule_match" : "needs_human_review",
+        triageReason: safeTemplate
+          ? "Enabled keyword rule matched and the template passed safety checks."
+          : "Keyword rule matched, but the template needs human review before sending.",
         auditNotes: [
           ...selected.auditNotes,
-          safety.status === "safe"
+          safeTemplate
             ? "Approved template reply can be sent automatically."
             : "Template reply needs review because safety warnings were found."
         ],
@@ -260,6 +290,8 @@ export async function runCommentAgent(
         approvalRequired: false,
         matchedRuleId: blockedMatch.rule.id,
         matchedKeyword: blockedMatch.keyword,
+        triageLabel: "duplicate_or_rate_limited",
+        triageReason: "A matching reply rule was blocked by duplicate-send or rate-limit protection.",
         auditNotes: blockedMatch.auditNotes,
         safety: {
           status: "blocked",
@@ -278,6 +310,8 @@ export async function runCommentAgent(
         replyDraft: draft.replyDraft,
         confidence: draft.confidence,
         approvalRequired: true,
+        triageLabel: "needs_human_review",
+        triageReason: "No safe keyword automation rule matched, so the generated reply must be approved.",
         auditNotes: [...draft.auditNotes, ...safety.warnings],
         safety
       });

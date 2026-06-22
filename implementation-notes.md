@@ -7,6 +7,8 @@
 - Implemented simulation as a planner and policy pass in `lib/agents/orchestration/simulation.ts`. It intentionally stops before `MissionTaskExecutor`, which is where scheduling, publishing, usage consumption, and reply workflows can create side effects.
 - The simulation API is separate from the run API: `POST /api/agents/missions/[id]/simulate`. This keeps dry-run behavior independent from the production mission queue path.
 - Added `agent.mission.simulated` to the typed event list for local observability. It is not forwarded through the n8n agent event set, because a no-side-effects simulation should not trigger external automation.
+- Mission-level policy denials now stop task planning, matching `runAgentMission`. The simulation still succeeds as a preview artifact, but it records only the mission-level policy event and zero task actions.
+- Runtime simulation errors are persisted as `failed` simulation rows whenever the mission is known. The API returns that failed simulation payload so the console can show the error without confusing it with queued execution work.
 
 ## Tradeoffs
 
@@ -14,12 +16,16 @@
 - Simulation runs do not create `agent_task_runs`; planned actions live in the simulation row. This avoids making dry-run actions look executable or retryable in the task history.
 - For publish simulations, the sandbox estimates scheduled-job writes and publish queue enqueues as suppressed side effects. It does not validate provider token health because that would cross into live integration behavior.
 - For reply simulations, the sandbox estimates provider reply sends and usage writes from `maxComments` capped by policy. It does not read or mutate the reply inbox.
+- Failed simulation persistence is best-effort. If the simulation history repository itself is unavailable, the thrown error includes both the original simulation failure and the persistence failure.
 
 ## Verification Notes
 
 - Regression tests assert that publish simulations never invoke scheduling or publish executors.
 - Regression tests assert that comment engagement simulations never invoke reply send executors.
+- Regression tests assert that mission-level policy denials do not create planned task actions or usage estimates.
+- Regression tests assert that failed simulation rows are persisted when policy event recording fails.
 - The Agents console reads recent simulation runs alongside missions, tasks, and policy events, and exposes a `Simulate` action per mission.
+- The Agents console now shows failed simulation errors, mission-level policy messages for zero-action previews, and per-action policy messages for planned actions.
 
 ## Review Follow-up
 

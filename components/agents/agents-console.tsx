@@ -173,8 +173,8 @@ function newestActivity(missions: MissionRecord[]) {
       })),
       ...record.simulations.map((simulation) => ({
         id: simulation.id,
-        label: "Mission simulation completed",
-        detail: `${record.mission.title} - ${simulation.plannedActions.length} planned actions`,
+        label: simulation.status === "failed" ? "Mission simulation failed" : "Mission simulation completed",
+        detail: simulation.error ?? `${record.mission.title} - ${simulation.plannedActions.length} planned actions`,
         status: simulation.status,
         at: simulation.completedAt ?? simulation.createdAt
       }))
@@ -205,6 +205,16 @@ function plannedActionTone(status: AgentSimulationPlannedAction["status"]) {
   }
 
   return status === "blocked" ? "critical" : "neutral";
+}
+
+function missionPolicyMessage(simulation: AgentMissionSimulationRun) {
+  const missionEvent = simulation.policyEvents.find((event) => {
+    const details = isRecord(event.details) ? event.details : {};
+
+    return typeof details.plannedActionId !== "string";
+  });
+
+  return missionEvent?.message;
 }
 
 function formatCents(value: number) {
@@ -697,17 +707,36 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
                     <MiniMetric label="Cost" value={formatCents(simulation.estimatedUsage.estimatedCostCents)} />
                   </div>
                 </div>
+                {simulation.error ? (
+                  <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--color-error)] bg-rose-50 p-3">
+                    <p className="text-sm font-semibold text-[var(--color-error)]">Simulation error</p>
+                    <p className="mt-1 text-sm leading-6 text-[var(--color-error)]">{simulation.error}</p>
+                  </div>
+                ) : null}
                 <div className="mt-4 divide-y divide-[var(--color-border)] border-t border-[var(--color-border)]">
+                  {simulation.plannedActions.length === 0 ? (
+                    <div className="py-3 text-sm">
+                      <p className="font-medium">No task actions planned</p>
+                      <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">
+                        {simulation.error
+                          ? "The simulation stopped before task planning."
+                          : missionPolicyMessage(simulation) ?? "Mission policy stopped before task planning."}
+                      </p>
+                    </div>
+                  ) : null}
                   {simulation.plannedActions.slice(0, 4).map((action) => (
-                    <div key={action.id} className="grid gap-2 py-3 text-sm md:grid-cols-[1fr_auto_auto] md:items-center">
+                    <div key={action.id} className="grid gap-3 py-3 text-sm md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
                       <div className="min-w-0">
                         <p className="truncate font-medium">{action.taskName}</p>
                         <p className="mt-1 text-xs text-[var(--color-text-muted)]">{action.action}</p>
+                        <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">{action.policy.message}</p>
                       </div>
-                      <Badge tone={plannedActionTone(action.status)}>{action.status.replaceAll("_", " ")}</Badge>
-                      <span className="text-xs text-[var(--color-text-muted)]">
-                        {action.suppressedSideEffects.length} suppressed
-                      </span>
+                      <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                        <Badge tone={plannedActionTone(action.status)}>{action.status.replaceAll("_", " ")}</Badge>
+                        <span className="text-xs text-[var(--color-text-muted)]">
+                          {action.suppressedSideEffects.length} suppressed
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>

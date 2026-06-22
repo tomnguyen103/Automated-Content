@@ -744,6 +744,209 @@ describe("agent orchestration foundation", () => {
     ).resolves.toHaveLength(0);
   });
 
+  it("stops simulated task planning when mission-level policy denies execution", async () => {
+    const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
+    const seeded = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_1",
+      now: new Date(timestamp)
+    });
+    const coordinator = seeded.find((profile) => profile.role === "coordinator")!;
+
+    await repositories.missions.save({
+      id: "mission_policy_denied_simulation_1",
+      workspaceId,
+      createdByUserId: "user_1",
+      coordinatorProfileId: coordinator.id,
+      missionType: "content_pipeline",
+      title: "Policy denied simulation",
+      objective: "Preview a mission that cannot start autonomously.",
+      brief: "The mission requires review before any task actions are planned.",
+      status: "queued",
+      priority: 70,
+      inputs: {
+        topic: "Human review controls",
+        platforms: ["linkedin"]
+      },
+      context: {},
+      policy: agentAutonomyPolicySchema.parse({
+        autonomy: "supervised",
+        allowedActions: ["mission.run", "research.collect", "task.execute", "content.generate", "content.publish"],
+        allowedToolScopes: ["mission.plan", "research.topic", "strategy.plan", "content.generate", "content.publish"],
+        platformScope: ["linkedin"]
+      }),
+      requestedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+
+    const result = await simulateAgentMission({
+      workspaceId,
+      missionId: "mission_policy_denied_simulation_1",
+      repositories,
+      now: () => new Date(timestamp)
+    });
+
+    expect(result.simulationRun.status).toBe("succeeded");
+    expect(result.simulationRun.plannedActions).toHaveLength(0);
+    expect(result.simulationRun.estimatedUsage).toMatchObject({
+      publishEnqueues: 0,
+      replySends: 0,
+      scheduledPostWrites: 0,
+      sideEffectsSuppressed: 0,
+      usageLedgerWrites: 0
+    });
+    expect(result.policyEvents).toEqual([
+      expect.objectContaining({
+        action: "require_review",
+        policyKey: "human_review_required",
+        message: "Policy requires review before this autonomous action."
+      })
+    ]);
+    await expect(
+      repositories.taskRuns.listForMission({
+        workspaceId,
+        missionId: "mission_policy_denied_simulation_1"
+      })
+    ).resolves.toHaveLength(0);
+  });
+
+  it("persists failed simulation rows when policy event recording fails", async () => {
+    const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
+    const seeded = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_1",
+      now: new Date(timestamp)
+    });
+    const coordinator = seeded.find((profile) => profile.role === "coordinator")!;
+    const failingRepositories = {
+      ...repositories,
+      policyEvents: {
+        ...repositories.policyEvents,
+        record: vi.fn(async () => {
+          throw new Error("policy event store offline");
+        })
+      }
+    };
+
+    await repositories.missions.save({
+      id: "mission_failed_simulation_1",
+      workspaceId,
+      createdByUserId: "user_1",
+      coordinatorProfileId: coordinator.id,
+      missionType: "comment_engagement",
+      title: "Failed simulation persistence",
+      objective: "Keep failed dry runs visible in history.",
+      brief: "A storage failure should be visible to the operator.",
+      status: "queued",
+      priority: 70,
+      inputs: {
+        maxComments: 2,
+        platform: "linkedin"
+      },
+      context: {},
+      policy: agentAutonomyPolicySchema.parse({
+        autonomy: "full",
+        allowedActions: ["mission.run", "reply.send"],
+        allowedToolScopes: ["mission.plan", "reply.send"],
+        platformScope: ["linkedin"]
+      }),
+      requestedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+
+    const result = await simulateAgentMission({
+      workspaceId,
+      missionId: "mission_failed_simulation_1",
+      repositories: failingRepositories,
+      now: () => new Date(timestamp)
+    });
+
+    expect(result.simulationRun).toMatchObject({
+      missionId: "mission_failed_simulation_1",
+      status: "failed",
+      error: "policy event store offline"
+    });
+    expect(result.simulationRun.plannedActions.map((action) => action.action)).toContain("reply.send");
+    await expect(
+      repositories.simulationRuns.listForMission({
+        workspaceId,
+        missionId: "mission_failed_simulation_1"
+      })
+    ).resolves.toEqual([
+      expect.objectContaining({
+        status: "failed",
+        error: "policy event store offline"
+      })
+    ]);
+    await expect(
+      repositories.taskRuns.listForMission({
+        workspaceId,
+        missionId: "mission_failed_simulation_1"
+      })
+    ).resolves.toHaveLength(0);
+  });
+
+  it("preserves the original simulation error when failed-run persistence also fails", async () => {
+    const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
+    const seeded = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_1",
+      now: new Date(timestamp)
+    });
+    const coordinator = seeded.find((profile) => profile.role === "coordinator")!;
+    const failingRepositories = {
+      ...repositories,
+      policyEvents: {
+        ...repositories.policyEvents,
+        record: vi.fn(async () => {
+          throw new Error("policy event store offline");
+        })
+      },
+      simulationRuns: {
+        ...repositories.simulationRuns,
+        save: vi.fn(async () => {
+          throw new Error("simulation history store offline");
+        })
+      }
+    };
+
+    await repositories.missions.save({
+      id: "mission_failed_persistence_simulation_1",
+      workspaceId,
+      createdByUserId: "user_1",
+      coordinatorProfileId: coordinator.id,
+      missionType: "weekly_report",
+      title: "Failed persistence simulation",
+      objective: "Preserve the original dry-run error.",
+      brief: "Secondary persistence failures should not hide the original simulation failure.",
+      status: "queued",
+      priority: 70,
+      inputs: {},
+      context: {},
+      policy: agentAutonomyPolicySchema.parse({
+        autonomy: "full",
+        allowedActions: ["mission.run", "report.generate"],
+        allowedToolScopes: ["mission.plan", "mission.report"]
+      }),
+      requestedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+
+    await expect(
+      simulateAgentMission({
+        workspaceId,
+        missionId: "mission_failed_persistence_simulation_1",
+        repositories: failingRepositories,
+        now: () => new Date(timestamp)
+      })
+    ).rejects.toThrow(
+      "Mission simulation failed: policy event store offline. Failed to persist simulation failure: simulation history store offline"
+    );
+  });
+
   it("does not overwrite customized role templates when seeding runs again", async () => {
     const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
     const seeded = await repositories.profiles.seedRoleTemplates({

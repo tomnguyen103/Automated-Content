@@ -248,7 +248,7 @@ describe("comment reply workflow", () => {
     });
   });
 
-  it("skips crisis, legal, refund, and brand-risk comments without provider sends", async () => {
+  it("queues crisis, legal, refund, and brand-risk comments for human escalation", async () => {
     const storage = createMemoryAgentStorage();
     const repository = createMemoryReplyRepositoryForTests();
     const provider = {
@@ -264,7 +264,7 @@ describe("comment reply workflow", () => {
           providerCommentId: "provider_comment_crisis",
           platform: "linkedin",
           authorName: "Rina Patel",
-          text: "I want a refund before I call my attorney.",
+          text: "These unauthorized charges are scams and my lawyers are threatening regulators unless I get refunds.",
           receivedAt: "2026-06-20T12:03:00.000Z"
         }
       }),
@@ -278,11 +278,26 @@ describe("comment reply workflow", () => {
       }
     );
 
-    expect(result.status).toBe("ignored");
+    expect(result.status).toBe("awaiting_approval");
+    expect(result.reply.action).toBe("approval_required");
     expect(result.reply.triageLabel).toBe("crisis_escalation");
     expect(result.reply.safety.status).toBe("blocked");
+    expect(result.approval).toMatchObject({
+      status: "pending",
+      commentId: "comment_crisis",
+      triageLabel: "crisis_escalation"
+    });
+    expect(result.attempt.status).toBe("awaiting_approval");
     expect(result.attempt.audit.action).toBe("crisis_escalation");
     expect(provider.replyToComment).not.toHaveBeenCalled();
+    await expect(repository.getConsoleState(workspaceId)).resolves.toMatchObject({
+      approvals: [
+        expect.objectContaining({
+          commentId: "comment_crisis",
+          triageLabel: "crisis_escalation"
+        })
+      ]
+    });
   });
 
   it("labels duplicate or rate-limited rule matches", async () => {

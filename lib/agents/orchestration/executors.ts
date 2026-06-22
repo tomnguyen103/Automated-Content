@@ -666,6 +666,8 @@ type MissionReportEvidence = {
   simulations: AgentMissionSimulationRun[];
 };
 
+const REPORT_EVIDENCE_BATCH_SIZE = 10;
+
 function reportPeriod(generatedAt: string) {
   const end = new Date(generatedAt);
   const start = new Date(end);
@@ -808,30 +810,40 @@ async function executeReport(
     }),
     context.repositories.missions.list(context.mission.workspaceId)
   ]);
-  const evidenceRows = await Promise.all(
-    missions.map(async (missionRecord) => {
-      const [policyEvents, simulations] = await Promise.all([
-        context.repositories.policyEvents.listForMission({
-          workspaceId: context.mission.workspaceId,
-          missionId: missionRecord.id,
-          limit: 20
-        }),
-        context.repositories.simulationRuns.listForMission({
-          workspaceId: context.mission.workspaceId,
-          missionId: missionRecord.id,
-          limit: 10
-        })
-      ]);
+  const period = reportPeriod(snapshot.generatedAt);
+  const isInReportPeriod = (timestamp: string) => timestamp >= period.startAt && timestamp <= period.endAt;
+  const evidenceRows: MissionReportEvidence[] = [];
 
-      return { policyEvents, simulations };
-    })
-  );
+  for (let index = 0; index < missions.length; index += REPORT_EVIDENCE_BATCH_SIZE) {
+    const batchRows = await Promise.all(
+      missions.slice(index, index + REPORT_EVIDENCE_BATCH_SIZE).map(async (missionRecord) => {
+        const [policyEvents, simulations] = await Promise.all([
+          context.repositories.policyEvents.listForMission({
+            workspaceId: context.mission.workspaceId,
+            missionId: missionRecord.id,
+            limit: 20
+          }),
+          context.repositories.simulationRuns.listForMission({
+            workspaceId: context.mission.workspaceId,
+            missionId: missionRecord.id,
+            limit: 10
+          })
+        ]);
+
+        return { policyEvents, simulations };
+      })
+    );
+    evidenceRows.push(...batchRows);
+  }
+
   const evidence = {
     policyEvents: evidenceRows
       .flatMap((row) => row.policyEvents)
+      .filter((event) => isInReportPeriod(event.occurredAt))
       .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)),
     simulations: evidenceRows
       .flatMap((row) => row.simulations)
+      .filter((simulation) => isInReportPeriod(simulation.createdAt))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   };
   const report = buildReportSummary({ evidence, mission: context.mission, missions, snapshot });

@@ -25,9 +25,13 @@ test.afterEach(({ consoleIssues }) => {
   expect(consoleIssues).toEqual([]);
 });
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 test("media page supports mocked upload, browse, select, and transform preview", async ({ page }, testInfo) => {
   const assetName = `phase-five-card-${testInfo.project.name}`;
-  const assetPattern = new RegExp(assetName);
+  const assetPattern = new RegExp(escapeRegExp(assetName));
 
   await page.goto("/media");
 

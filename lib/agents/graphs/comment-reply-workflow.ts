@@ -108,6 +108,14 @@ function ignoredAuditAction(reply: CommentReplyOutput) {
   return "ignored" as const;
 }
 
+function approvalAuditAction(reply: CommentReplyOutput) {
+  if (reply.triageLabel === "crisis_escalation") {
+    return "crisis_escalation" as const;
+  }
+
+  return "approval_required" as const;
+}
+
 function createAttempt({
   audit,
   error,
@@ -385,7 +393,7 @@ export async function runCommentReplyWorkflow(
 
   if (reply.action === "approval_required" && reply.replyDraft) {
     const audit = createReplyAuditEntry({
-      action: "approval_required",
+      action: approvalAuditAction(reply),
       commentId: input.comment.id,
       match: matchedRule,
       notes: [...triageAuditNotes(reply), ...reply.auditNotes],

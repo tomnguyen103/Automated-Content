@@ -113,7 +113,8 @@ describe("n8n event integration", () => {
       })
     ).resolves.toMatchObject({
       eventId: "evt_report_generated",
-      status: "delivered"
+      status: "delivered",
+      responseStatus: 202
     });
     expect(eventLog.listN8nEventsForTests()).toEqual([
       expect.objectContaining({

@@ -598,6 +598,45 @@ describe("agent orchestration foundation", () => {
       createdAt: timestamp,
       completedAt: timestamp
     });
+    await repositories.policyEvents.record({
+      id: "policy_report_stale_1",
+      workspaceId,
+      missionId: "mission_report_source_1",
+      severity: "warning",
+      action: "require_review",
+      policyKey: "stale_policy_event",
+      message: "This older event should not appear in a trailing 7-day report.",
+      details: {},
+      occurredAt: "2026-06-01T12:00:00.000Z",
+      createdAt: "2026-06-01T12:00:00.000Z"
+    });
+    await repositories.simulationRuns.save({
+      id: "simulation_report_stale_1",
+      workspaceId,
+      missionId: "mission_report_source_1",
+      requestedByUserId: "user_1",
+      status: "failed",
+      plannedActions: [],
+      policyEvents: [],
+      estimatedUsage: {
+        modelCalls: 0,
+        toolCalls: 0,
+        estimatedCostCents: 0,
+        usageLedgerWrites: 0,
+        scheduledPostWrites: 0,
+        publishEnqueues: 0,
+        replySends: 0,
+        providerRequests: 0,
+        sideEffectsSuppressed: 0
+      },
+      summary: {
+        riskLevel: "blocked",
+        approvalRequiredCount: 0
+      },
+      error: "stale simulation failure",
+      createdAt: "2026-06-01T12:00:00.000Z",
+      completedAt: "2026-06-01T12:01:00.000Z"
+    });
     await repositories.missions.save({
       id: "mission_weekly_operator_report_1",
       workspaceId,
@@ -673,6 +712,29 @@ describe("agent orchestration foundation", () => {
         })
       ])
     });
+    expect(reportOutput).toMatchObject({
+      report: {
+        simulations: {
+          total: 1,
+          riskCounts: expect.not.objectContaining({
+            blocked: expect.any(Number)
+          })
+        },
+        failures: {
+          failedSimulations: 0
+        },
+        policy: {
+          reviewRequired: 1
+        }
+      }
+    });
+    expect(reportOutput.policyEvents).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          policyKey: "stale_policy_event"
+        })
+      ])
+    );
   });
 
   it("runs autonomous content missions through content generation and scheduling executors", async () => {

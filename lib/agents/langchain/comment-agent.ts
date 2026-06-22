@@ -175,10 +175,10 @@ function createSafetyCheckTool() {
 }
 
 const escalationPatterns = [
-  /\b(attorney|lawsuit|legal action|lawyer|sue|regulator|regulatory|compliance)\b/i,
-  /\b(refund|chargeback|cancel my subscription|billing dispute|unauthorized charge)\b/i,
-  /\b(crisis|emergency|unsafe|harm|self[-\s]?harm|suicide|threat)\b/i,
-  /\b(scam|fraud|boycott|press|journalist|viral complaint|public complaint)\b/i
+  /\b(attorneys?|lawsuits?|legal action|lawyers?|sue|sued|suing|regulators?|regulatory|compliance)\b/i,
+  /\b(refunds?|chargebacks?|(?:cancel(?: my)?|cancell?ing(?: my)?) subscription|billing disputes?|unauthorized charges?)\b/i,
+  /\b(crisis|emergenc(?:y|ies)|unsafe|harm|self[-\s]?harm|suicid(?:e|al)|threat(?:s|en(?:ed|ing)?)?)\b/i,
+  /\b(scams?|fraud(?:ulent)?|boycotts?|press|journalists?|viral complaints?|public complaints?)\b/i
 ];
 
 function detectEscalationRisk(text: string) {
@@ -242,13 +242,13 @@ export async function runCommentAgent(
 
     if (detectEscalationRisk(input.comment.text)) {
       reply = commentReplyOutputSchema.parse({
-        action: "ignore",
-        replyDraft: null,
-        confidence: 0,
-        approvalRequired: false,
+        action: "approval_required",
+        replyDraft: "Thanks for flagging this. A teammate will review and follow up directly.",
+        confidence: 0.2,
+        approvalRequired: true,
         triageLabel: "crisis_escalation",
         triageReason: "Comment contains crisis, legal, refund, or brand-risk language and needs human escalation.",
-        auditNotes: ["Comment escalated for human review; no automated reply was sent."],
+        auditNotes: ["Comment escalated to the approval queue; no automated reply was sent."],
         safety: {
           status: "blocked",
           warnings: ["Crisis, legal, refund, and brand-risk comments cannot be handled automatically."]

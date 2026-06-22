@@ -882,6 +882,11 @@ export const agentMissionSimulations = pgTable(
     }).onDelete("cascade"),
     index("agent_mission_simulations_workspace_idx").on(table.workspaceId),
     index("agent_mission_simulations_mission_idx").on(table.missionId),
+    index("agent_mission_simulations_workspace_mission_created_at_idx").on(
+      table.workspaceId,
+      table.missionId,
+      table.createdAt
+    ),
     index("agent_mission_simulations_status_idx").on(table.status),
     index("agent_mission_simulations_created_at_idx").on(table.createdAt)
   ]

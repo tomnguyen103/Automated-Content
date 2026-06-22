@@ -41,6 +41,13 @@ export type SimulateAgentMissionResult = {
   policyEvents: AgentPolicyEvent[];
 };
 
+export class AgentMissionNotFoundError extends Error {
+  constructor(missionId: string) {
+    super(`Mission ${missionId} was not found.`);
+    this.name = "AgentMissionNotFoundError";
+  }
+}
+
 function timestamp(now: () => Date) {
   return now().toISOString();
 }
@@ -346,7 +353,7 @@ export async function simulateAgentMission({
   const mission = await repositories.missions.get({ workspaceId, id: missionId });
 
   if (!mission) {
-    throw new Error(`Mission ${missionId} was not found.`);
+    throw new AgentMissionNotFoundError(missionId);
   }
 
   const profiles = await repositories.profiles.list(workspaceId);
@@ -446,11 +453,11 @@ export async function simulateAgentMission({
     completedAt: timestamp(now)
   });
 
-  const savedSimulation = await repositories.simulationRuns.save(simulationRun);
-
   for (const policyEvent of policyEvents) {
     await repositories.policyEvents.record(policyEvent);
   }
+
+  const savedSimulation = await repositories.simulationRuns.save(simulationRun);
 
   emitAgentOrchestrationEvent("agent.mission.simulated", {
     missionId,

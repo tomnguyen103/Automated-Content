@@ -99,26 +99,28 @@ function formatDate(value: string | undefined) {
   }).format(new Date(value));
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 function parseProfiles(payload: unknown) {
-  const value = payload as { profiles?: unknown[] };
-  return (value.profiles ?? []).map((profile) => agentProfileSchema.parse(profile));
+  if (!isRecord(payload) || !Array.isArray(payload.profiles)) {
+    return [];
+  }
+
+  return payload.profiles.map((profile) => agentProfileSchema.parse(profile));
 }
 
 function parseMissions(payload: unknown): MissionRecord[] {
-  const value = payload as {
-    missions?: Array<{
-      mission: unknown;
-      policyEvents?: unknown[];
-      simulations?: unknown[];
-      tasks?: unknown[];
-    }>;
-  };
+  if (!isRecord(payload) || !Array.isArray(payload.missions)) {
+    return [];
+  }
 
-  return (value.missions ?? []).map((record) => ({
+  return payload.missions.filter(isRecord).map((record) => ({
     mission: agentMissionSchema.parse(record.mission),
-    tasks: (record.tasks ?? []).map((task) => agentTaskRunSchema.parse(task)),
-    policyEvents: (record.policyEvents ?? []).map((event) => agentPolicyEventSchema.parse(event)),
-    simulations: (record.simulations ?? []).map((simulation) => agentMissionSimulationRunSchema.parse(simulation))
+    tasks: (Array.isArray(record.tasks) ? record.tasks : []).map((task) => agentTaskRunSchema.parse(task)),
+    policyEvents: (Array.isArray(record.policyEvents) ? record.policyEvents : []).map((event) => agentPolicyEventSchema.parse(event)),
+    simulations: (Array.isArray(record.simulations) ? record.simulations : []).map((simulation) => agentMissionSimulationRunSchema.parse(simulation))
   }));
 }
 

@@ -20,3 +20,9 @@
 - Regression tests assert that publish simulations never invoke scheduling or publish executors.
 - Regression tests assert that comment engagement simulations never invoke reply send executors.
 - The Agents console reads recent simulation runs alongside missions, tasks, and policy events, and exposes a `Simulate` action per mission.
+
+## Review Follow-up
+
+- CodeRabbit flagged brittle string matching in the simulation route, so `simulateAgentMission` now throws a typed `AgentMissionNotFoundError`.
+- CodeRabbit flagged a possible partial success state when policy event persistence fails. The runner now records simulation policy events before saving the simulation run as succeeded.
+- CodeRabbit suggested the simulation history index should match the repository query shape, so the table now includes a `(workspace_id, mission_id, created_at)` index.

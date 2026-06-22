@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { simulateAgentMission } from "@/lib/agents/orchestration/simulation";
+import { AgentMissionNotFoundError, simulateAgentMission } from "@/lib/agents/orchestration/simulation";
 import { resolveAgentOrchestrationContext } from "@/lib/agents/orchestration/server";
 
 export const runtime = "nodejs";
@@ -41,7 +41,7 @@ export async function POST(
       return NextResponse.json({ error: "Invalid mission id.", issues: error.issues }, { status: 400 });
     }
 
-    if (error instanceof Error && error.message.includes("was not found")) {
+    if (error instanceof AgentMissionNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
 

@@ -20,5 +20,6 @@ ALTER TABLE "agent_mission_simulations" ADD CONSTRAINT "agent_mission_simulation
 CREATE UNIQUE INDEX "agent_mission_simulations_workspace_id_id_idx" ON "agent_mission_simulations" USING btree ("workspace_id","id");--> statement-breakpoint
 CREATE INDEX "agent_mission_simulations_workspace_idx" ON "agent_mission_simulations" USING btree ("workspace_id");--> statement-breakpoint
 CREATE INDEX "agent_mission_simulations_mission_idx" ON "agent_mission_simulations" USING btree ("mission_id");--> statement-breakpoint
+CREATE INDEX "agent_mission_simulations_workspace_mission_created_at_idx" ON "agent_mission_simulations" USING btree ("workspace_id","mission_id","created_at");--> statement-breakpoint
 CREATE INDEX "agent_mission_simulations_status_idx" ON "agent_mission_simulations" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "agent_mission_simulations_created_at_idx" ON "agent_mission_simulations" USING btree ("created_at");

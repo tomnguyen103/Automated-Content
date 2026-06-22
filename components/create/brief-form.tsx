@@ -7,7 +7,8 @@ import { GenerationTimeline } from "@/components/create/generation-timeline";
 import { PlatformTabs } from "@/components/create/platform-tabs";
 import {
   ReviewStep,
-  type ApprovedVariantScheduleResult
+  type ApprovedVariantScheduleResult,
+  type BrandMemoryProposalReviewItem
 } from "@/components/create/review-step";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ type GenerateResponse = {
     status: "saved";
     savedAt: string;
   } | null;
+  brandMemoryProposals: BrandMemoryProposalReviewItem[];
 };
 
 type WorkflowPayload = Partial<GenerateResponse> & {
@@ -65,7 +67,8 @@ function normalizeWorkflowPayload(payload: WorkflowPayload): GenerateResponse | 
     run: payload.run,
     workflow: payload.workflow,
     contentPack: payload.contentPack ?? payload.workflow.contentPack,
-    draft: payload.draft ?? payload.workflow.savedDraft
+    draft: payload.draft ?? payload.workflow.savedDraft,
+    brandMemoryProposals: payload.brandMemoryProposals ?? []
   };
 }
 
@@ -183,6 +186,52 @@ export function BriefForm() {
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Approval update failed.");
+    } finally {
+      setDecisionLoading(false);
+    }
+  };
+
+  const reviewBrandMemoryProposal = async (
+    proposalId: string,
+    status: "accepted" | "rejected"
+  ) => {
+    if (!result) {
+      return;
+    }
+
+    setDecisionLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/brand-memory/proposals/${encodeURIComponent(proposalId)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ status })
+      });
+      const payload = (await response.json()) as {
+        error?: string;
+        proposal?: BrandMemoryProposalReviewItem;
+      };
+
+      if (!response.ok || !payload.proposal) {
+        throw new Error(payload.error ?? "Brand memory update failed.");
+      }
+
+      const reviewedProposal = payload.proposal;
+      setResult((current) =>
+        current
+          ? {
+              ...current,
+              brandMemoryProposals: current.brandMemoryProposals.map((proposal) =>
+                proposal.id === reviewedProposal.id ? reviewedProposal : proposal
+              )
+            }
+          : current
+      );
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Brand memory update failed.");
     } finally {
       setDecisionLoading(false);
     }
@@ -422,9 +471,11 @@ export function BriefForm() {
           }}
         />
         <ReviewStep
+          brandMemoryProposals={result?.brandMemoryProposals ?? []}
           disabled={decisionLoading}
           workflow={result?.workflow ?? null}
           onDecision={submitApprovalDecision}
+          onReviewBrandMemoryProposal={reviewBrandMemoryProposal}
           onScheduleApprovedVariants={scheduleApprovedVariants}
         />
       </div>

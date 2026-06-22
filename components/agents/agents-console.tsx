@@ -9,6 +9,7 @@ import {
   ChevronUp,
   CheckCircle2,
   Clock3,
+  Download,
   FlaskConical,
   ListChecks,
   Pause,
@@ -66,6 +67,7 @@ type BusyAction =
   | "profile_pause"
   | "profile_resume"
   | "refresh"
+  | "export_governance"
   | null;
 
 const missionTypeOptions: Array<{ value: AgentMissionType; label: string }> = [
@@ -86,6 +88,7 @@ const missionPresets: Partial<Record<AgentMissionType, {
   confidenceThreshold: number;
   dailyActionCap: number;
   platforms: string[];
+  modelBudgetCents: number;
   title: string;
   topic: string;
 }>> = {
@@ -94,6 +97,7 @@ const missionPresets: Partial<Record<AgentMissionType, {
     brief: "Research a focused campaign, plan the angle, generate platform variants, prepare schedule suggestions, and stop for human approval before scheduling or publishing.",
     confidenceThreshold: 0.82,
     dailyActionCap: 8,
+    modelBudgetCents: 12,
     platforms: ["linkedin", "x"],
     title: "Supervised campaign autopilot",
     topic: "Governed AI content operations"
@@ -261,6 +265,10 @@ function formatCents(value: number) {
   return `$${(value / 100).toFixed(2)}`;
 }
 
+function budgetLabel(mission: AgentMission) {
+  return mission.policy.modelBudgetCents > 0 ? formatCents(mission.policy.modelBudgetCents) : "No cap";
+}
+
 function numberFromSummary(summary: Record<string, unknown>, key: string) {
   const value = summary[key];
 
@@ -353,6 +361,7 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["linkedin", "x"]);
   const [dailyActionCap, setDailyActionCap] = useState(10);
   const [confidenceThreshold, setConfidenceThreshold] = useState(0.78);
+  const [modelBudgetCents, setModelBudgetCents] = useState(25);
   const [blockedPhrases, setBlockedPhrases] = useState("guarantee, risk-free");
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [error, setError] = useState<string | null>(null);
@@ -412,6 +421,7 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
     setSelectedPlatforms(preset.platforms);
     setDailyActionCap(preset.dailyActionCap);
     setConfidenceThreshold(preset.confidenceThreshold);
+    setModelBudgetCents(preset.modelBudgetCents);
     setBlockedPhrases(preset.blockedPhrases);
   }
 
@@ -467,6 +477,7 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
             policy: {
               autonomy: "supervised",
               dailyActionCap,
+              modelBudgetCents: Math.max(0, Math.floor(modelBudgetCents)),
               confidenceThreshold,
               blockedPhrases: blockedPhrases
                 .split(",")
@@ -555,6 +566,28 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
     });
   }
 
+  async function exportGovernance() {
+    await withBusy("export_governance", async () => {
+      const response = await fetch("/api/agents/governance-export");
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? "Governance export failed.");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = `agent-governance-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    });
+  }
+
   return (
     <div className="grid gap-6">
       <section id="control" className="grid scroll-mt-20 gap-4 md:grid-cols-5">
@@ -595,6 +628,14 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
         >
           <ShieldCheck size={16} aria-hidden="true" />
           Resume agents
+        </Button>
+        <Button
+          variant="outline"
+          onClick={exportGovernance}
+          disabled={busyAction === "export_governance"}
+        >
+          <Download size={16} aria-hidden="true" />
+          Export governance
         </Button>
       </section>
 
@@ -718,7 +759,7 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <label className="grid gap-2 text-sm font-medium">
                 Daily cap
                 <input
@@ -740,6 +781,17 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
                   type="number"
                   value={confidenceThreshold}
                   onChange={(event) => setConfidenceThreshold(Number(event.target.value))}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                Budget cap (est. cents)
+                <input
+                  className="h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-sm font-normal"
+                  min={0}
+                  max={10000}
+                  type="number"
+                  value={modelBudgetCents}
+                  onChange={(event) => setModelBudgetCents(Math.max(0, Number(event.target.value) || 0))}
                 />
               </label>
             </div>
@@ -833,10 +885,15 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
                       </Button>
                     </div>
                   </div>
-                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <div className="mt-4 grid gap-3 md:grid-cols-5">
                     <MiniMetric label="Tasks" value={record.tasks.length} />
                     <MiniMetric label="Policy events" value={record.policyEvents.length} />
                     <MiniMetric label="Simulations" value={record.simulations.length} />
+                    <MiniMetric label="Budget" value={budgetLabel(record.mission)} />
+                    <MiniMetric
+                      label="Last estimate"
+                      value={latestSimulation ? formatCents(latestSimulation.estimatedUsage.estimatedCostCents) : "No simulation"}
+                    />
                   </div>
                   <div className="mt-3">
                     <MiniMetric label="Updated" value={formatDate(record.mission.updatedAt)} />
@@ -890,12 +947,13 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
                       {formatDate(simulation.completedAt ?? simulation.createdAt)}
                     </p>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-right text-xs sm:grid-cols-5">
+                  <div className="grid grid-cols-3 gap-2 text-right text-xs sm:grid-cols-6">
                     <MiniMetric label="Actions" value={simulation.plannedActions.length} />
                     <MiniMetric label="Approvals" value={summary.approvalRequiredCount} />
                     <MiniMetric label="Blocked" value={summary.blockedReasonCount} />
                     <MiniMetric label="Suppressed" value={simulation.estimatedUsage.sideEffectsSuppressed} />
                     <MiniMetric label="Cost" value={formatCents(simulation.estimatedUsage.estimatedCostCents)} />
+                    <MiniMetric label="Budget" value={budgetLabel(mission)} />
                   </div>
                 </div>
                 {simulation.error ? (
@@ -947,6 +1005,29 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
             })}
           </div>
         )}
+      </section>
+
+      <section id="governance" className="grid scroll-mt-20 gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold">Governance</h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">Workspace-scoped audit export for agent review.</p>
+          </div>
+          <Button variant="outline" onClick={exportGovernance} disabled={busyAction === "export_governance"}>
+            <Download size={16} aria-hidden="true" />
+            Export JSON
+          </Button>
+        </div>
+        <div className="grid gap-3 md:grid-cols-5">
+          <MiniMetric label="Missions" value={missions.length} />
+          <MiniMetric label="Task runs" value={missions.reduce((sum, record) => sum + record.tasks.length, 0)} />
+          <MiniMetric label="Policy events" value={missions.reduce((sum, record) => sum + record.policyEvents.length, 0)} />
+          <MiniMetric label="Simulations" value={missions.reduce((sum, record) => sum + record.simulations.length, 0)} />
+          <MiniMetric
+            label="Budgeted"
+            value={missions.filter((record) => record.mission.policy.modelBudgetCents > 0).length}
+          />
+        </div>
       </section>
 
       <section id="activity" className="grid scroll-mt-20 gap-3">
@@ -1053,11 +1134,12 @@ function MissionAuditDetail({ id, record }: { id: string; record: MissionRecord 
         </section>
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-5">
         <MiniMetric label="Risk" value={summary?.riskLevel ?? "No simulation"} />
         <MiniMetric label="Approvals" value={summary?.approvalRequiredCount ?? 0} />
         <MiniMetric label="Provider warnings" value={summary?.providerReadinessWarnings.length ?? 0} />
         <MiniMetric label="n8n events" value={record.n8nEvents.length} />
+        <MiniMetric label="Budget" value={budgetLabel(record.mission)} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

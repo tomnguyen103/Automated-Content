@@ -17,6 +17,7 @@ import { AgentRunRecorder, createTraceId } from "@/lib/agents/langchain/middlewa
 import { createContentModel, type ContentModel } from "@/lib/agents/langchain/model-factory";
 import { createAgentStorage, type AgentStorage } from "@/lib/agents/langchain/storage";
 import { createAgentTraceMetadata, recordAgentEvent } from "@/lib/observability/agent-events";
+import { readBrandProfileWithAcceptedMemory } from "@/lib/brand-memory/proposals";
 
 export type ContentAgentToolset = {
   researchTopic: ReturnType<typeof createResearchTopicTool>;
@@ -56,7 +57,7 @@ export class ContentAgentExecutionError extends Error {
 export function createContentAgentTools(overrides: Partial<ContentAgentToolset> = {}): ContentAgentToolset {
   return {
     researchTopic: createResearchTopicTool(),
-    readBrandProfile: createReadBrandProfileTool(),
+    readBrandProfile: createReadBrandProfileTool(readBrandProfileWithAcceptedMemory),
     retrievePastPosts: createRetrievePastPostsTool(),
     generatePlatformVariant: createGeneratePlatformVariantTool(),
     checkPlatformPolicy: createCheckPlatformPolicyTool(),

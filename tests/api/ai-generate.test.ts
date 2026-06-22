@@ -7,16 +7,25 @@ async function loadApiModules() {
     { GET },
     { POST: approve },
     { clearAgentStorageForTests },
-    { clearContentWorkflowCheckpointsForTests }
+    { clearContentWorkflowCheckpointsForTests },
+    { clearBrandMemoryProposalsForTests }
   ] = await Promise.all([
     import("@/app/api/ai/generate/route"),
     import("@/app/api/agent-runs/[id]/route"),
     import("@/app/api/agent-runs/[id]/approval/route"),
     import("@/lib/agents/langchain/storage"),
-    import("@/lib/agents/graphs/checkpoints")
+    import("@/lib/agents/graphs/checkpoints"),
+    import("@/lib/brand-memory/proposals")
   ]);
 
-  return { generate, GET, approve, clearAgentStorageForTests, clearContentWorkflowCheckpointsForTests };
+  return {
+    generate,
+    GET,
+    approve,
+    clearAgentStorageForTests,
+    clearContentWorkflowCheckpointsForTests,
+    clearBrandMemoryProposalsForTests
+  };
 }
 
 describe("AI generate API", () => {
@@ -40,9 +49,17 @@ describe("AI generate API", () => {
   });
 
   it("generates a content pack and exposes the agent run", async () => {
-    const { generate, GET, approve, clearAgentStorageForTests, clearContentWorkflowCheckpointsForTests } = await loadApiModules();
+    const {
+      generate,
+      GET,
+      approve,
+      clearAgentStorageForTests,
+      clearContentWorkflowCheckpointsForTests,
+      clearBrandMemoryProposalsForTests
+    } = await loadApiModules();
     clearAgentStorageForTests();
     clearContentWorkflowCheckpointsForTests();
+    clearBrandMemoryProposalsForTests();
 
     const request = new NextRequest("http://localhost:3000/api/ai/generate", {
       method: "POST",
@@ -95,6 +112,13 @@ describe("AI generate API", () => {
     expect(approvePayload.workflow.status).toBe("succeeded");
     expect(approvePayload.contentPack.captions[0]).toBe("Edited API caption");
     expect(approvePayload.draft.status).toBe("saved");
+    expect(approvePayload.brandMemoryProposals).toEqual([
+      expect.objectContaining({
+        status: "pending",
+        originalText: payload.contentPack.captions[0],
+        editedText: "Edited API caption"
+      })
+    ]);
   });
 
   it("returns a 400 when approval edits target another content pack", async () => {

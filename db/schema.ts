@@ -150,6 +150,17 @@ export const replyAttemptStatusEnum = pgEnum("reply_attempt_status", [
   "failed",
   "skipped"
 ]);
+export const brandMemoryProposalStatusEnum = pgEnum("brand_memory_proposal_status", [
+  "pending",
+  "accepted",
+  "rejected"
+]);
+export const brandMemoryProposalScopeEnum = pgEnum("brand_memory_proposal_scope", [
+  "workspace",
+  "platform",
+  "profile",
+  "campaign"
+]);
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -653,6 +664,39 @@ export const replyAttempts = pgTable(
     index("reply_attempts_comment_event_idx").on(table.commentEventId),
     index("reply_attempts_rule_idx").on(table.ruleId),
     index("reply_attempts_provider_idx").on(table.provider)
+  ]
+);
+
+export const brandMemoryProposals = pgTable(
+  "brand_memory_proposals",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    sourceAgentRunId: text("source_agent_run_id").references(() => agentRuns.id, { onDelete: "set null" }),
+    sourceContentPackId: text("source_content_pack_id"),
+    sourceVariantId: text("source_variant_id"),
+    scope: brandMemoryProposalScopeEnum("scope").default("workspace").notNull(),
+    platform: socialPlatformEnum("platform"),
+    originalText: text("original_text").notNull(),
+    editedText: text("edited_text").notNull(),
+    inferredRule: text("inferred_rule").notNull(),
+    confidence: integer("confidence").default(70).notNull(),
+    status: brandMemoryProposalStatusEnum("status").default("pending").notNull(),
+    evidence: jsonb("evidence").$type<Record<string, unknown>>().default({}).notNull(),
+    reviewedByUserId: text("reviewed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex("brand_memory_proposals_workspace_id_id_idx").on(table.workspaceId, table.id),
+    check("brand_memory_proposals_confidence_range_check", sql`${table.confidence} >= 0 and ${table.confidence} <= 100`),
+    index("brand_memory_proposals_workspace_status_idx").on(table.workspaceId, table.status),
+    index("brand_memory_proposals_source_run_idx").on(table.sourceAgentRunId),
+    index("brand_memory_proposals_workspace_created_at_idx").on(table.workspaceId, table.createdAt)
   ]
 );
 

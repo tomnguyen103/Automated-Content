@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { subscriptions, usageLedger, type usageEventTypeEnum } from "@/db/schema";
 import {
@@ -11,6 +11,7 @@ import {
   type BillingPlan,
   type UsageLimitKey
 } from "@/lib/billing/entitlements";
+import { isDatabaseConfigured } from "@/lib/env";
 
 export type UsageEventType = (typeof usageEventTypeEnum.enumValues)[number];
 
@@ -22,6 +23,16 @@ export type UsageMetric = {
   remaining: number;
   allowed: boolean;
   cadence: "daily" | "monthly" | "current";
+};
+
+export type UsageLedgerRecord = {
+  id: string;
+  workspaceId: string;
+  type: UsageEventType;
+  quantity: number;
+  sourceId?: string;
+  metadata?: Record<string, unknown>;
+  occurredAt: string;
 };
 
 export class UsageLimitExceededError extends Error {
@@ -345,4 +356,33 @@ export async function getLedgerUsageTotal({
     .where(and(...conditions));
 
   return row?.total ?? 0;
+}
+
+export async function listUsageLedgerRecords({
+  limit = 100,
+  workspaceId
+}: {
+  workspaceId: string;
+  limit?: number;
+}): Promise<UsageLedgerRecord[]> {
+  if (!isDatabaseConfigured) {
+    return [];
+  }
+
+  const rows = await getDb()
+    .select()
+    .from(usageLedger)
+    .where(eq(usageLedger.workspaceId, workspaceId))
+    .orderBy(desc(usageLedger.occurredAt))
+    .limit(Math.max(1, Math.min(500, Math.floor(limit))));
+
+  return rows.map((row) => ({
+    id: row.id,
+    workspaceId: row.workspaceId,
+    type: row.type,
+    quantity: row.quantity,
+    sourceId: row.sourceId ?? undefined,
+    metadata: row.metadata ?? undefined,
+    occurredAt: row.occurredAt.toISOString()
+  }));
 }

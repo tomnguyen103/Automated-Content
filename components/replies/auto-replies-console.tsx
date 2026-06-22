@@ -167,15 +167,17 @@ export function AutoRepliesConsole({ initialState }: AutoRepliesConsoleProps) {
         </div>
       ) : null}
 
-      <RuleBuilder
-        rules={state.rules}
-        onCreateRule={createRule}
-        onToggleRule={toggleRule}
-        submitting={busyAction === "create_rule"}
-      />
+      <div id="rules" className="scroll-mt-20">
+        <RuleBuilder
+          rules={state.rules}
+          onCreateRule={createRule}
+          onToggleRule={toggleRule}
+          submitting={busyAction === "create_rule"}
+        />
+      </div>
 
       <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <section className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-5">
+        <section id="inbox" className="scroll-mt-20 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-start gap-3">
               <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] bg-teal-50 text-teal-700">
@@ -219,14 +221,18 @@ export function AutoRepliesConsole({ initialState }: AutoRepliesConsoleProps) {
           </div>
         </section>
 
-        <ApprovalQueue
-          items={state.approvals}
-          onApprove={approveSuggestion}
-          approving={busyAction === "approve"}
-        />
+        <div id="approvals" className="scroll-mt-20">
+          <ApprovalQueue
+            items={state.approvals}
+            onApprove={approveSuggestion}
+            approving={busyAction === "approve"}
+          />
+        </div>
       </section>
 
-      <ReplyLog entries={state.logs} />
+      <div id="logs" className="scroll-mt-20">
+        <ReplyLog entries={state.logs} />
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ConnectedAccount, PlatformVariantRow, ScheduledJob } from "@/db/schema";
+import type { ConnectedAccount, PlatformVariantRow, PublishAttempt, ScheduledJob } from "@/db/schema";
 import { publishScheduledPostJob } from "@/workers/jobs/publish-post";
 
 type PublishRepository = NonNullable<Parameters<typeof publishScheduledPostJob>[0]["repository"]>;
@@ -33,7 +33,7 @@ function createScheduledJob(overrides: Partial<ScheduledJob> = {}): ScheduledJob
   };
 }
 
-function createVariant(): PlatformVariantRow {
+function createVariant(overrides: Partial<PlatformVariantRow> = {}): PlatformVariantRow {
   const now = new Date("2026-06-20T12:00:00.000Z");
 
   return {
@@ -52,7 +52,8 @@ function createVariant(): PlatformVariantRow {
     policyStatus: "pass",
     policyWarnings: [],
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
+    ...overrides
   };
 }
 
@@ -78,18 +79,42 @@ function createAccount(overrides: Partial<ConnectedAccount> = {}): ConnectedAcco
   };
 }
 
+function createPublishAttempt(overrides: Partial<PublishAttempt> = {}): PublishAttempt {
+  const now = new Date("2026-06-20T12:00:00.000Z");
+
+  return {
+    id: "attempt_1",
+    workspaceId,
+    scheduledJobId,
+    provider: "mock",
+    status: "publishing",
+    providerPostId: null,
+    providerResponse: null,
+    errorCode: null,
+    errorMessage: null,
+    retryAt: null,
+    startedAt: now,
+    completedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides
+  };
+}
+
 function createRepository({
   job,
-  account = createAccount()
+  account = createAccount(),
+  variant = createVariant()
 }: {
   job: ScheduledJob;
   account?: ConnectedAccount | null;
+  variant?: PlatformVariantRow;
 }) {
-  const startAttempt = vi.fn();
+  const startAttempt = vi.fn(async () => createPublishAttempt());
   const repository: PublishRepository = {
     loadScheduledPost: vi.fn(async () => ({
       job,
-      variant: createVariant(),
+      variant,
       account
     })),
     startAttempt,
@@ -184,5 +209,80 @@ describe("publishScheduledPostJob", () => {
       })
     ).rejects.toThrow("is not ready for publishing");
     expect(startAttempt).not.toHaveBeenCalled();
+  });
+
+  it("does not publish platform variants that failed policy review", async () => {
+    const { repository, startAttempt } = createRepository({
+      job: createScheduledJob({
+        provider: "linkedin"
+      }),
+      variant: createVariant({
+        policyStatus: "block"
+      })
+    });
+
+    await expect(
+      publishScheduledPostJob({
+        data: {
+          scheduledJobId,
+          workspaceId,
+          provider: "linkedin"
+        },
+        repository
+      })
+    ).rejects.toThrow("is not approved for publishing");
+    expect(startAttempt).not.toHaveBeenCalled();
+  });
+
+  it("does not publish through providers that cannot serve the variant platform", async () => {
+    const { repository, startAttempt } = createRepository({
+      job: createScheduledJob({
+        provider: "x"
+      }),
+      variant: createVariant({
+        platform: "linkedin"
+      })
+    });
+
+    await expect(
+      publishScheduledPostJob({
+        data: {
+          scheduledJobId,
+          workspaceId,
+          provider: "x"
+        },
+        repository
+      })
+    ).rejects.toThrow("Provider x cannot publish linkedin variants");
+    expect(startAttempt).not.toHaveBeenCalled();
+  });
+
+  it("allows mock providers for local-preview jobs", async () => {
+    const { repository, startAttempt } = createRepository({
+      job: createScheduledJob({
+        metadata: {
+          localPreview: true
+        },
+        provider: "mock"
+      }),
+      variant: createVariant({
+        platform: "linkedin"
+      })
+    });
+
+    await expect(
+      publishScheduledPostJob({
+        data: {
+          scheduledJobId,
+          workspaceId,
+          provider: "mock"
+        },
+        repository
+      })
+    ).resolves.toMatchObject({
+      status: "published"
+    });
+    expect(startAttempt).toHaveBeenCalledOnce();
+    expect(repository.markSucceeded).toHaveBeenCalledOnce();
   });
 });

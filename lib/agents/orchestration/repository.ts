@@ -30,6 +30,7 @@ type ScopedIdInput = {
 type MissionScopedInput = {
   workspaceId: string;
   missionId: string;
+  limit?: number;
 };
 
 type TaskRunScopedInput = {
@@ -44,6 +45,11 @@ export type SeedAgentRoleTemplatesInput = {
   now?: Date;
 };
 
+export const AGENT_MISSION_HISTORY_LIMIT = 25;
+export const AGENT_TASK_RUN_HISTORY_LIMIT = 8;
+export const AGENT_POLICY_EVENT_HISTORY_LIMIT = 12;
+const MAX_AGENT_HISTORY_LIMIT = 100;
+
 export type AgentProfileRepository = {
   save: (profile: AgentProfile) => Promise<AgentProfile>;
   get: (input: ScopedIdInput) => Promise<AgentProfile | null>;
@@ -54,7 +60,7 @@ export type AgentProfileRepository = {
 export type AgentMissionRepository = {
   save: (mission: AgentMission) => Promise<AgentMission>;
   get: (input: ScopedIdInput) => Promise<AgentMission | null>;
-  list: (workspaceId: string) => Promise<AgentMission[]>;
+  list: (workspaceId: string, options?: { limit?: number }) => Promise<AgentMission[]>;
 };
 
 export type AgentTaskRunRepository = {
@@ -99,6 +105,14 @@ function sortByCreatedDesc<T extends { createdAt: string }>(rows: T[]) {
 
 function sortPolicyEventsDesc(rows: AgentPolicyEvent[]) {
   return [...rows].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+}
+
+function normalizeHistoryLimit(limit: number | undefined, fallback: number) {
+  if (typeof limit !== "number" || !Number.isFinite(limit)) {
+    return fallback;
+  }
+
+  return Math.min(MAX_AGENT_HISTORY_LIMIT, Math.max(1, Math.floor(limit)));
 }
 
 function profileFromRow(row: typeof agentProfiles.$inferSelect): AgentProfile {
@@ -347,9 +361,20 @@ export function createDatabaseAgentProfileRepository(db: DatabaseClient = getDb(
         buildAgentProfileFromTemplate({ role, workspaceId, createdByUserId, now })
       );
 
-      await Promise.all(profiles.map((profile) => repository.save(profile)));
+      return Promise.all(
+        profiles.map(async (profile) => {
+          const parsed = agentProfileSchema.parse(profile);
 
-      return profiles;
+          await db
+            .insert(agentProfiles)
+            .values(profileToRow(parsed))
+            .onConflictDoNothing({
+              target: agentProfiles.id
+            });
+
+          return (await repository.get({ workspaceId, id: parsed.id })) ?? parsed;
+        })
+      );
     }
   };
 
@@ -409,12 +434,13 @@ export function createDatabaseAgentMissionRepository(db: DatabaseClient = getDb(
       return row ? missionFromRow(row) : null;
     },
 
-    async list(workspaceId) {
+    async list(workspaceId, options) {
       const rows = await db
         .select()
         .from(agentMissions)
         .where(eq(agentMissions.workspaceId, workspaceId))
-        .orderBy(desc(agentMissions.createdAt));
+        .orderBy(desc(agentMissions.createdAt))
+        .limit(normalizeHistoryLimit(options?.limit, AGENT_MISSION_HISTORY_LIMIT));
 
       return rows.map(missionFromRow);
     }
@@ -461,12 +487,13 @@ export function createDatabaseAgentTaskRunRepository(db: DatabaseClient = getDb(
       return row ? taskRunFromRow(row) : null;
     },
 
-    async listForMission({ workspaceId, missionId }) {
+    async listForMission({ workspaceId, missionId, limit }) {
       const rows = await db
         .select()
         .from(agentTaskRuns)
         .where(and(eq(agentTaskRuns.workspaceId, workspaceId), eq(agentTaskRuns.missionId, missionId)))
-        .orderBy(desc(agentTaskRuns.createdAt));
+        .orderBy(desc(agentTaskRuns.createdAt))
+        .limit(normalizeHistoryLimit(limit, AGENT_TASK_RUN_HISTORY_LIMIT));
 
       return rows.map(taskRunFromRow);
     }
@@ -501,12 +528,13 @@ export function createDatabaseAgentPolicyEventRepository(db: DatabaseClient = ge
       return row ? policyEventFromRow(row) : null;
     },
 
-    async listForMission({ workspaceId, missionId }) {
+    async listForMission({ workspaceId, missionId, limit }) {
       const rows = await db
         .select()
         .from(agentPolicyEvents)
         .where(and(eq(agentPolicyEvents.workspaceId, workspaceId), eq(agentPolicyEvents.missionId, missionId)))
-        .orderBy(desc(agentPolicyEvents.occurredAt));
+        .orderBy(desc(agentPolicyEvents.occurredAt))
+        .limit(normalizeHistoryLimit(limit, AGENT_POLICY_EVENT_HISTORY_LIMIT));
 
       return rows.map(policyEventFromRow);
     },
@@ -572,9 +600,16 @@ export function createMemoryAgentOrchestrationRepositories(): AgentOrchestration
           buildAgentProfileFromTemplate({ role, workspaceId, createdByUserId, now })
         );
 
-        await Promise.all(seededProfiles.map((profile) => repositories.profiles.save(profile)));
+        return Promise.all(
+          seededProfiles.map(async (profile) => {
+            const existing = await repositories.profiles.get({
+              workspaceId,
+              id: profile.id
+            });
 
-        return seededProfiles;
+            return existing ?? repositories.profiles.save(profile);
+          })
+        );
       }
     },
     missions: {
@@ -586,10 +621,10 @@ export function createMemoryAgentOrchestrationRepositories(): AgentOrchestration
       async get({ workspaceId, id }) {
         return getScoped(missions, workspaceId, id);
       },
-      async list(workspaceId) {
+      async list(workspaceId, options) {
         return sortByCreatedDesc(
           [...missions.values()].filter((mission) => mission.workspaceId === workspaceId)
-        );
+        ).slice(0, normalizeHistoryLimit(options?.limit, AGENT_MISSION_HISTORY_LIMIT));
       }
     },
     taskRuns: {
@@ -601,12 +636,12 @@ export function createMemoryAgentOrchestrationRepositories(): AgentOrchestration
       async get({ workspaceId, id }) {
         return getScoped(taskRuns, workspaceId, id);
       },
-      async listForMission({ workspaceId, missionId }) {
+      async listForMission({ workspaceId, missionId, limit }) {
         return sortByCreatedDesc(
           [...taskRuns.values()].filter(
             (taskRun) => taskRun.workspaceId === workspaceId && taskRun.missionId === missionId
           )
-        );
+        ).slice(0, normalizeHistoryLimit(limit, AGENT_TASK_RUN_HISTORY_LIMIT));
       }
     },
     policyEvents: {
@@ -618,12 +653,12 @@ export function createMemoryAgentOrchestrationRepositories(): AgentOrchestration
       async get({ workspaceId, id }) {
         return getScoped(policyEvents, workspaceId, id);
       },
-      async listForMission({ workspaceId, missionId }) {
+      async listForMission({ workspaceId, missionId, limit }) {
         return sortPolicyEventsDesc(
           [...policyEvents.values()].filter(
             (event) => event.workspaceId === workspaceId && event.missionId === missionId
           )
-        );
+        ).slice(0, normalizeHistoryLimit(limit, AGENT_POLICY_EVENT_HISTORY_LIMIT));
       },
       async listForTaskRun({ workspaceId, taskRunId }) {
         return sortPolicyEventsDesc(

@@ -9,6 +9,11 @@ import {
   UsageLimitExceededError
 } from "@/lib/billing/usage";
 import { isDatabaseConfigured } from "@/lib/env";
+import type { SocialPlatform } from "@/lib/agents/schemas/platform-variant";
+import {
+  formatProviderPlatformError,
+  isProviderCompatibleWithPlatform
+} from "@/lib/providers/platform-compatibility";
 import { providerKeys, type ProviderKey } from "@/lib/providers/types";
 import {
   createScheduledPost,
@@ -25,24 +30,38 @@ const scheduleRequestSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional()
 });
 
-async function platformVariantExistsForWorkspace({
+type ScheduleablePlatformVariant = {
+  id: string;
+  platform: SocialPlatform | null;
+  policyStatus: string;
+};
+
+async function loadPlatformVariantForWorkspace({
   platformVariantId,
   workspaceId
 }: {
   platformVariantId: string;
   workspaceId: string;
-}) {
+}): Promise<ScheduleablePlatformVariant | null> {
   if (!isDatabaseConfigured) {
-    return true;
+    return {
+      id: platformVariantId,
+      platform: null,
+      policyStatus: "pass"
+    };
   }
 
   const [variant] = await getDb()
-    .select({ id: platformVariants.id })
+    .select({
+      id: platformVariants.id,
+      platform: platformVariants.platform,
+      policyStatus: platformVariants.policyStatus
+    })
     .from(platformVariants)
     .where(and(eq(platformVariants.id, platformVariantId), eq(platformVariants.workspaceId, workspaceId)))
     .limit(1);
 
-  return Boolean(variant);
+  return variant ?? null;
 }
 
 async function connectedAccountExistsForWorkspace({
@@ -105,13 +124,31 @@ export async function POST(
       return NextResponse.json({ error: "Scheduled time must be in the future." }, { status: 400 });
     }
 
-    const variantExists = await platformVariantExistsForWorkspace({
+    const variant = await loadPlatformVariantForWorkspace({
       platformVariantId,
       workspaceId: workspace.id
     });
 
-    if (!variantExists) {
+    if (!variant) {
       return NextResponse.json({ error: "Platform variant not found." }, { status: 404 });
+    }
+
+    if (variant.policyStatus !== "pass") {
+      return NextResponse.json({ error: "Platform variant is not approved for scheduling." }, { status: 409 });
+    }
+
+    if (
+      variant.platform &&
+      !isProviderCompatibleWithPlatform({
+        allowMock: workspace.isLocalPreview,
+        platform: variant.platform,
+        provider: input.provider
+      })
+    ) {
+      return NextResponse.json(
+        { error: formatProviderPlatformError(input.provider, variant.platform) },
+        { status: 400 }
+      );
     }
 
     const accountExists = await connectedAccountExistsForWorkspace({
@@ -143,7 +180,10 @@ export async function POST(
         provider: input.provider,
         connectedAccountId: input.connectedAccountId ?? null,
         scheduledFor,
-        metadata: input.metadata
+        metadata: {
+          ...input.metadata,
+          localPreview: workspace.isLocalPreview
+        }
       },
       repository: createSchedulerRepository({
         allowMemoryFallback: workspace.isLocalPreview

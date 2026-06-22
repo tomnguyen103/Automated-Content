@@ -16,6 +16,7 @@ import { emitAgentOrchestrationEvent } from "@/lib/agents/orchestration/events";
 import { getWorkspaceAnalyticsSnapshot, type AnalyticsSnapshot } from "@/lib/analytics/metrics";
 import { consumeUsageForLimit } from "@/lib/billing/usage";
 import { getProviderAdapter } from "@/lib/providers/registry";
+import { defaultProviderByPlatform } from "@/lib/providers/platform-compatibility";
 import { providerKeys, type ProviderKey } from "@/lib/providers/types";
 import { runCommentReplyWorkflow, type CommentReplyWorkflowResult } from "@/lib/agents/graphs/comment-reply-workflow";
 import { createReplyRepository } from "@/lib/replies/repository";
@@ -54,15 +55,6 @@ type ScheduledVariant = {
 };
 
 const providerKeySet = new Set<string>(providerKeys);
-
-const defaultProviderByPlatform: Record<SocialPlatform, ProviderKey> = {
-  facebook: "meta",
-  instagram: "meta",
-  linkedin: "linkedin",
-  threads: "meta",
-  tiktok: "mock",
-  x: "x"
-};
 
 function readString(record: Record<string, unknown>, key: string) {
   const value = record[key];
@@ -390,7 +382,8 @@ async function scheduleOneVariant({
         agentTaskRunId: context.taskRun.id,
         agentProfileId: context.profile.id,
         missionType: context.mission.missionType,
-        autonomous: true
+        autonomous: true,
+        localPreview: allowMemoryFallback
       }
     },
     repository: createSchedulerRepository({ allowMemoryFallback }),

@@ -30,6 +30,8 @@ test("media page supports mocked upload, browse, select, and transform preview",
 
   await expect(page.getByRole("heading", { name: "Media" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Library" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "AI Transforms" })).toHaveAttribute("href", "#transforms");
+  await expect(page.getByRole("link", { name: "Platform Crops" })).toHaveAttribute("href", "#crops");
 
   await page.getByLabel("Upload media file").setInputFiles({
     name: "phase-five-card.png",

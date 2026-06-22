@@ -10,6 +10,10 @@ import {
   type ScheduledJob,
   usageLedger
 } from "@/db/schema";
+import {
+  formatProviderPlatformError,
+  isProviderCompatibleWithPlatform
+} from "@/lib/providers/platform-compatibility";
 import { getProviderAdapter } from "@/lib/providers/registry";
 import type { PublishPostJobData } from "@/lib/scheduler/enqueue";
 
@@ -27,6 +31,10 @@ function toJsonRecord(value: unknown) {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unable to publish scheduled post.";
+}
+
+function isLocalPreviewJob(job: ScheduledJob) {
+  return job.metadata.localPreview === true;
 }
 
 export function createPublishJobRepository(db: DatabaseClient = getDb()) {
@@ -221,6 +229,20 @@ export async function publishScheduledPostJob({
 
   if (loaded.account && loaded.account.status !== "connected") {
     throw new Error(`Connected account ${loaded.account.id} is not ready for publishing.`);
+  }
+
+  if (loaded.variant.policyStatus !== "pass") {
+    throw new Error(`Platform variant ${loaded.variant.id} is not approved for publishing.`);
+  }
+
+  if (
+    !isProviderCompatibleWithPlatform({
+      allowMock: isLocalPreviewJob(loaded.job),
+      platform: loaded.variant.platform,
+      provider: loaded.job.provider
+    })
+  ) {
+    throw new Error(formatProviderPlatformError(loaded.job.provider, loaded.variant.platform));
   }
 
   const provider = getProviderAdapter(loaded.job.provider);

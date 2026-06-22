@@ -18,10 +18,12 @@ export default async function AutoRepliesPage() {
   return (
     <>
       <SubNav
-        items={["Rules", "Inbox", "Approval Queue", "Logs"].map((label, index) => ({
-          label,
-          active: index === 0
-        }))}
+        items={[
+          { label: "Rules", href: "#rules", active: true },
+          { label: "Inbox", href: "#inbox" },
+          { label: "Approval Queue", href: "#approvals" },
+          { label: "Logs", href: "#logs" }
+        ]}
       />
       <PageShell
         title="Auto Replies"

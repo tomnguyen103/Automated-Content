@@ -28,14 +28,21 @@ export default async function BillingPage() {
 
   return (
     <>
-      <SubNav items={["Plan", "Usage", "Invoices", "Upgrade"].map((label, index) => ({ label, active: index === 0 }))} />
+      <SubNav
+        items={[
+          { label: "Plan", href: "#plan", active: true },
+          { label: "Usage", href: "#usage" },
+          { label: "Invoices", disabled: true },
+          { label: "Upgrade", disabled: true }
+        ]}
+      />
       <PageShell
         title="Billing"
         description="Manage plan state, usage limits, invoices, and seven-post-per-day Premium automation capacity."
         actions={<Badge tone="primary">{user?.isLocalPreview ? "Local preview" : "Clerk synced"}</Badge>}
       >
         <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-1">
+          <div id="plan" className="grid scroll-mt-20 gap-5 md:grid-cols-2 xl:grid-cols-1">
             {(Object.keys(planEntitlements) as BillingPlan[]).map((plan) => (
               <PlanCard
                 key={plan}
@@ -46,7 +53,7 @@ export default async function BillingPage() {
             ))}
           </div>
 
-          <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-5">
+          <section id="usage" className="scroll-mt-20 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-5">
             <div className="flex flex-col gap-3 border-b border-[var(--color-border)] pb-5 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 className="text-lg font-semibold">Usage state</h2>

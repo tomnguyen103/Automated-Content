@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { getDb, type DatabaseClient } from "@/db";
 import { publishAttempts, scheduledJobs } from "@/db/schema";
 import { isDatabaseConfigured } from "@/lib/env";
@@ -9,6 +9,10 @@ import {
   classifyPublishFailure,
   type PublishFailureRecovery
 } from "@/lib/scheduler/publish-recovery";
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unable to enqueue scheduled publish retry.";
+}
 
 export class PublishRetryError extends Error {
   readonly code: string;
@@ -123,10 +127,80 @@ export async function retryScheduledPublish({
     });
   }
 
-  const enqueue = await enqueueScheduledPost({
-    scheduledJob: job
-  });
   const now = new Date();
+  const [reservedJob] = await database
+    .update(scheduledJobs)
+    .set({
+      lockedAt: now,
+      updatedAt: now
+    })
+    .where(
+      and(
+        eq(scheduledJobs.workspaceId, workspaceId),
+        eq(scheduledJobs.id, scheduledJobId),
+        isNull(scheduledJobs.lockedAt),
+        or(
+          eq(scheduledJobs.status, "failed"),
+          and(eq(scheduledJobs.status, "scheduled"), eq(scheduledJobs.enqueueStatus, "failed"))
+        )
+      )
+    )
+    .returning();
+
+  if (!reservedJob) {
+    throw new PublishRetryError({
+      code: "publish_retry_conflict",
+      message: "Scheduled job is already being retried or is no longer eligible for retry.",
+      status: 409
+    });
+  }
+
+  const reservedLockedAt = reservedJob.lockedAt;
+
+  if (!reservedLockedAt) {
+    throw new PublishRetryError({
+      code: "publish_retry_conflict",
+      message: "Scheduled job retry reservation could not be confirmed.",
+      status: 409
+    });
+  }
+
+  let enqueue: Awaited<ReturnType<typeof enqueueScheduledPost>>;
+
+  try {
+    enqueue = await enqueueScheduledPost({
+      scheduledJob: reservedJob
+    });
+  } catch (error) {
+    const errorMessage = getErrorMessage(error);
+
+    await database
+      .update(scheduledJobs)
+      .set({
+        enqueueStatus: "failed",
+        enqueueError: errorMessage,
+        lockedAt: null,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(scheduledJobs.workspaceId, workspaceId),
+          eq(scheduledJobs.id, scheduledJobId),
+          eq(scheduledJobs.lockedAt, reservedLockedAt)
+        )
+      );
+
+    throw new PublishRetryError({
+      code: "queue_enqueue",
+      message: errorMessage,
+      recovery: classifyPublishFailure({
+        errorCode: "queue_enqueue",
+        errorMessage
+      }),
+      status: 503
+    });
+  }
+
   const [updated] = await database
     .update(scheduledJobs)
     .set({
@@ -136,13 +210,27 @@ export async function retryScheduledPublish({
       enqueueError: null,
       lockedAt: null,
       failedAt: null,
-      updatedAt: now
+      updatedAt: new Date()
     })
-    .where(and(eq(scheduledJobs.workspaceId, workspaceId), eq(scheduledJobs.id, scheduledJobId)))
+    .where(
+      and(
+        eq(scheduledJobs.workspaceId, workspaceId),
+        eq(scheduledJobs.id, scheduledJobId),
+        eq(scheduledJobs.lockedAt, reservedLockedAt)
+      )
+    )
     .returning();
 
+  if (!updated) {
+    throw new PublishRetryError({
+      code: "publish_retry_conflict",
+      message: "Scheduled job retry reservation was changed before enqueue state could be saved.",
+      status: 409
+    });
+  }
+
   return {
-    scheduledJob: updated ?? job,
+    scheduledJob: updated,
     enqueue,
     recovery
   };

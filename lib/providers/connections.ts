@@ -517,7 +517,12 @@ export async function refreshProviderConnectionHealth({
 }) {
   const rows = await listConnectionRows({ isLocalPreview, workspaceId });
   const row =
-    rows.find((entry) => entry.provider === provider && (accountId ? entry.id === accountId : entry.status === "connected")) ??
+    rows.find(
+      (entry) =>
+        entry.provider === provider &&
+        entry.status !== "disconnected" &&
+        (accountId ? entry.id === accountId : entry.status === "connected")
+    ) ??
     null;
 
   if (!row) {

@@ -40,12 +40,20 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
 
   const workspace = await resolvePersonalWorkspaceForUser(user);
   const accountId = request.nextUrl.searchParams.get("accountId");
-  const refreshed = await refreshProviderConnectionHealth({
-    workspaceId: workspace.id,
-    isLocalPreview: workspace.isLocalPreview,
-    provider: rawProvider,
-    accountId
-  });
+  let refreshed: Awaited<ReturnType<typeof refreshProviderConnectionHealth>>;
+
+  try {
+    refreshed = await refreshProviderConnectionHealth({
+      workspaceId: workspace.id,
+      isLocalPreview: workspace.isLocalPreview,
+      provider: rawProvider,
+      accountId
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to refresh provider health.";
+
+    return jsonError("provider_health_failed", message, 502);
+  }
 
   if (refreshed) {
     return NextResponse.json({

@@ -1,3 +1,5 @@
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { appUrl, env } from "@/lib/env";
 import { defineProviderCapabilities } from "@/lib/providers/capabilities";
 import {
@@ -24,8 +26,11 @@ import type {
 
 const profileScopes = ["openid", "profile"] as const;
 const defaultLinkedInScopes = [...profileScopes, "w_member_social"] as const;
-const publishScopes = ["w_member_social", "w_organization_social"] as const;
+const publishScopes = ["w_member_social"] as const;
 const refreshSkewMs = 5 * 60 * 1000;
+const linkedInFetchTimeoutMs = 15_000;
+const maxLinkedInImageBytes = 10 * 1024 * 1024;
+const allowedLinkedInImageTypes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
 export const linkedinCapabilities = defineProviderCapabilities({
   supported: ["text_post", "image_post", "scheduled_publish", "immediate_publish"],
@@ -186,6 +191,223 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
   }
 }
 
+async function fetchWithTimeout(
+  input: Parameters<typeof fetch>[0],
+  init: Parameters<typeof fetch>[1] = {},
+  timeoutMs = linkedInFetchTimeoutMs
+) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal
+    });
+  } catch (error) {
+    throw new ProviderError({
+      code: "provider_transient",
+      message:
+        error instanceof Error && error.name === "AbortError"
+          ? "LinkedIn provider request timed out."
+          : "LinkedIn provider request failed.",
+      provider: "linkedin",
+      retryable: true,
+      cause: error
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function isPrivateIpAddress(address: string) {
+  const normalized = address.toLowerCase();
+  const mappedIpv4 = normalized.startsWith("::ffff:") ? normalized.slice("::ffff:".length) : normalized;
+  const version = isIP(mappedIpv4);
+
+  if (version === 4) {
+    const [first = 0, second = 0] = mappedIpv4.split(".").map((part) => Number(part));
+
+    return (
+      first === 0 ||
+      first === 10 ||
+      first === 127 ||
+      (first === 100 && second >= 64 && second <= 127) ||
+      (first === 169 && second === 254) ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && (second === 0 || second === 168)) ||
+      (first === 198 && (second === 18 || second === 19)) ||
+      first >= 224
+    );
+  }
+
+  if (version === 6) {
+    return (
+      normalized === "::" ||
+      normalized === "::1" ||
+      normalized.startsWith("fc") ||
+      normalized.startsWith("fd") ||
+      /^fe[89ab]/.test(normalized)
+    );
+  }
+
+  return false;
+}
+
+async function validatePublicImageSourceUrl(sourceUrl: string) {
+  let parsed: URL;
+
+  try {
+    parsed = new URL(sourceUrl);
+  } catch {
+    throw new ProviderError({
+      code: "content_invalid",
+      message: "LinkedIn image source URL is invalid.",
+      provider: "linkedin",
+      retryable: false
+    });
+  }
+
+  if (parsed.protocol !== "https:") {
+    throw new ProviderError({
+      code: "content_invalid",
+      message: "LinkedIn image source URL must use HTTPS.",
+      provider: "linkedin",
+      retryable: false
+    });
+  }
+
+  if (parsed.username || parsed.password) {
+    throw new ProviderError({
+      code: "content_invalid",
+      message: "LinkedIn image source URL must not include credentials.",
+      provider: "linkedin",
+      retryable: false
+    });
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) {
+    throw new ProviderError({
+      code: "content_invalid",
+      message: "LinkedIn image source URL must not target localhost.",
+      provider: "linkedin",
+      retryable: false
+    });
+  }
+
+  let addresses: string[];
+
+  try {
+    addresses = isIP(hostname)
+      ? [hostname]
+      : (await lookup(hostname, { all: true, verbatim: true })).map((entry) => entry.address);
+  } catch (error) {
+    throw new ProviderError({
+      code: "content_invalid",
+      message: "LinkedIn image source URL could not be resolved.",
+      provider: "linkedin",
+      retryable: false,
+      cause: error
+    });
+  }
+
+  if (addresses.length === 0 || addresses.some(isPrivateIpAddress)) {
+    throw new ProviderError({
+      code: "content_invalid",
+      message: "LinkedIn image source URL must resolve to a public address.",
+      provider: "linkedin",
+      retryable: false
+    });
+  }
+
+  return parsed.toString();
+}
+
+function getValidatedImageContentType(response: Response) {
+  const contentType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+
+  if (!contentType || !allowedLinkedInImageTypes.has(contentType)) {
+    throw new ProviderError({
+      code: "content_invalid",
+      message: "LinkedIn image source must return a supported image content type.",
+      provider: "linkedin",
+      retryable: false
+    });
+  }
+
+  return contentType;
+}
+
+async function readImageBodyWithLimit(response: Response) {
+  const declaredSize = Number(response.headers.get("content-length"));
+
+  if (Number.isFinite(declaredSize) && declaredSize > maxLinkedInImageBytes) {
+    throw new ProviderError({
+      code: "content_invalid",
+      message: "LinkedIn image source exceeds the maximum supported size.",
+      provider: "linkedin",
+      retryable: false
+    });
+  }
+
+  const reader = response.body?.getReader();
+
+  if (!reader) {
+    const buffer = await response.arrayBuffer();
+
+    if (buffer.byteLength > maxLinkedInImageBytes) {
+      throw new ProviderError({
+        code: "content_invalid",
+        message: "LinkedIn image source exceeds the maximum supported size.",
+        provider: "linkedin",
+        retryable: false
+      });
+    }
+
+    return buffer;
+  }
+
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    if (!value) {
+      continue;
+    }
+
+    totalBytes += value.byteLength;
+
+    if (totalBytes > maxLinkedInImageBytes) {
+      throw new ProviderError({
+        code: "content_invalid",
+        message: "LinkedIn image source exceeds the maximum supported size.",
+        provider: "linkedin",
+        retryable: false
+      });
+    }
+
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return bytes.buffer;
+}
+
 function createLinkedInApiError({
   payload,
   response
@@ -271,7 +493,7 @@ async function exchangeAuthorizationCode({
   redirectUri: string;
 }) {
   const config = getLinkedInConfig();
-  const response = await fetch(`${config.oauthBaseUrl}/accessToken`, {
+  const response = await fetchWithTimeout(`${config.oauthBaseUrl}/accessToken`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded"
@@ -304,7 +526,7 @@ async function refreshLinkedInToken(tokens: ProviderTokenSet) {
   }
 
   const config = getLinkedInConfig();
-  const response = await fetch(`${config.oauthBaseUrl}/accessToken`, {
+  const response = await fetchWithTimeout(`${config.oauthBaseUrl}/accessToken`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded"
@@ -336,7 +558,7 @@ async function refreshLinkedInToken(tokens: ProviderTokenSet) {
 
 async function fetchLinkedInProfile(accessToken: string) {
   const config = getLinkedInConfig();
-  const response = await fetch(`${config.apiBaseUrl}/v2/userinfo`, {
+  const response = await fetchWithTimeout(`${config.apiBaseUrl}/v2/userinfo`, {
     headers: {
       Authorization: `Bearer ${accessToken}`
     }
@@ -449,8 +671,9 @@ async function uploadImageForLinkedIn({
     });
   }
 
+  const safeSourceUrl = await validatePublicImageSourceUrl(sourceUrl);
   const config = getLinkedInConfig();
-  const initializeResponse = await fetch(`${config.apiBaseUrl}/rest/images?action=initializeUpload`, {
+  const initializeResponse = await fetchWithTimeout(`${config.apiBaseUrl}/rest/images?action=initializeUpload`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -483,23 +706,25 @@ async function uploadImageForLinkedIn({
     });
   }
 
-  const imageResponse = await fetch(sourceUrl);
+  const imageResponse = await fetchWithTimeout(safeSourceUrl);
 
   if (!imageResponse.ok) {
-    const payload = await parseJsonResponse(imageResponse);
-    throw createLinkedInApiError({ payload, response: imageResponse });
+    throw new ProviderError({
+      code: "content_invalid",
+      message: `LinkedIn image source returned HTTP ${imageResponse.status}.`,
+      provider: "linkedin",
+      retryable: false
+    });
   }
 
-  const contentType =
-    getStringField(media, ["mimeType", "contentType"]) ??
-    imageResponse.headers.get("content-type") ??
-    "application/octet-stream";
-  const uploadResponse = await fetch(uploadUrl, {
+  const contentType = getValidatedImageContentType(imageResponse);
+  const imageBody = await readImageBodyWithLimit(imageResponse);
+  const uploadResponse = await fetchWithTimeout(uploadUrl, {
     method: "PUT",
     headers: {
       "Content-Type": contentType
     },
-    body: await imageResponse.arrayBuffer()
+    body: imageBody
   });
 
   if (!uploadResponse.ok) {
@@ -689,7 +914,7 @@ export const linkedinProvider: ProviderAdapter = {
           ? []
           : [
               ...profileScopes.filter((scope) => !scopes.includes(scope)),
-              ...(hasPublishScope(scopes) ? [] : ["w_member_social or w_organization_social"])
+              ...(hasPublishScope(scopes) ? [] : ["w_member_social"])
             ]
       }
     };
@@ -779,7 +1004,7 @@ export const linkedinProvider: ProviderAdapter = {
       authorUrn,
       content: input.content
     });
-    const response = await fetch(`${config.apiBaseUrl}/rest/posts`, {
+    const response = await fetchWithTimeout(`${config.apiBaseUrl}/rest/posts`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,

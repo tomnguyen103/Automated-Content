@@ -59,9 +59,7 @@ function missingRequiredScopes(requiredScopes: string[], account?: ProviderHealt
     }
 
     if (scope === "publish") {
-      return !grantedScopes.some((grantedScope) =>
-        ["w_member_social", "w_organization_social"].includes(grantedScope)
-      );
+      return !grantedScopes.includes("w_member_social");
     }
 
     return true;

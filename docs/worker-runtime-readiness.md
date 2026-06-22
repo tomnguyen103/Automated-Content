@@ -27,7 +27,7 @@ LinkedIn live publishing also requires:
 LINKEDIN_CLIENT_ID=
 LINKEDIN_CLIENT_SECRET=
 LINKEDIN_REDIRECT_URI=https://<app-host>/api/connections/linkedin/callback
-LINKEDIN_SCOPES=openid profile w_member_social
+LINKEDIN_SCOPES="openid profile w_member_social"
 LINKEDIN_API_VERSION=202606
 ```
 

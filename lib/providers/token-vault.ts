@@ -201,6 +201,8 @@ export async function updateProviderTokens(
   const [updated] = await database
     .update(tokenVaultEntries)
     .set({
+      provider: input.provider,
+      providerAccountId: input.providerAccountId,
       encryptedPayload: encryptPayload(payload),
       keyVersion: getKeyVersion(),
       expiresAt: input.tokens?.expiresAt,

@@ -247,7 +247,11 @@ async function inspectQueue({
       recommendedAction: getRecommendedAction("redis_unavailable")
     };
   } finally {
-    await queue.close?.();
+    try {
+      await queue.close?.();
+    } catch {
+      // Keep readiness reporting best-effort even when Redis cleanup fails.
+    }
   }
 }
 

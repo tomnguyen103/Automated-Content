@@ -25,6 +25,16 @@ function selectOrderLimit(rows: unknown[]) {
   };
 }
 
+function updateReturning(rows: unknown[]) {
+  return {
+    set: vi.fn(() => ({
+      where: vi.fn(() => ({
+        returning: vi.fn(async () => rows)
+      }))
+    }))
+  };
+}
+
 function createJob(overrides: Record<string, unknown> = {}) {
   const now = new Date("2026-06-22T12:00:00.000Z");
 
@@ -70,25 +80,26 @@ describe("publish retry safety", () => {
 
   it("requeues retryable provider transient failures", async () => {
     const job = createJob();
+    const reservedAt = new Date("2026-06-22T12:05:00.000Z");
     const db = {
       select: vi
         .fn()
         .mockReturnValueOnce(selectLimit([job]))
         .mockReturnValueOnce(selectLimit([]))
         .mockReturnValueOnce(selectOrderLimit([{ errorCode: "provider_transient", errorMessage: "timeout" }])),
-      update: vi.fn(() => ({
-        set: vi.fn(() => ({
-          where: vi.fn(() => ({
-            returning: vi.fn(async () => [
-              {
-                ...job,
-                status: "queued",
-                queueJobId: "retry_queue_1"
-              }
-            ])
-          }))
-        }))
-      }))
+      update: vi
+        .fn()
+        .mockReturnValueOnce(updateReturning([{ ...job, lockedAt: reservedAt }]))
+        .mockReturnValueOnce(
+          updateReturning([
+            {
+              ...job,
+              status: "queued",
+              queueJobId: "retry_queue_1",
+              lockedAt: null
+            }
+          ])
+        )
     };
     const { retryScheduledPublish } = await import("@/lib/scheduler/publish-retry");
     const result = await retryScheduledPublish({
@@ -99,6 +110,32 @@ describe("publish retry safety", () => {
 
     expect(result.recovery.retryable).toBe(true);
     expect(result.scheduledJob.status).toBe("queued");
+  });
+
+  it("blocks concurrent retry when reservation fails before enqueue", async () => {
+    const db = {
+      select: vi
+        .fn()
+        .mockReturnValueOnce(selectLimit([createJob()]))
+        .mockReturnValueOnce(selectLimit([]))
+        .mockReturnValueOnce(selectOrderLimit([{ errorCode: "provider_transient", errorMessage: "timeout" }])),
+      update: vi.fn().mockReturnValueOnce(updateReturning([]))
+    };
+    const [{ retryScheduledPublish }, { enqueueScheduledPost }] = await Promise.all([
+      import("@/lib/scheduler/publish-retry"),
+      import("@/lib/scheduler/enqueue")
+    ]);
+
+    await expect(
+      retryScheduledPublish({
+        db: db as never,
+        workspaceId,
+        scheduledJobId
+      })
+    ).rejects.toMatchObject({
+      code: "publish_retry_conflict"
+    });
+    expect(enqueueScheduledPost).not.toHaveBeenCalled();
   });
 
   it("blocks non-retryable provider failures", async () => {

@@ -61,6 +61,11 @@ function redirectToConnections(request: NextRequest, params: Record<string, stri
   return NextResponse.redirect(url);
 }
 
+function clearOauthStateCookie(response: NextResponse, provider: ProviderKey) {
+  response.cookies.delete(oauthStateCookieName(provider));
+  return response;
+}
+
 export async function GET(request: NextRequest, context: ConnectionRouteContext) {
   const user = await getCurrentUser();
 
@@ -87,30 +92,36 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
   if (providerError) {
     const message = providerErrorDescription ?? providerError;
 
-    return wantsJson(request)
+    const response = wantsJson(request)
       ? jsonError(providerError, message, 400)
       : redirectToConnections(request, {
           error: providerError,
           provider: rawProvider
         });
+
+    return clearOauthStateCookie(response, rawProvider);
   }
 
   if (!code) {
-    return wantsJson(request)
+    const response = wantsJson(request)
       ? jsonError("authorization_code_missing", "LinkedIn authorization code is missing.", 400)
       : redirectToConnections(request, {
           error: "authorization_code_missing",
           provider: rawProvider
         });
+
+    return clearOauthStateCookie(response, rawProvider);
   }
 
   if (!returnedState || !expectedState || returnedState !== expectedState) {
-    return wantsJson(request)
+    const response = wantsJson(request)
       ? jsonError("oauth_state_mismatch", "LinkedIn OAuth state did not match.", 401)
       : redirectToConnections(request, {
           error: "oauth_state_mismatch",
           provider: rawProvider
         });
+
+    return clearOauthStateCookie(response, rawProvider);
   }
 
   try {
@@ -143,12 +154,13 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
     return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to complete provider connection.";
-
-    return wantsJson(request)
+    const response = wantsJson(request)
       ? jsonError("provider_callback_failed", message, 502)
       : redirectToConnections(request, {
           error: "provider_callback_failed",
           provider: rawProvider
         });
+
+    return clearOauthStateCookie(response, rawProvider);
   }
 }

@@ -7,6 +7,7 @@ import { recordAgentEvent } from "@/lib/observability/agent-events";
 const n8nAgentEvents = new Set<N8nEventType>([
   "agent.mission.started",
   "agent.mission.completed",
+  "agent.mission.simulated",
   "agent.task.succeeded",
   "agent.task.failed",
   "agent.policy.evaluated"

@@ -4,6 +4,7 @@ import { agentRunSchema } from "@/lib/agents/schemas/agent-run";
 import { contentPackSchema } from "@/lib/agents/schemas/content-pack";
 import {
   agentAutonomyPolicySchema,
+  defaultAgentAutonomyPolicy,
   agentMissionSchema,
   agentPolicyEventSchema,
   agentTaskRunSchema
@@ -116,7 +117,7 @@ describe("agent orchestration foundation", () => {
     ).toThrow();
   });
 
-  it("ships the seven seeded role templates with full-autonomy policy defaults", () => {
+  it("ships the seven seeded role templates with supervised external-action defaults", () => {
     expect(agentRoleTemplates.map((template) => template.role)).toEqual([
       "coordinator",
       "researcher",
@@ -130,9 +131,13 @@ describe("agent orchestration foundation", () => {
       agentRoleTemplates.map((template) => template.role).sort()
     );
 
+    expect(defaultAgentAutonomyPolicy.autonomy).toBe("supervised");
+
     for (const template of agentRoleTemplates) {
+      const supervisesExternalActions = template.role === "publisher" || template.role === "engagement";
+
       expect(template.defaultPolicy).toMatchObject({
-        autonomy: "full",
+        autonomy: supervisesExternalActions ? "supervised" : "full",
         requiresHumanApproval: false,
         emergencyPaused: false
       });
@@ -292,6 +297,12 @@ describe("agent orchestration foundation", () => {
       createdByUserId: "user_1",
       now: new Date(timestamp)
     });
+    const publisher = buildAgentProfileFromTemplate({
+      role: "publisher",
+      workspaceId,
+      createdByUserId: "user_1",
+      now: new Date(timestamp)
+    });
 
     expect(
       evaluateAgentPolicy({
@@ -336,6 +347,30 @@ describe("agent orchestration foundation", () => {
       allowed: false,
       action: "require_review",
       policyKey: "confidence_threshold"
+    });
+
+    expect(
+      evaluateAgentPolicy({
+        action: "content.publish",
+        profile: publisher,
+        confidence: 0.96,
+        now: new Date(timestamp)
+      })
+    ).toMatchObject({
+      allowed: false,
+      action: "require_review",
+      policyKey: "supervised_external_action"
+    });
+
+    expect(
+      evaluateAgentPolicy({
+        action: "task.execute",
+        profile: publisher,
+        now: new Date(timestamp)
+      })
+    ).toMatchObject({
+      allowed: true,
+      action: "allow"
     });
   });
 
@@ -641,11 +676,22 @@ describe("agent orchestration foundation", () => {
       estimatedUsage: {
         scheduledPostWrites: 2,
         publishEnqueues: 2
+      },
+      summary: {
+        approvalRequiredCount: 0,
+        promotable: false,
+        riskLevel: "high",
+        providerReadinessWarnings: expect.arrayContaining([
+          "No provider is selected for this external action.",
+          "No connected account is selected for readiness validation."
+        ])
       }
     });
     expect(result.simulationRun.plannedActions.map((action) => action.action)).toContain("content.publish");
     expect(result.simulationRun.plannedActions.find((action) => action.action === "content.publish")).toMatchObject({
       status: "would_run",
+      riskLevel: "high",
+      promotable: false,
       suppressedSideEffects: expect.arrayContaining(["publish queue enqueue"])
     });
     await expect(
@@ -675,6 +721,72 @@ describe("agent orchestration foundation", () => {
         })
       ])
     );
+  });
+
+  it("keeps supervised simulations inspectable while requiring review for external actions", async () => {
+    const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
+    const seeded = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_1",
+      now: new Date(timestamp)
+    });
+    const coordinator = seeded.find((profile) => profile.role === "coordinator")!;
+
+    await repositories.missions.save({
+      id: "mission_supervised_simulation_1",
+      workspaceId,
+      createdByUserId: "user_1",
+      coordinatorProfileId: coordinator.id,
+      missionType: "content_pipeline",
+      title: "Supervised publish simulation",
+      objective: "Preview the whole mission while holding external actions.",
+      brief: "Research, generate, and hold publish work for review.",
+      status: "queued",
+      priority: 70,
+      inputs: {
+        topic: "Supervised autonomy",
+        platforms: ["linkedin"]
+      },
+      context: {},
+      policy: agentAutonomyPolicySchema.parse({
+        autonomy: "supervised",
+        allowedActions: ["mission.run", "research.collect", "task.execute", "content.generate", "content.publish"],
+        allowedToolScopes: ["mission.plan", "research.topic", "strategy.plan", "content.generate", "content.publish"],
+        platformScope: ["linkedin"]
+      }),
+      requestedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+
+    const result = await simulateAgentMission({
+      workspaceId,
+      missionId: "mission_supervised_simulation_1",
+      repositories,
+      requestedByUserId: "user_1",
+      now: () => new Date(timestamp)
+    });
+    const publishAction = result.simulationRun.plannedActions.find((action) => action.action === "content.publish");
+
+    expect(result.simulationRun.plannedActions.length).toBeGreaterThan(1);
+    expect(publishAction).toMatchObject({
+      status: "would_require_review",
+      approvalRequired: true,
+      policy: {
+        policyKey: "supervised_external_action"
+      },
+      estimatedUsage: {
+        publishEnqueues: 1,
+        scheduledPostWrites: 1
+      },
+      suppressedSideEffects: expect.arrayContaining(["publish queue enqueue"])
+    });
+    expect(result.simulationRun.summary).toMatchObject({
+      approvalRequiredCount: 1,
+      blockedReasonCount: 0,
+      promotable: false,
+      riskLevel: "high"
+    });
   });
 
   it("simulates comment engagement without invoking reply send executors", async () => {
@@ -770,7 +882,8 @@ describe("agent orchestration foundation", () => {
       },
       context: {},
       policy: agentAutonomyPolicySchema.parse({
-        autonomy: "supervised",
+        autonomy: "full",
+        requiresHumanApproval: true,
         allowedActions: ["mission.run", "research.collect", "task.execute", "content.generate", "content.publish"],
         allowedToolScopes: ["mission.plan", "research.topic", "strategy.plan", "content.generate", "content.publish"],
         platformScope: ["linkedin"]

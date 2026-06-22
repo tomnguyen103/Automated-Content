@@ -21,6 +21,7 @@ test-results/
 # Local AI planning and tooling
 .ai-plans/
 .swarm/
+.claude-flow/
 .codegraph/
 ruvector.db
 agentdb.rvf

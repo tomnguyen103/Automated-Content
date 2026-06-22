@@ -9,9 +9,13 @@ import {
   WorkflowValidationError
 } from "@/lib/agents/graphs/content-workflow";
 import { contentWorkflowApprovalActionSchema } from "@/lib/agents/graphs/state";
-import { contentPackSchema } from "@/lib/agents/schemas/content-pack";
+import { contentPackSchema, type ContentPack } from "@/lib/agents/schemas/content-pack";
 import { createAgentStorage } from "@/lib/agents/langchain/storage";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import {
+  buildBrandMemoryProposalsFromEdit,
+  createBrandMemoryProposalRepository
+} from "@/lib/brand-memory/proposals";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
 
 export const runtime = "nodejs";
@@ -27,6 +31,46 @@ type ApprovalRouteContext = {
     id: string;
   }>;
 };
+
+async function createBrandMemoryProposals({
+  after,
+  agentRunId,
+  allowMemoryFallback,
+  before,
+  preferMemoryFallback,
+  userId,
+  workspaceId
+}: {
+  workspaceId: string;
+  userId: string;
+  agentRunId: string;
+  before?: ContentPack | null;
+  after?: ContentPack | null;
+  allowMemoryFallback: boolean;
+  preferMemoryFallback: boolean;
+}) {
+  if (!before || !after) {
+    return [];
+  }
+
+  try {
+    return await createBrandMemoryProposalRepository({
+      allowMemoryFallback,
+      preferMemoryFallback
+    }).saveMany(
+      buildBrandMemoryProposalsFromEdit({
+        workspaceId,
+        userId,
+        agentRunId,
+        before,
+        after
+      })
+    );
+  } catch (error) {
+    console.error("Unable to create brand memory proposals", error);
+    return [];
+  }
+}
 
 export async function POST(request: Request, context: ApprovalRouteContext) {
   const user = await getCurrentUser();
@@ -52,6 +96,7 @@ export async function POST(request: Request, context: ApprovalRouteContext) {
     const checkpoints = createContentWorkflowCheckpointStore({
       allowMemoryFallback: workspace.isLocalPreview
     });
+    const previousWorkflow = await checkpoints.get(id, workspace.id);
     const result = await applyContentWorkflowApproval(id, {
       action,
       comment,
@@ -61,12 +106,24 @@ export async function POST(request: Request, context: ApprovalRouteContext) {
       storage,
       checkpoints
     });
+    const brandMemoryProposals = action === "approve"
+        ? await createBrandMemoryProposals({
+            workspaceId: workspace.id,
+            userId: user.id,
+            agentRunId: id,
+            before: previousWorkflow?.contentPack,
+            after: result.contentPack,
+            allowMemoryFallback: workspace.isLocalPreview,
+            preferMemoryFallback: workspace.isLocalPreview
+          })
+        : [];
 
     return NextResponse.json({
       run: result.run,
       workflow: result.workflow,
       contentPack: result.contentPack,
-      draft: result.draft
+      draft: result.draft,
+      brandMemoryProposals
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

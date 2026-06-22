@@ -20,6 +20,7 @@ import {
   type AgentOrchestrationRepositories
 } from "@/lib/agents/orchestration/repository";
 import { emitAgentOrchestrationEvent } from "@/lib/agents/orchestration/events";
+import { estimateUsageForTask } from "@/lib/agents/orchestration/usage-estimates";
 
 export type MissionTaskExecutionContext = {
   mission: AgentMission;
@@ -285,7 +286,7 @@ export async function runAgentMission({
         taskIndex
       })
     );
-    const policy = evaluateAgentPolicy({
+    let policy = evaluateAgentPolicy({
       action: task.action,
       mission: runningMission,
       profile,
@@ -295,6 +296,25 @@ export async function runAgentMission({
       connectedAccountId: readString(runningMission.inputs, "connectedAccountId"),
       confidence: typeof runningMission.inputs.confidence === "number" ? runningMission.inputs.confidence : undefined,
       contentText: readString(runningMission.inputs, "contentText") ?? runningMission.brief,
+      now: now()
+    });
+    const preliminaryEstimate = estimateUsageForTask({
+      decision: policy,
+      mission: runningMission,
+      task
+    });
+
+    policy = evaluateAgentPolicy({
+      action: task.action,
+      mission: runningMission,
+      profile,
+      toolScope: task.toolScope,
+      provider: readString(runningMission.inputs, "provider"),
+      platform: readString(runningMission.inputs, "platform"),
+      connectedAccountId: readString(runningMission.inputs, "connectedAccountId"),
+      confidence: typeof runningMission.inputs.confidence === "number" ? runningMission.inputs.confidence : undefined,
+      contentText: readString(runningMission.inputs, "contentText") ?? runningMission.brief,
+      estimatedCostCents: preliminaryEstimate.estimatedCostCents,
       now: now()
     });
 
@@ -317,6 +337,7 @@ export async function runAgentMission({
           {
             status: "skipped",
             output: {
+              estimatedUsage: preliminaryEstimate,
               policy: {
                 action: policy.action,
                 key: policy.policyKey,

@@ -450,6 +450,105 @@ describe("agent orchestration foundation", () => {
     expect(result.policyEvents.map((event) => event.action)).toContain("allow");
   });
 
+  it("blocks estimated model spend that exceeds the mission budget in simulations and execution", async () => {
+    const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
+    const seeded = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_1",
+      now: new Date(timestamp)
+    });
+    const coordinator = seeded.find((profile) => profile.role === "coordinator")!;
+    const createdAt = new Date(timestamp).toISOString();
+
+    await repositories.missions.save({
+      id: "mission_budget_1",
+      workspaceId,
+      createdByUserId: "user_1",
+      coordinatorProfileId: coordinator.id,
+      missionType: "content_pipeline",
+      title: "Budgeted content mission",
+      objective: "Generate only when the estimated model budget allows it.",
+      brief: "Research, plan, and stop before expensive generation when over budget.",
+      status: "queued",
+      priority: 50,
+      inputs: {
+        topic: "Agent budget controls",
+        platforms: ["linkedin"]
+      },
+      context: {},
+      policy: agentAutonomyPolicySchema.parse({
+        autonomy: "full",
+        allowedActions: ["mission.run", "research.collect", "task.execute", "content.generate"],
+        allowedToolScopes: ["research.topic", "strategy.plan", "content.generate"],
+        maxTasksPerRun: 3,
+        modelBudgetCents: 1
+      }),
+      requestedAt: createdAt,
+      createdAt,
+      updatedAt: createdAt
+    });
+
+    const simulation = await simulateAgentMission({
+      workspaceId,
+      missionId: "mission_budget_1",
+      repositories,
+      now: () => new Date(timestamp)
+    });
+    const simulatedGeneration = simulation.simulationRun.plannedActions.find(
+      (action) => action.action === "content.generate"
+    );
+
+    expect(simulatedGeneration).toMatchObject({
+      status: "blocked",
+      policy: {
+        policyKey: "model_budget"
+      }
+    });
+    expect(simulation.policyEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          policyKey: "model_budget",
+          details: expect.objectContaining({
+            estimatedCostCents: 4,
+            modelBudgetCents: 1
+          })
+        })
+      ])
+    );
+
+    const result = await runAgentMission({
+      workspaceId,
+      missionId: "mission_budget_1",
+      repositories,
+      now: () => new Date(timestamp)
+    });
+
+    expect(result.tasks).toHaveLength(3);
+    expect(result.tasks[2]).toMatchObject({
+      taskName: "Generate platform variants",
+      status: "skipped",
+      output: {
+        estimatedUsage: expect.objectContaining({
+          estimatedCostCents: 4
+        }),
+        policy: {
+          key: "model_budget"
+        }
+      }
+    });
+    expect(result.policyEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          policyKey: "model_budget",
+          details: expect.objectContaining({
+            estimatedCostCents: 4,
+            modelBudgetCents: 1
+          })
+        })
+      ])
+    );
+  });
+
   it("compiles weekly operator reports with simulations, policy events, usage, and caveats", async () => {
     const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
     const seeded = await repositories.profiles.seedRoleTemplates({

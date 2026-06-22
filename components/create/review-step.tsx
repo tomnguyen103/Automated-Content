@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarCheck2, CalendarPlus, CheckCircle2, CircleAlert, Loader2 } from "lucide-react";
+import { Brain, CalendarCheck2, CalendarPlus, CheckCircle2, CircleAlert, Loader2, XCircle } from "lucide-react";
 import { useState } from "react";
 import { ApprovalPanel } from "@/components/create/approval-panel";
 import { Badge } from "@/components/ui/badge";
@@ -21,10 +21,26 @@ export type ApprovedVariantScheduleResult = {
   scheduledJobId?: string;
 };
 
+export type BrandMemoryProposalReviewItem = {
+  id: string;
+  inferredRule: string;
+  confidence: number;
+  status: "pending" | "accepted" | "rejected";
+  originalText: string;
+  editedText: string;
+  platform?: string;
+  scope: "workspace" | "platform" | "profile" | "campaign";
+};
+
 type ReviewStepProps = {
   workflow: ContentWorkflowState | null;
   disabled?: boolean;
   onDecision: (action: ContentWorkflowApprovalAction, comment?: string) => Promise<void> | void;
+  brandMemoryProposals?: BrandMemoryProposalReviewItem[];
+  onReviewBrandMemoryProposal?: (
+    proposalId: string,
+    status: "accepted" | "rejected"
+  ) => Promise<void> | void;
   onScheduleApprovedVariants?: () => Promise<ApprovedVariantScheduleResult[]> | ApprovedVariantScheduleResult[];
 };
 
@@ -158,7 +174,88 @@ function ScheduleApprovedVariantsPanel({
   );
 }
 
-export function ReviewStep({ disabled = false, onDecision, onScheduleApprovedVariants, workflow }: ReviewStepProps) {
+function BrandMemoryProposalsPanel({
+  disabled,
+  onReviewBrandMemoryProposal,
+  proposals
+}: {
+  disabled: boolean;
+  proposals: BrandMemoryProposalReviewItem[];
+  onReviewBrandMemoryProposal?: (proposalId: string, status: "accepted" | "rejected") => Promise<void> | void;
+}) {
+  if (proposals.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-semibold">
+            <Brain size={16} aria-hidden="true" />
+            Brand memory
+          </h3>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">Reviewed edits produced voice rules for approval.</p>
+        </div>
+        <Badge tone="community">{proposals.length} proposed</Badge>
+      </div>
+
+      <div className="mt-4 grid gap-3">
+        {proposals.map((proposal) => (
+          <article key={proposal.id} className="rounded-[var(--radius-sm)] bg-[var(--color-surface)] p-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">{proposal.inferredRule}</p>
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  {proposal.platform ?? proposal.scope} / {proposal.confidence}% confidence
+                </p>
+              </div>
+              <Badge tone={proposal.status === "accepted" ? "success" : proposal.status === "rejected" ? "critical" : "neutral"}>
+                {proposal.status}
+              </Badge>
+            </div>
+            <div className="mt-3 grid gap-2 text-xs leading-5 md:grid-cols-2">
+              <p className="line-clamp-3 text-[var(--color-text-muted)]">{proposal.originalText}</p>
+              <p className="line-clamp-3 font-medium">{proposal.editedText}</p>
+            </div>
+            {proposal.status === "pending" && onReviewBrandMemoryProposal ? (
+              <div className="mt-3 flex justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={disabled}
+                  type="button"
+                  onClick={() => onReviewBrandMemoryProposal(proposal.id, "rejected")}
+                >
+                  <XCircle size={15} aria-hidden="true" />
+                  Reject
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={disabled}
+                  type="button"
+                  onClick={() => onReviewBrandMemoryProposal(proposal.id, "accepted")}
+                >
+                  <CheckCircle2 size={15} aria-hidden="true" />
+                  Accept
+                </Button>
+              </div>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function ReviewStep({
+  brandMemoryProposals = [],
+  disabled = false,
+  onDecision,
+  onReviewBrandMemoryProposal,
+  onScheduleApprovedVariants,
+  workflow
+}: ReviewStepProps) {
   const contentPack = workflow?.contentPack ?? null;
 
   if (!workflow || !contentPack) {
@@ -225,6 +322,11 @@ export function ReviewStep({ disabled = false, onDecision, onScheduleApprovedVar
 
         <div className="grid gap-4">
           <ApprovalPanel disabled={disabled} workflow={workflow} onDecision={onDecision} />
+          <BrandMemoryProposalsPanel
+            disabled={disabled}
+            proposals={brandMemoryProposals}
+            onReviewBrandMemoryProposal={onReviewBrandMemoryProposal}
+          />
           <ScheduleApprovedVariantsPanel
             disabled={disabled}
             workflow={workflow}

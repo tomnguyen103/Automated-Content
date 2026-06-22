@@ -48,6 +48,7 @@ export default async function AgentsPage() {
           { label: "Missions", href: "#missions" },
           { label: "Simulations", href: "#simulations" },
           { label: "Permissions", href: "#permissions" },
+          { label: "Governance", href: "#governance" },
           { label: "Activity", href: "#activity" }
         ]}
       />

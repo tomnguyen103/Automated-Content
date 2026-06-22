@@ -17,6 +17,13 @@ export const brandProfileOutputSchema = z.object({
 export type BrandProfileInput = z.infer<typeof brandProfileInputSchema>;
 export type BrandProfileOutput = z.infer<typeof brandProfileOutputSchema>;
 
+export const defaultBrandProfile = brandProfileOutputSchema.parse({
+  voice: "clear, practical, founder-led, and specific",
+  defaultAudience: "founders, operators, and social media managers",
+  pillars: ["practical workflows", "human review", "consistent publishing", "measurable learning"],
+  avoidedTerms: ["guaranteed", "effortless", "fully autonomous"]
+});
+
 export function createReadBrandProfileTool(
   readBrandProfile?: (input: BrandProfileInput) => Promise<BrandProfileOutput> | BrandProfileOutput
 ): AgentTool<typeof brandProfileInputSchema, typeof brandProfileOutputSchema> {
@@ -30,12 +37,7 @@ export function createReadBrandProfileTool(
         return readBrandProfile(input);
       }
 
-      return {
-        voice: "clear, practical, founder-led, and specific",
-        defaultAudience: "founders, operators, and social media managers",
-        pillars: ["practical workflows", "human review", "consistent publishing", "measurable learning"],
-        avoidedTerms: ["guaranteed", "effortless", "fully autonomous"]
-      };
+      return defaultBrandProfile;
     }
   };
 }

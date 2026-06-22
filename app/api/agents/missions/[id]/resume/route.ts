@@ -33,6 +33,14 @@ export async function POST(
 
     return NextResponse.json({ mission });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: "Invalid mission id.", issues: error.issues }, { status: 400 });
+    }
+
+    if (error instanceof Error && error.message.includes("was not found")) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
+    }
+
     console.error("Unexpected agent mission resume error", error);
     return NextResponse.json({ error: "Unable to resume agent mission." }, { status: 500 });
   }

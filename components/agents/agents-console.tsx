@@ -296,7 +296,7 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
 
   async function toggleAllProfiles(nextPaused: boolean) {
     await withBusy(nextPaused ? "profile_pause" : "profile_resume", async () => {
-      await Promise.all(
+      const results = await Promise.allSettled(
         profiles.map(async (profile) =>
           readJson(
             await fetch(`/api/agents/profiles/${profile.id}`, {
@@ -314,6 +314,11 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
         )
       );
       await refresh();
+
+      const failed = results.filter((result) => result.status === "rejected");
+      if (failed.length > 0) {
+        throw new Error(`${failed.length} profile update(s) failed. Retry to fully apply this action.`);
+      }
     });
   }
 

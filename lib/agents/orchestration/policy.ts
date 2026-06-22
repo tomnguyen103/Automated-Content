@@ -104,6 +104,7 @@ function isInQuietHours(policy: AgentAutonomyPolicy, now: Date) {
 
   const hour = getHourInTimezone(now, quiet.timezone);
 
+  // Matching bounds intentionally mean full-day quiet hours, which acts as a policy lockdown.
   if (quiet.startHour === quiet.endHour) {
     return true;
   }

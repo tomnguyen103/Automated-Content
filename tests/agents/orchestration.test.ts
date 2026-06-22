@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { agentPolicyEvents } from "@/db/schema";
 import { agentRunSchema } from "@/lib/agents/schemas/agent-run";
 import { contentPackSchema } from "@/lib/agents/schemas/content-pack";
 import {
@@ -232,7 +233,11 @@ describe("agent orchestration foundation", () => {
       insertedRows.push(row);
     });
     const insert = vi.fn(() => ({ values }));
-    const repository = createDatabaseAgentPolicyEventRepository({ insert } as never);
+    const limit = vi.fn(async () => [{ id: `agent_profile_${workspaceId}_publisher` }]);
+    const where = vi.fn(() => ({ limit }));
+    const from = vi.fn(() => ({ where }));
+    const select = vi.fn(() => ({ from }));
+    const repository = createDatabaseAgentPolicyEventRepository({ insert, select } as never);
 
     await repository.record({
       id: "policy_event_db_1",
@@ -252,6 +257,7 @@ describe("agent orchestration foundation", () => {
     });
 
     expect(insert).toHaveBeenCalledOnce();
+    expect(insert).toHaveBeenCalledWith(agentPolicyEvents);
     expect(values).toHaveBeenCalledOnce();
     const payload = insertedRows[0] as Record<string, unknown> & {
       occurredAt: Date;
@@ -362,21 +368,6 @@ describe("agent orchestration foundation", () => {
       updatedAt: createdAt
     });
 
-    const result = await runAgentMission({
-      workspaceId,
-      missionId: "mission_runner_1",
-      repositories,
-      now: () => new Date(timestamp)
-    });
-
-    expect(result.mission.status).toBe("succeeded");
-    expect(result.tasks).toHaveLength(1);
-    expect(result.tasks[0]).toMatchObject({
-      taskName: "Compile weekly operating report",
-      status: "succeeded"
-    });
-    expect(result.policyEvents.map((event) => event.action)).toContain("allow");
-
     const paused = await pauseAgentMission({
       workspaceId,
       missionId: "mission_runner_1",
@@ -402,6 +393,21 @@ describe("agent orchestration foundation", () => {
         emergencyPaused: false
       }
     });
+
+    const result = await runAgentMission({
+      workspaceId,
+      missionId: "mission_runner_1",
+      repositories,
+      now: () => new Date(timestamp)
+    });
+
+    expect(result.mission.status).toBe("succeeded");
+    expect(result.tasks).toHaveLength(1);
+    expect(result.tasks[0]).toMatchObject({
+      taskName: "Compile weekly operating report",
+      status: "succeeded"
+    });
+    expect(result.policyEvents.map((event) => event.action)).toContain("allow");
   });
 
   it("runs autonomous content missions through content generation and scheduling executors", async () => {

@@ -271,6 +271,26 @@ function policyEventToRow(event: AgentPolicyEvent) {
   };
 }
 
+async function assertProfileBelongsToWorkspace({
+  db,
+  profileId,
+  workspaceId
+}: {
+  db: DatabaseClient;
+  profileId: string;
+  workspaceId: string;
+}) {
+  const [profile] = await db
+    .select({ id: agentProfiles.id })
+    .from(agentProfiles)
+    .where(and(eq(agentProfiles.workspaceId, workspaceId), eq(agentProfiles.id, profileId)))
+    .limit(1);
+
+  if (!profile) {
+    throw new Error(`Agent profile ${profileId} was not found in this workspace.`);
+  }
+}
+
 export function createDatabaseAgentProfileRepository(db: DatabaseClient = getDb()): AgentProfileRepository {
   const repository: AgentProfileRepository = {
     async save(profile) {
@@ -340,6 +360,15 @@ export function createDatabaseAgentMissionRepository(db: DatabaseClient = getDb(
   return {
     async save(mission) {
       const parsed = agentMissionSchema.parse(mission);
+
+      if (parsed.coordinatorProfileId) {
+        await assertProfileBelongsToWorkspace({
+          db,
+          workspaceId: parsed.workspaceId,
+          profileId: parsed.coordinatorProfileId
+        });
+      }
+
       const row = missionToRow(parsed);
 
       await db
@@ -449,6 +478,14 @@ export function createDatabaseAgentPolicyEventRepository(db: DatabaseClient = ge
     async record(event) {
       const parsed = agentPolicyEventSchema.parse(event);
 
+      if (parsed.profileId) {
+        await assertProfileBelongsToWorkspace({
+          db,
+          workspaceId: parsed.workspaceId,
+          profileId: parsed.profileId
+        });
+      }
+
       await db.insert(agentPolicyEvents).values(policyEventToRow(parsed));
 
       return parsed;
@@ -505,8 +542,14 @@ export function createMemoryAgentOrchestrationRepositories(): AgentOrchestration
   const taskRuns = new Map<string, AgentTaskRun>();
   const policyEvents = new Map<string, AgentPolicyEvent>();
 
-  function key(workspaceId: string, id: string) {
-    return `${workspaceId}:${id}`;
+  function key(_workspaceId: string, id: string) {
+    return id;
+  }
+
+  function getScoped<T extends { workspaceId: string }>(map: Map<string, T>, workspaceId: string, id: string) {
+    const row = map.get(key(workspaceId, id));
+
+    return row?.workspaceId === workspaceId ? row : null;
   }
 
   const repositories: AgentOrchestrationRepositories & { clear: () => void } = {
@@ -517,15 +560,11 @@ export function createMemoryAgentOrchestrationRepositories(): AgentOrchestration
         return parsed;
       },
       async get({ workspaceId, id }) {
-        return profiles.get(key(workspaceId, id)) ?? null;
+        return getScoped(profiles, workspaceId, id);
       },
       async list(workspaceId) {
-        const workspacePrefix = `${workspaceId}:`;
-
         return sortByCreatedDesc(
-          [...profiles.entries()]
-            .filter(([profileKey]) => profileKey.startsWith(workspacePrefix))
-            .map(([, profile]) => profile)
+          [...profiles.values()].filter((profile) => profile.workspaceId === workspaceId)
         );
       },
       async seedRoleTemplates({ workspaceId, createdByUserId, roles, now = new Date() }) {
@@ -545,15 +584,11 @@ export function createMemoryAgentOrchestrationRepositories(): AgentOrchestration
         return parsed;
       },
       async get({ workspaceId, id }) {
-        return missions.get(key(workspaceId, id)) ?? null;
+        return getScoped(missions, workspaceId, id);
       },
       async list(workspaceId) {
-        const workspacePrefix = `${workspaceId}:`;
-
         return sortByCreatedDesc(
-          [...missions.entries()]
-            .filter(([missionKey]) => missionKey.startsWith(workspacePrefix))
-            .map(([, mission]) => mission)
+          [...missions.values()].filter((mission) => mission.workspaceId === workspaceId)
         );
       }
     },
@@ -564,7 +599,7 @@ export function createMemoryAgentOrchestrationRepositories(): AgentOrchestration
         return parsed;
       },
       async get({ workspaceId, id }) {
-        return taskRuns.get(key(workspaceId, id)) ?? null;
+        return getScoped(taskRuns, workspaceId, id);
       },
       async listForMission({ workspaceId, missionId }) {
         return sortByCreatedDesc(
@@ -581,7 +616,7 @@ export function createMemoryAgentOrchestrationRepositories(): AgentOrchestration
         return parsed;
       },
       async get({ workspaceId, id }) {
-        return policyEvents.get(key(workspaceId, id)) ?? null;
+        return getScoped(policyEvents, workspaceId, id);
       },
       async listForMission({ workspaceId, missionId }) {
         return sortPolicyEventsDesc(

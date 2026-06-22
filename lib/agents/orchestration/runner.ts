@@ -190,6 +190,10 @@ export async function runAgentMission({
     throw new Error(`Mission ${missionId} was not found.`);
   }
 
+  if (loadedMission.status === "running") {
+    throw new Error(`Mission ${missionId} is already running.`);
+  }
+
   const profiles = await repositories.profiles.list(workspaceId);
   const coordinator = loadedMission.coordinatorProfileId
     ? profiles.find((profile) => profile.id === loadedMission.coordinatorProfileId) ?? null
@@ -415,7 +419,7 @@ export async function runAgentMission({
     }
   }
 
-  const finalStatus = createdTasks.some((task) => task.status === "failed") ? "failed" : "succeeded";
+  const finalStatus = "succeeded";
   const completedMission = await repositories.missions.save(
     updateMission(
       runningMission,

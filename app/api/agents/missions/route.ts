@@ -30,17 +30,24 @@ export async function GET() {
 
   const missions = await context.repositories.missions.list(context.workspace.id);
   const enriched = await Promise.all(
-    missions.map(async (mission) => ({
-      mission,
-      tasks: await context.repositories.taskRuns.listForMission({
-        workspaceId: context.workspace.id,
-        missionId: mission.id
-      }),
-      policyEvents: await context.repositories.policyEvents.listForMission({
-        workspaceId: context.workspace.id,
-        missionId: mission.id
-      })
-    }))
+    missions.map(async (mission) => {
+      const [tasks, policyEvents] = await Promise.all([
+        context.repositories.taskRuns.listForMission({
+          workspaceId: context.workspace.id,
+          missionId: mission.id
+        }),
+        context.repositories.policyEvents.listForMission({
+          workspaceId: context.workspace.id,
+          missionId: mission.id
+        })
+      ]);
+
+      return {
+        mission,
+        tasks,
+        policyEvents
+      };
+    })
   );
 
   return NextResponse.json({ missions: enriched });
@@ -69,6 +76,11 @@ export async function POST(request: NextRequest) {
     const coordinator = input.coordinatorProfileId
       ? profiles.find((profile) => profile.id === input.coordinatorProfileId)
       : profiles.find((profile) => profile.role === "coordinator");
+
+    if (input.coordinatorProfileId && !coordinator) {
+      return NextResponse.json({ error: "Coordinator profile not found." }, { status: 400 });
+    }
+
     const timestamp = new Date().toISOString();
     const mission = agentMissionSchema.parse({
       id: `agent_mission_${crypto.randomUUID()}`,

@@ -64,7 +64,10 @@ export async function enqueueAgentMission({
         age: 7 * 24 * 60 * 60,
         count: 1000
       },
-      removeOnFail: false
+      removeOnFail: {
+        age: 7 * 24 * 60 * 60,
+        count: 1000
+      }
     }
   );
 

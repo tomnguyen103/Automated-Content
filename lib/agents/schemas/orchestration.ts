@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const isoTimestampSchema = z.string().min(1);
+const isoTimestampSchema = z.iso.datetime({ offset: true });
 const jsonRecordSchema = z.record(z.string(), z.unknown());
 
 export const agentProfileRoleSchema = z.enum([

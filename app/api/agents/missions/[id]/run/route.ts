@@ -25,9 +25,17 @@ export async function POST(
     return NextResponse.json({ error: "Authentication is required." }, { status: 401 });
   }
 
-  const { id } = routeParamsSchema.parse(await routeContext.params);
-
   try {
+    const { id } = routeParamsSchema.parse(await routeContext.params);
+    const mission = await serverContext.repositories.missions.get({
+      workspaceId: serverContext.workspace.id,
+      id
+    });
+
+    if (!mission) {
+      return NextResponse.json({ error: "Agent mission not found." }, { status: 404 });
+    }
+
     if (serverContext.workspace.isLocalPreview) {
       const result = await runMissionWorkflow({
         workspaceId: serverContext.workspace.id,
@@ -52,19 +60,29 @@ export async function POST(
       enqueue
     });
   } catch (error) {
-    if (error instanceof QueueConfigurationError) {
-      const result = await runMissionWorkflow({
-        workspaceId: serverContext.workspace.id,
-        missionId: id,
-        repositories: serverContext.repositories,
-        allowMemoryFallback: serverContext.workspace.isLocalPreview
-      });
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: "Invalid mission id.", issues: error.issues }, { status: 400 });
+    }
 
-      return NextResponse.json({
-        execution: "inline",
-        queueFallback: error.message,
-        ...result
-      });
+    if (error instanceof QueueConfigurationError) {
+      try {
+        const { id } = routeParamsSchema.parse(await routeContext.params);
+        const result = await runMissionWorkflow({
+          workspaceId: serverContext.workspace.id,
+          missionId: id,
+          repositories: serverContext.repositories,
+          allowMemoryFallback: serverContext.workspace.isLocalPreview
+        });
+
+        return NextResponse.json({
+          execution: "inline",
+          queueFallback: error.message,
+          ...result
+        });
+      } catch (fallbackError) {
+        console.error("Agent mission queue fallback failed", fallbackError);
+        return NextResponse.json({ error: "Unable to run agent mission." }, { status: 500 });
+      }
     }
 
     console.error("Unexpected agent mission run error", error);

@@ -22,27 +22,41 @@ export default async function AgentsPage() {
     );
   }
 
-  await context.repositories.profiles.seedRoleTemplates({
-    workspaceId: context.workspace.id,
-    createdByUserId: context.user.id
-  });
-
-  const [profiles, missions] = await Promise.all([
+  let [profiles, missions] = await Promise.all([
     context.repositories.profiles.list(context.workspace.id),
     context.repositories.missions.list(context.workspace.id)
   ]);
+
+  if (profiles.length === 0) {
+    await context.repositories.profiles.seedRoleTemplates({
+      workspaceId: context.workspace.id,
+      createdByUserId: context.user.id
+    });
+    [profiles, missions] = await Promise.all([
+      context.repositories.profiles.list(context.workspace.id),
+      context.repositories.missions.list(context.workspace.id)
+    ]);
+  }
+
   const missionRecords = await Promise.all(
-    missions.map(async (mission) => ({
-      mission,
-      tasks: await context.repositories.taskRuns.listForMission({
-        workspaceId: context.workspace.id,
-        missionId: mission.id
-      }),
-      policyEvents: await context.repositories.policyEvents.listForMission({
-        workspaceId: context.workspace.id,
-        missionId: mission.id
-      })
-    }))
+    missions.map(async (mission) => {
+      const [tasks, policyEvents] = await Promise.all([
+        context.repositories.taskRuns.listForMission({
+          workspaceId: context.workspace.id,
+          missionId: mission.id
+        }),
+        context.repositories.policyEvents.listForMission({
+          workspaceId: context.workspace.id,
+          missionId: mission.id
+        })
+      ]);
+
+      return {
+        mission,
+        tasks,
+        policyEvents
+      };
+    })
   );
 
   return (

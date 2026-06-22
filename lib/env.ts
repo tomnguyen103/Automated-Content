@@ -33,6 +33,13 @@ const envSchema = z.object({
   IMAGEKIT_PRIVATE_KEY: optionalString,
   IMAGEKIT_URL_ENDPOINT: optionalUrl,
   PROVIDER_TOKEN_ENCRYPTION_KEY: optionalString,
+  LINKEDIN_CLIENT_ID: optionalString,
+  LINKEDIN_CLIENT_SECRET: optionalString,
+  LINKEDIN_REDIRECT_URI: optionalUrl,
+  LINKEDIN_SCOPES: optionalString,
+  LINKEDIN_API_VERSION: optionalString,
+  LINKEDIN_API_BASE_URL: optionalUrl,
+  LINKEDIN_OAUTH_BASE_URL: optionalUrl,
   REDIS_URL: optionalUrl,
   N8N_WEBHOOK_URL: optionalUrl,
   N8N_WEBHOOK_SECRET: optionalString

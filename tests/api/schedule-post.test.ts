@@ -358,10 +358,10 @@ describe("schedule post API", () => {
     const payload = await response.json();
 
     expect(response.status).toBe(409);
-    expect(payload.error).toContain("scaffold-only");
+    expect(payload.error).toContain("Connect a LinkedIn account");
     expect(payload.providerHealth).toMatchObject({
       provider: "linkedin",
-      status: "configuration_required"
+      status: "account_required"
     });
     expect(createScheduledPost).not.toHaveBeenCalled();
   });

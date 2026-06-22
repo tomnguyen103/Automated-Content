@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, CheckCircle2, CircleAlert, Clock3, Plus, Sparkles } from "lucide-react";
+import { CalendarDays, CheckCircle2, CircleAlert, Clock3, Plus, ServerCog, Sparkles } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
 import { SubNav } from "@/components/layout/sub-nav";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,11 @@ import { StatCard } from "@/components/ui/stat-card";
 import { getWorkspaceAnalyticsSnapshot, type AnalyticsSnapshot } from "@/lib/analytics/metrics";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getQueueRows, getQueueStats, type QueueRow } from "@/lib/scheduler/queue-overview";
+import {
+  getWorkerRuntimeReadiness,
+  type WorkerQueueHealth,
+  type WorkerQueueStatus
+} from "@/lib/scheduler/worker-health";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +22,29 @@ const enqueueTone = {
   "Retry needed": "critical"
 } as const;
 
+const workerStatusTone: Record<WorkerQueueStatus, "community" | "critical" | "neutral" | "premium" | "success"> = {
+  healthy: "success",
+  preview: "community",
+  queue_not_configured: "neutral",
+  redis_unavailable: "critical",
+  worker_not_running: "critical",
+  jobs_failed: "critical",
+  jobs_waiting: "premium"
+};
+
 function formatNumber(value: number) {
   return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) {
+    return "None";
+  }
+
+  return new Date(value).toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
 }
 
 function getPublishHealth(snapshot: AnalyticsSnapshot) {
@@ -68,7 +94,7 @@ function getQueueBadge({
 export default async function DashboardPage() {
   const user = await getCurrentUser();
   const workspace = user ? await resolvePersonalWorkspaceForUser(user) : null;
-  const [snapshot, queueRows] = await Promise.all([
+  const [snapshot, queueRows, workerReadiness] = await Promise.all([
     getWorkspaceAnalyticsSnapshot({
       isLocalPreview: workspace?.isLocalPreview,
       workspaceId: workspace?.id
@@ -76,6 +102,10 @@ export default async function DashboardPage() {
     getQueueRows({
       isLocalPreview: workspace?.isLocalPreview,
       limit: 3,
+      workspaceId: workspace?.id
+    }),
+    getWorkerRuntimeReadiness({
+      isLocalPreview: workspace?.isLocalPreview,
       workspaceId: workspace?.id
     })
   ]);
@@ -216,7 +246,71 @@ export default async function DashboardPage() {
             </div>
           </section>
         </div>
+
+        <section className="mt-6 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white">
+          <div className="flex flex-col gap-3 border-b border-[var(--color-border)] p-5 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] bg-rose-50 text-[var(--color-primary)]">
+                <ServerCog size={19} aria-hidden="true" />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold">Worker runtime</h2>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                  Publishing and agent mission queue readiness for deployable operations.
+                </p>
+              </div>
+            </div>
+            <Badge tone={workerReadiness.summary.blocked > 0 ? "critical" : "success"}>
+              {workerReadiness.summary.healthy} healthy, {workerReadiness.summary.blocked} blocked
+            </Badge>
+          </div>
+          <div className="grid gap-4 p-5 lg:grid-cols-2">
+            {workerReadiness.queues.map((queue) => (
+              <WorkerQueueCard key={queue.kind} queue={queue} />
+            ))}
+          </div>
+        </section>
       </PageShell>
     </>
+  );
+}
+
+function WorkerQueueCard({ queue }: { queue: WorkerQueueHealth }) {
+  return (
+    <article className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold">{queue.queueName}</h3>
+            <Badge tone={workerStatusTone[queue.status]}>{queue.status.replaceAll("_", " ")}</Badge>
+          </div>
+          <p className="mt-1 text-xs font-mono text-[var(--color-text-muted)]">{queue.jobName}</p>
+        </div>
+        <p className="text-right text-xs text-[var(--color-text-muted)]">
+          {queue.workerRunning === null ? "Worker unknown" : queue.workerRunning ? "Worker running" : "Worker missing"}
+        </p>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
+        <Metric label="Waiting" value={queue.counts.waiting + queue.counts.delayed} />
+        <Metric label="Active" value={queue.counts.active} />
+        <Metric label="Failed" value={queue.counts.failed + queue.counts.stalled} />
+      </div>
+      <div className="mt-4 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-2">
+        <p>Last success: {formatDateTime(queue.lastSuccessfulJobAt)}</p>
+        <p>Last failure: {formatDateTime(queue.lastFailedJobAt)}</p>
+      </div>
+      <p className="mt-4 text-sm text-[var(--color-text-muted)]">
+        {queue.blockingReason ?? queue.recommendedAction}
+      </p>
+    </article>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[var(--radius-sm)] bg-white px-3 py-2">
+      <p className="text-xs text-[var(--color-text-muted)]">{label}</p>
+      <p className="mt-1 text-base font-semibold">{formatNumber(value)}</p>
+    </div>
   );
 }

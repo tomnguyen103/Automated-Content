@@ -25,6 +25,10 @@ export type TokenVaultReadInput = {
   workspaceId: string;
 };
 
+export type TokenVaultUpdateInput = TokenVaultStoreInput & {
+  tokenRef: string;
+};
+
 type TokenVaultPayload = {
   accessToken?: string;
   refreshToken?: string;
@@ -159,6 +163,58 @@ export async function storeProviderTokens(
 
   return {
     tokenRef,
+    expiresAt: input.tokens?.expiresAt,
+    scopes: payload.scopes
+  };
+}
+
+export async function updateProviderTokens(
+  input: TokenVaultUpdateInput,
+  db?: DatabaseClient
+): Promise<TokenVaultStoreResult> {
+  const payload = toPayload(input.tokens);
+
+  if (!isDatabaseConfigured) {
+    const existing = memoryTokenVault.get(input.tokenRef);
+
+    if (!existing || existing.workspaceId !== input.workspaceId) {
+      throw new Error("Token vault entry was not found.");
+    }
+
+    memoryTokenVault.set(input.tokenRef, {
+      workspaceId: input.workspaceId,
+      provider: input.provider,
+      providerAccountId: input.providerAccountId,
+      payload,
+      expiresAt: input.tokens?.expiresAt
+    });
+
+    return {
+      tokenRef: input.tokenRef,
+      expiresAt: input.tokens?.expiresAt,
+      scopes: payload.scopes
+    };
+  }
+
+  const now = new Date();
+  const database = db ?? getDb();
+  const [updated] = await database
+    .update(tokenVaultEntries)
+    .set({
+      encryptedPayload: encryptPayload(payload),
+      keyVersion: getKeyVersion(),
+      expiresAt: input.tokens?.expiresAt,
+      updatedAt: now
+    })
+    .where(and(eq(tokenVaultEntries.id, input.tokenRef), eq(tokenVaultEntries.workspaceId, input.workspaceId)))
+    .returning({ id: tokenVaultEntries.id });
+
+  if (!updated) {
+    throw new Error("Token vault entry was not found.");
+  }
+
+  return {
+    tokenRef: input.tokenRef,
     expiresAt: input.tokens?.expiresAt,
     scopes: payload.scopes
   };

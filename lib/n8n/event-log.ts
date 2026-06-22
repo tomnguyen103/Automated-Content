@@ -1,9 +1,10 @@
 import "server-only";
 
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { n8nEvents } from "@/db/schema";
 import { isDatabaseConfigured } from "@/lib/env";
+import { logger } from "@/lib/observability/logger";
 
 export type N8nEventLogInput = {
   id: string;
@@ -26,6 +27,7 @@ export type N8nEventLogEntry = N8nEventLogInput & {
 };
 
 const memoryEvents = new Map<string, N8nEventLogInput & { createdAt: Date; updatedAt: Date }>();
+let n8nAuditQueryFailureLogged = false;
 
 function toEventLogEntry(input: N8nEventLogEntry): N8nEventLogEntry {
   return {
@@ -137,9 +139,17 @@ export async function listN8nEventsForWorkspace({
       .select()
       .from(n8nEvents)
       .where(eq(n8nEvents.workspaceId, workspaceId))
-      .orderBy(desc(n8nEvents.createdAt))
+      .orderBy(desc(sql`coalesce(${n8nEvents.occurredAt}, ${n8nEvents.createdAt})`))
       .limit(limit);
-  } catch {
+  } catch (error) {
+    if (!n8nAuditQueryFailureLogged) {
+      n8nAuditQueryFailureLogged = true;
+      logger.warn("n8n event audit query failed", {
+        error: error instanceof Error ? error.message : String(error),
+        limit,
+        workspaceId
+      });
+    }
     return [];
   }
 

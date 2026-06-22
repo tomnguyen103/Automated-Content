@@ -103,7 +103,7 @@ Acceptance criteria:
 - A mission simulation records planned actions, policy events, estimated usage, and suppressed side effects.
 - Simulation never creates task runs, scheduled jobs, publish enqueues, reply sends, provider calls, or usage ledger writes.
 - Simulation output is visible in Agents console with per-action status and policy message.
-- Simulation errors are persisted and shown without crashing the console.
+- Errors are persisted and shown without crashing the console.
 
 Verification:
 
@@ -280,7 +280,7 @@ Implementation notes:
 Acceptance criteria:
 
 - Connections page shows provider readiness and configuration gaps.
-- Scheduling/publishing blocks when provider is not capable or account is not ready.
+- Scheduling/publishing blocks when provider is incapable or account is not ready.
 - Simulation shows provider readiness warnings without executing provider calls.
 
 Verification:

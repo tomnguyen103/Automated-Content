@@ -18,6 +18,7 @@ import {
 import {
   createPolicyEventFromDecision,
   evaluateAgentPolicy,
+  isExternalAction,
   type AgentPolicyDecision
 } from "@/lib/agents/orchestration/policy";
 import {
@@ -279,12 +280,8 @@ function plannedActionStatus(decision: AgentPolicyDecision): AgentSimulationPlan
   return decision.action === "require_review" ? "would_require_review" : "blocked";
 }
 
-function isExternalPlannedAction(task: MissionPlanTask) {
-  return task.action === "content.schedule" || task.action === "content.publish" || task.action === "reply.send";
-}
-
 function providerReadinessWarningsForTask(mission: AgentMission, task: MissionPlanTask) {
-  if (!isExternalPlannedAction(task)) {
+  if (!isExternalAction(task.action)) {
     return [];
   }
 

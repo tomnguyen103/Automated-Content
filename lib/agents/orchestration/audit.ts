@@ -4,6 +4,7 @@ import {
   agentN8nAuditEventSchema,
   type AgentN8nAuditEvent
 } from "@/lib/agents/schemas/orchestration";
+import { logger } from "@/lib/observability/logger";
 import {
   AGENT_MISSION_HISTORY_LIMIT,
   AGENT_POLICY_EVENT_HISTORY_LIMIT,
@@ -31,8 +32,8 @@ function toOptionalIso(value: Date | undefined) {
   return value ? value.toISOString() : undefined;
 }
 
-function serializeN8nEvent(event: Awaited<ReturnType<typeof listN8nEventsForWorkspace>>[number]): AgentN8nAuditEvent {
-  return agentN8nAuditEventSchema.parse({
+function serializeN8nEvent(event: Awaited<ReturnType<typeof listN8nEventsForWorkspace>>[number]): AgentN8nAuditEvent | null {
+  const result = agentN8nAuditEventSchema.safeParse({
     id: event.id,
     direction: event.direction,
     eventType: event.eventType,
@@ -45,6 +46,16 @@ function serializeN8nEvent(event: Awaited<ReturnType<typeof listN8nEventsForWork
     createdAt: event.createdAt.toISOString(),
     updatedAt: event.updatedAt.toISOString()
   });
+
+  if (!result.success) {
+    logger.warn("Skipping invalid n8n audit event", {
+      eventId: event.id,
+      issues: result.error.issues
+    });
+    return null;
+  }
+
+  return result.data;
 }
 
 export async function listAgentMissionAuditRecords({
@@ -73,8 +84,14 @@ export async function listAgentMissionAuditRecords({
       continue;
     }
 
+    const serialized = serializeN8nEvent(event);
+
+    if (!serialized) {
+      continue;
+    }
+
     const events = n8nEventsByMission.get(missionId) ?? [];
-    events.push(serializeN8nEvent(event));
+    events.push(serialized);
     n8nEventsByMission.set(missionId, events);
   }
 

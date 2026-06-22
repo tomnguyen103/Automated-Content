@@ -703,6 +703,7 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
             <div className="grid gap-3">
               {missions.map((record) => {
                 const expanded = expandedMissionId === record.mission.id;
+                const detailsId = `mission-details-${record.mission.id}`;
                 const latestSimulation = newestSimulation(record);
 
                 return (
@@ -752,6 +753,7 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
                       <Button
                         size="sm"
                         variant="ghost"
+                        aria-controls={detailsId}
                         aria-expanded={expanded}
                         onClick={() => setExpandedMissionId(expanded ? null : record.mission.id)}
                       >
@@ -779,7 +781,7 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
                       ))}
                     </div>
                   ) : null}
-                  {expanded ? <MissionAuditDetail record={record} /> : null}
+                  {expanded ? <MissionAuditDetail id={detailsId} record={record} /> : null}
                 </article>
                 );
               })}
@@ -917,7 +919,7 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
   );
 }
 
-function MissionAuditDetail({ record }: { record: MissionRecord }) {
+function MissionAuditDetail({ id, record }: { id: string; record: MissionRecord }) {
   const latestSimulation = newestSimulation(record);
   const summary = latestSimulation ? simulationSummary(latestSimulation) : null;
   const failedTask = record.tasks.find((task) => task.status === "failed");
@@ -955,7 +957,7 @@ function MissionAuditDetail({ record }: { record: MissionRecord }) {
   ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 10);
 
   return (
-    <div className="mt-4 grid gap-4 border-t border-[var(--color-border)] pt-4">
+    <div id={id} className="mt-4 grid gap-4 border-t border-[var(--color-border)] pt-4">
       {record.mission.error || failedTask ? (
         <section className="rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-4">
           <p className="text-sm font-semibold text-red-800">Needs attention</p>

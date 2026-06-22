@@ -128,7 +128,7 @@ function findBlockedPhrase(policy: AgentAutonomyPolicy, contentText: string | nu
   );
 }
 
-function isExternalAction(action: AgentActionType) {
+export function isExternalAction(action: AgentActionType) {
   return action === "content.schedule" || action === "content.publish" || action === "reply.send";
 }
 

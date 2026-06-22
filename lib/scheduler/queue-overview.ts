@@ -4,6 +4,11 @@ import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { connectedAccounts, platformVariants, scheduledJobs } from "@/db/schema";
 import { isDatabaseConfigured } from "@/lib/env";
+import {
+  classifyPublishFailure,
+  type PublishFailureCategory,
+  type PublishRecoveryAction
+} from "@/lib/scheduler/publish-recovery";
 
 export type QueueRow = {
   id: string;
@@ -12,6 +17,11 @@ export type QueueRow = {
   scheduledFor: string;
   status: "Queued" | "Scheduled" | "Publishing" | "Published" | "Failed" | "Canceled";
   enqueue: "Queued" | "Pending" | "Retry needed";
+  recovery?: {
+    category: PublishFailureCategory;
+    recommendation: string;
+    actions: PublishRecoveryAction[];
+  };
 };
 
 const previewQueueRows: QueueRow[] = [
@@ -29,7 +39,12 @@ const previewQueueRows: QueueRow[] = [
     provider: "X",
     scheduledFor: "Today 12:30 PM",
     status: "Scheduled",
-    enqueue: "Retry needed"
+    enqueue: "Retry needed",
+    recovery: {
+      category: "queue_enqueue",
+      recommendation: "Queue enqueue failed after the durable schedule row was created. Retry enqueue or reschedule after the queue is healthy.",
+      actions: ["retry", "reschedule"]
+    }
   },
   {
     id: "queue-003",
@@ -94,7 +109,8 @@ export async function getQueueRows({
       fallbackProvider: scheduledJobs.provider,
       scheduledFor: scheduledJobs.scheduledFor,
       status: scheduledJobs.status,
-      enqueueStatus: scheduledJobs.enqueueStatus
+      enqueueStatus: scheduledJobs.enqueueStatus,
+      enqueueError: scheduledJobs.enqueueError
     })
     .from(scheduledJobs)
     .innerJoin(
@@ -116,14 +132,31 @@ export async function getQueueRows({
     .orderBy(asc(scheduledJobs.scheduledFor))
     .limit(limit);
 
-  return rows.map((row) => ({
-    id: row.id,
-    title: row.title,
-    provider: row.provider ?? toTitleCase(row.fallbackProvider),
-    scheduledFor: formatScheduledFor(row.scheduledFor),
-    status: toTitleCase(row.status),
-    enqueue: toEnqueueLabel(row.enqueueStatus)
-  }));
+  return rows.map((row) => {
+    const recovery =
+      row.enqueueStatus === "failed" || row.status === "failed"
+        ? classifyPublishFailure({
+            errorCode: row.enqueueStatus === "failed" ? "queue_enqueue" : undefined,
+            errorMessage: row.enqueueError
+          })
+        : null;
+
+    return {
+      id: row.id,
+      title: row.title,
+      provider: row.provider ?? toTitleCase(row.fallbackProvider),
+      scheduledFor: formatScheduledFor(row.scheduledFor),
+      status: toTitleCase(row.status),
+      enqueue: toEnqueueLabel(row.enqueueStatus),
+      recovery: recovery
+        ? {
+            category: recovery.category,
+            recommendation: recovery.recommendation,
+            actions: recovery.actions
+          }
+        : undefined
+    };
+  });
 }
 
 export function getQueueStats(queueRows: QueueRow[]) {

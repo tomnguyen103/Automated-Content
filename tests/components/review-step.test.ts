@@ -92,6 +92,25 @@ function createWorkflow(): ContentWorkflowState {
   });
 }
 
+function createApprovedWorkflow(): ContentWorkflowState {
+  const approvedAt = "2026-06-19T12:05:00.000Z";
+
+  return markContentWorkflowNode(createWorkflow(), "save", () => new Date(approvedAt), {
+    status: "succeeded",
+    approvalStatus: "approved",
+    savedDraft: {
+      draftId: "draft_1",
+      status: "saved",
+      savedAt: approvedAt
+    },
+    reviewDecision: {
+      approvedAt,
+      requestedAt: "2026-06-19T12:01:00.000Z"
+    },
+    completedAt: approvedAt
+  });
+}
+
 describe("ReviewStep", () => {
   it("renders approval actions for a review checkpoint", () => {
     const html = renderToStaticMarkup(
@@ -107,6 +126,20 @@ describe("ReviewStep", () => {
     expect(html).toContain("Changes");
     expect(html).toContain("Pause");
     expect(html).toContain("Schedule suggestions");
+    expect(html).not.toContain("Schedule approved variants");
+  });
+
+  it("renders approved-variant scheduling only after approval succeeds", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ReviewStep, {
+        workflow: createApprovedWorkflow(),
+        onDecision: () => undefined,
+        onScheduleApprovedVariants: () => []
+      })
+    );
+
+    expect(html).toContain("Schedule approved variants");
+    expect(html).toContain("Confirm schedule creation");
   });
 
   it("renders workflow errors when a checkpoint fails before content exists", () => {

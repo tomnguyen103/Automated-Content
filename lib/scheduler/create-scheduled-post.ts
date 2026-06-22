@@ -6,6 +6,10 @@ import { scheduledJobs, type ScheduledJob } from "@/db/schema";
 import { isDatabaseConfigured } from "@/lib/env";
 import type { ProviderKey } from "@/lib/providers/types";
 import { enqueueScheduledPost, type EnqueueScheduledPostResult } from "@/lib/scheduler/enqueue";
+import {
+  classifyPublishFailure,
+  type PublishFailureRecovery
+} from "@/lib/scheduler/publish-recovery";
 
 export type CreateScheduledPostInput = {
   workspaceId: string;
@@ -41,6 +45,7 @@ export type CreateScheduledPostResult = {
     | {
         status: "failed";
         error: string;
+        recovery: PublishFailureRecovery;
       };
 };
 
@@ -226,6 +231,10 @@ export async function createScheduledPost({
     };
   } catch (error) {
     const errorMessage = getErrorMessage(error);
+    const recovery = classifyPublishFailure({
+      errorCode: "queue_enqueue",
+      errorMessage
+    });
     const updatedJob = await repository.markEnqueueFailed({
       workspaceId: scheduledJob.workspaceId,
       scheduledJobId: scheduledJob.id,
@@ -236,7 +245,8 @@ export async function createScheduledPost({
       scheduledJob: updatedJob,
       enqueue: {
         status: "failed",
-        error: errorMessage
+        error: errorMessage,
+        recovery
       }
     };
   }

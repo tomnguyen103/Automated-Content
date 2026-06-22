@@ -111,6 +111,7 @@ function createRepository({
   variant?: PlatformVariantRow;
 }) {
   const startAttempt = vi.fn(async () => createPublishAttempt());
+  const markPreflightFailed = vi.fn();
   const repository: PublishRepository = {
     loadScheduledPost: vi.fn(async () => ({
       job,
@@ -119,10 +120,11 @@ function createRepository({
     })),
     startAttempt,
     markSucceeded: vi.fn(),
-    markFailed: vi.fn()
+    markFailed: vi.fn(),
+    markPreflightFailed
   };
 
-  return { repository, startAttempt };
+  return { markPreflightFailed, repository, startAttempt };
 }
 
 describe("publishScheduledPostJob", () => {
@@ -148,7 +150,7 @@ describe("publishScheduledPostJob", () => {
   });
 
   it("does not publish when the connected account cannot be resolved in the workspace", async () => {
-    const { repository, startAttempt } = createRepository({
+    const { markPreflightFailed, repository, startAttempt } = createRepository({
       job: createScheduledJob({
         connectedAccountId
       }),
@@ -166,6 +168,14 @@ describe("publishScheduledPostJob", () => {
       })
     ).rejects.toThrow("was not found for this workspace");
     expect(startAttempt).not.toHaveBeenCalled();
+    expect(markPreflightFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorCode: "account_not_ready",
+        recovery: expect.objectContaining({
+          category: "provider_config"
+        })
+      })
+    );
   });
 
   it("does not publish when queued provider data diverges from the persisted job", async () => {
@@ -189,7 +199,7 @@ describe("publishScheduledPostJob", () => {
   });
 
   it("does not publish through disconnected accounts", async () => {
-    const { repository, startAttempt } = createRepository({
+    const { markPreflightFailed, repository, startAttempt } = createRepository({
       job: createScheduledJob({
         connectedAccountId
       }),
@@ -209,6 +219,14 @@ describe("publishScheduledPostJob", () => {
       })
     ).rejects.toThrow("is not ready for publishing");
     expect(startAttempt).not.toHaveBeenCalled();
+    expect(markPreflightFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorCode: "account_not_ready",
+        recovery: expect.objectContaining({
+          category: "provider_config"
+        })
+      })
+    );
   });
 
   it("does not publish platform variants that failed policy review", async () => {

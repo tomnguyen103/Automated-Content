@@ -5,6 +5,7 @@ import type {
   ProviderKey
 } from "@/lib/providers/types";
 import { providerCapabilities } from "@/lib/providers/types";
+import { evaluateProviderHealth } from "@/lib/providers/health";
 
 export const providerCapabilityLabels: Record<ProviderCapability, string> = {
   text_post: "Text post",
@@ -51,6 +52,11 @@ export function buildProviderCapabilityMatrix(adapters: ProviderAdapter[]) {
     displayName: adapter.displayName,
     group: adapter.group,
     implementationStatus: adapter.implementationStatus,
+    health: evaluateProviderHealth({
+      adapter,
+      allowMock: true,
+      requiredCapability: "scheduled_publish"
+    }),
     capabilities: summarizeCapabilities(adapter.capabilities),
     supportedCount: providerCapabilities.filter((capability) => adapter.capabilities[capability].supported).length,
     liveSupportedCount:

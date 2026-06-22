@@ -296,6 +296,73 @@ describe("schedule post API", () => {
     expect(createScheduledPost).not.toHaveBeenCalled();
   });
 
+  it("does not schedule through a provider that is not ready for live scheduling", async () => {
+    vi.resetModules();
+
+    const limit = vi.fn().mockResolvedValueOnce([{ id: "variant_linkedin", platform: "linkedin", policyStatus: "pass" }]);
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit
+          }))
+        }))
+      }))
+    };
+    const createScheduledPost = vi.fn();
+
+    vi.doMock("@/db", () => ({
+      getDb: () => db
+    }));
+    vi.doMock("@/lib/auth/current-user", () => ({
+      getCurrentUser: vi.fn(async () => ({
+        id: "user_1",
+        email: "user@example.com",
+        name: "User One",
+        imageUrl: null,
+        initials: "UO",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/env", () => ({
+      isDatabaseConfigured: true
+    }));
+    vi.doMock("@/lib/scheduler/create-scheduled-post", () => ({
+      createScheduledPost,
+      createSchedulerRepository: vi.fn()
+    }));
+    vi.doMock("@/lib/workspaces/personal-workspace", () => ({
+      resolvePersonalWorkspaceForUser: vi.fn(async () => ({
+        id: "00000000-0000-0000-0000-000000000001",
+        role: "owner",
+        isLocalPreview: false
+      }))
+    }));
+
+    const { POST } = await import("@/app/api/posts/[id]/schedule/route");
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/posts/variant_linkedin/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "linkedin",
+          scheduledFor: futureIsoDate()
+        })
+      }),
+      {
+        params: Promise.resolve({ id: "variant_linkedin" })
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.error).toContain("scaffold-only");
+    expect(payload.providerHealth).toMatchObject({
+      provider: "linkedin",
+      status: "configuration_required"
+    });
+    expect(createScheduledPost).not.toHaveBeenCalled();
+  });
+
   it("atomically consumes scheduled post usage for workspace-backed users", async () => {
     vi.resetModules();
     vi.stubEnv("AUTH_LOCAL_PREVIEW", "");

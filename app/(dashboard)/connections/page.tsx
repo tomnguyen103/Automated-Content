@@ -11,15 +11,27 @@ const capabilityTone = {
 } as const;
 
 function readinessLabel(provider: ReturnType<typeof getProviderCapabilityMatrix>[number]) {
-  if (provider.implementationStatus === "mock") {
+  if (provider.health.status === "ready" && provider.implementationStatus === "mock") {
     return "Preview ready";
   }
 
-  if (provider.implementationStatus === "stub") {
-    return "Scaffold only";
+  if (provider.health.status === "ready") {
+    return "Ready";
   }
 
-  return "Live";
+  if (provider.health.status === "configuration_required") {
+    return "Configure";
+  }
+
+  return "Blocked";
+}
+
+function readinessTone(provider: ReturnType<typeof getProviderCapabilityMatrix>[number]) {
+  if (provider.health.status === "ready") {
+    return provider.health.warnings.length > 0 ? "primary" : "success";
+  }
+
+  return provider.health.status === "configuration_required" ? "premium" : "neutral";
 }
 
 function capabilityLabel(
@@ -113,20 +125,39 @@ function ProviderSection({
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-base font-semibold">{provider.displayName}</h3>
-                  <Badge tone={provider.implementationStatus === "mock" ? "success" : "neutral"}>
+                  <Badge tone={readinessTone(provider)}>
                     {readinessLabel(provider)}
                   </Badge>
                 </div>
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                  {provider.implementationStatus === "stub"
-                    ? `${provider.supportedCount} planned capabilities. 0 live capabilities in this adapter.`
-                    : `${provider.liveSupportedCount} of ${provider.totalCount} live capabilities supported.`}
+                  {provider.health.blockingReason ??
+                    (provider.health.warnings[0] ??
+                      `${provider.liveSupportedCount} of ${provider.totalCount} live capabilities supported.`)}
+                </p>
+                <p className="mt-2 font-mono text-xs text-[var(--color-text-muted)]">
+                  Checked {new Date(provider.health.lastChecked).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
                 </p>
               </div>
               <Button variant="outline" size="sm" disabled title="Provider connection actions are not available yet">
                 <ExternalLink size={15} aria-hidden="true" />
                 {provider.key === "mock" ? "Use mock" : "Configure"}
               </Button>
+            </div>
+            <div className="grid gap-3 border-b border-[var(--color-border)] px-5 py-4 text-sm sm:grid-cols-3">
+              <div>
+                <p className="text-[var(--color-text-muted)]">Configuration</p>
+                <p className="mt-1 font-medium">{provider.health.configured ? "Configured" : "Required"}</p>
+              </div>
+              <div>
+                <p className="text-[var(--color-text-muted)]">Required scopes</p>
+                <p className="mt-1 font-medium">
+                  {provider.health.requiredScopes.length > 0 ? provider.health.requiredScopes.join(", ") : "None"}
+                </p>
+              </div>
+              <div>
+                <p className="text-[var(--color-text-muted)]">Account</p>
+                <p className="mt-1 font-medium">{provider.health.connectedAccountId ?? "Not selected"}</p>
+              </div>
             </div>
             <div className="grid gap-2 p-4 sm:grid-cols-2">
               {provider.capabilities.map((capability) => (

@@ -27,6 +27,13 @@ import {
 } from "@/lib/agents/orchestration/repository";
 import type { MissionTaskExecutor } from "@/lib/agents/orchestration/runner";
 import { emitAgentOrchestrationEvent } from "@/lib/agents/orchestration/events";
+import type { SocialPlatform } from "@/lib/agents/schemas/platform-variant";
+import { evaluateProviderHealth } from "@/lib/providers/health";
+import {
+  defaultProviderByPlatform,
+  isProviderCompatibleWithPlatform
+} from "@/lib/providers/platform-compatibility";
+import { getProviderAdapter, isProviderKey } from "@/lib/providers/registry";
 
 export type SimulateAgentMissionOptions = {
   workspaceId: string;
@@ -94,6 +101,16 @@ function readStringMap(input: Record<string, unknown>, key: string) {
       .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0)
       .map(([mapKey, mapValue]) => [mapKey, mapValue.trim()])
   );
+}
+
+function readBoolean(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+
+  return typeof value === "boolean" ? value : false;
+}
+
+function readPlatforms(input: Record<string, unknown>) {
+  return readStringArray(input, "platforms").filter((platform): platform is SocialPlatform => platform in defaultProviderByPlatform);
 }
 
 function estimatePlatformActionCount(mission: AgentMission) {
@@ -288,15 +305,20 @@ function providerReadinessWarningsForTask(mission: AgentMission, task: MissionPl
   const warnings: string[] = [];
   const provider = readString(mission.inputs, "provider");
   const providerByPlatform = readStringMap(mission.inputs, "providerByPlatform");
-  const platforms = readStringArray(mission.inputs, "platforms");
+  const platforms = readPlatforms(mission.inputs);
   const connectedAccountId = readString(mission.inputs, "connectedAccountId");
+  const localPreview = readBoolean(mission.inputs, "localPreview");
+  const requiredCapability = task.action === "reply.send" ? "comment_reply" : "scheduled_publish";
   const providers = [
     ...(provider ? [provider] : []),
-    ...Object.values(providerByPlatform)
+    ...Object.values(providerByPlatform),
+    ...(provider || Object.keys(providerByPlatform).length > 0
+      ? []
+      : platforms.map((platform) => defaultProviderByPlatform[platform]))
   ];
   const uniqueProviders = [...new Set(providers)];
 
-  if (!provider && uniqueProviders.length === 0) {
+  if (!provider && Object.keys(providerByPlatform).length === 0) {
     warnings.push("No provider is selected for this external action.");
   }
 
@@ -304,6 +326,19 @@ function providerReadinessWarningsForTask(mission: AgentMission, task: MissionPl
     for (const platform of platforms) {
       if (!providerByPlatform[platform]) {
         warnings.push(`No provider mapping is configured for ${platform}.`);
+        continue;
+      }
+
+      const mappedProvider = providerByPlatform[platform];
+      if (
+        isProviderKey(mappedProvider) &&
+        !isProviderCompatibleWithPlatform({
+          allowMock: localPreview,
+          platform,
+          provider: mappedProvider
+        })
+      ) {
+        warnings.push(`Provider ${mappedProvider} cannot publish ${platform} variants.`);
       }
     }
   }
@@ -312,12 +347,24 @@ function providerReadinessWarningsForTask(mission: AgentMission, task: MissionPl
     warnings.push("No connected account is selected for readiness validation.");
   }
 
-  if (uniqueProviders.includes("mock")) {
-    warnings.push("Mock provider readiness is local-preview only.");
-  }
+  for (const providerKey of uniqueProviders) {
+    if (!isProviderKey(providerKey)) {
+      warnings.push(`Provider ${providerKey} is not registered.`);
+      continue;
+    }
 
-  if (uniqueProviders.some((candidate) => candidate !== "mock")) {
-    warnings.push("Provider health has not been checked by a live readiness sentinel yet.");
+    const health = evaluateProviderHealth({
+      adapter: getProviderAdapter(providerKey),
+      allowMock: localPreview,
+      connectedAccountId: connectedAccountId ?? null,
+      requiredCapability
+    });
+
+    if (health.blockingReason) {
+      warnings.push(health.blockingReason);
+    }
+
+    warnings.push(...health.warnings);
   }
 
   return [...new Set(warnings)];

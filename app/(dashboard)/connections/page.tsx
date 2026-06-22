@@ -1,16 +1,23 @@
-import { CheckCircle2, CircleAlert, ExternalLink, RadioTower, ShieldCheck } from "lucide-react";
+import { CheckCircle2, CircleAlert, RadioTower, ShieldCheck } from "lucide-react";
+import { ProviderActions } from "@/components/connections/provider-actions";
 import { PageShell } from "@/components/layout/page-shell";
 import { SubNav } from "@/components/layout/sub-nav";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { getProviderCapabilityMatrix } from "@/lib/providers/registry";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import {
+  getProviderConnectionStates,
+  type ProviderConnectionState
+} from "@/lib/providers/connections";
+import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
 
 const capabilityTone = {
   true: "success",
   false: "neutral"
 } as const;
 
-function readinessLabel(provider: ReturnType<typeof getProviderCapabilityMatrix>[number]) {
+export const dynamic = "force-dynamic";
+
+function readinessLabel(provider: ProviderConnectionState) {
   if (provider.health.status === "ready" && provider.implementationStatus === "mock") {
     return "Preview ready";
   }
@@ -26,7 +33,7 @@ function readinessLabel(provider: ReturnType<typeof getProviderCapabilityMatrix>
   return "Blocked";
 }
 
-function readinessTone(provider: ReturnType<typeof getProviderCapabilityMatrix>[number]) {
+function readinessTone(provider: ProviderConnectionState) {
   if (provider.health.status === "ready") {
     return provider.health.warnings.length > 0 ? "primary" : "success";
   }
@@ -35,42 +42,55 @@ function readinessTone(provider: ReturnType<typeof getProviderCapabilityMatrix>[
 }
 
 function capabilityLabel(
-  provider: ReturnType<typeof getProviderCapabilityMatrix>[number],
-  supported: boolean
+  provider: ProviderConnectionState,
+  capability: ProviderConnectionState["capabilities"][number]
 ) {
-  if (!supported) {
+  if (!capability.supported) {
     return "No";
   }
 
-  return provider.implementationStatus === "stub" ? "Planned" : "Yes";
+  if (provider.implementationStatus === "stub") {
+    return "Planned";
+  }
+
+  return capability.accountSupported ? "Ready" : "Supported";
 }
 
-export default function ConnectionsPage() {
-  const providers = getProviderCapabilityMatrix();
+export default async function ConnectionsPage() {
+  const user = await getCurrentUser();
+  const workspace = user ? await resolvePersonalWorkspaceForUser(user) : null;
+  const providers = await getProviderConnectionStates({
+    workspaceId: workspace?.id,
+    isLocalPreview: workspace?.isLocalPreview
+  });
   const socialProviders = providers.filter((provider) => provider.group === "social");
   const messagingProviders = providers.filter((provider) => provider.group === "messaging");
+  const readyProviders = providers.filter((provider) => provider.health.status === "ready").length;
+  const blockedProviders = providers.filter((provider) => provider.health.status !== "ready").length;
 
   return (
     <>
       <SubNav
         items={[
-          { label: "Social", active: true },
-          { label: "Messaging" },
-          { label: "Webhooks" },
-          { label: "Health" }
+          { label: "Social", href: "#social", active: true },
+          { label: "Messaging", href: "#messaging" },
+          { label: "Health", href: "#health" }
         ]}
       />
       <PageShell
         title="Connections"
         description="Review provider readiness, publishing support, reply coverage, and metric sync before a post enters the queue."
         actions={
-          <Button variant="outline" disabled title="Health checks are not available yet">
+          <a
+            href="/api/connections/mock/connect"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--color-text)] transition hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface)] active:translate-y-px"
+          >
             <RadioTower size={16} aria-hidden="true" />
-            Check health
-          </Button>
+            Connect mock
+          </a>
         }
       >
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div id="health" className="grid scroll-mt-16 gap-4 lg:grid-cols-3">
           <section className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-5">
             <div className="flex items-center gap-3">
               <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] bg-rose-50 text-[var(--color-primary)]">
@@ -87,30 +107,34 @@ export default function ConnectionsPage() {
             <p className="mt-2 text-3xl font-semibold tracking-tight">{providers.length}</p>
           </section>
           <section className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-5">
-            <p className="text-sm text-[var(--color-text-muted)]">Mock adapter</p>
+            <p className="text-sm text-[var(--color-text-muted)]">Readiness</p>
             <div className="mt-2 flex items-center gap-2">
               <CheckCircle2 size={18} className="text-[var(--color-success)]" aria-hidden="true" />
-              <p className="text-base font-semibold">Ready for local publishing tests</p>
+              <p className="text-base font-semibold">
+                {readyProviders} ready, {blockedProviders} blocked
+              </p>
             </div>
           </section>
         </div>
 
-        <ProviderSection title="Social providers" providers={socialProviders} />
-        <ProviderSection title="Messaging providers" providers={messagingProviders} />
+        <ProviderSection id="social" title="Social providers" providers={socialProviders} />
+        <ProviderSection id="messaging" title="Messaging providers" providers={messagingProviders} />
       </PageShell>
     </>
   );
 }
 
 function ProviderSection({
+  id,
   title,
   providers
 }: {
+  id: string;
   title: string;
-  providers: ReturnType<typeof getProviderCapabilityMatrix>;
+  providers: ProviderConnectionState[];
 }) {
   return (
-    <section className="mt-6">
+    <section id={id} className="mt-6 scroll-mt-16">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold">{title}</h2>
         <Badge tone="neutral">{providers.length} adapters</Badge>
@@ -132,21 +156,24 @@ function ProviderSection({
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                   {provider.health.blockingReason ??
                     (provider.health.warnings[0] ??
-                      `${provider.liveSupportedCount} of ${provider.totalCount} live capabilities supported.`)}
+                      `${provider.capabilities.filter((capability) => capability.supported).length} of ${provider.capabilities.length} capabilities supported.`)}
                 </p>
                 <p className="mt-2 font-mono text-xs text-[var(--color-text-muted)]">
                   Checked {new Date(provider.health.lastChecked).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
                 </p>
               </div>
-              <Button variant="outline" size="sm" disabled title="Provider connection actions are not available yet">
-                <ExternalLink size={15} aria-hidden="true" />
-                {provider.key === "mock" ? "Use mock" : "Configure"}
-              </Button>
+              <ProviderActions
+                accountId={provider.account?.id}
+                connect={provider.actions.connect}
+                disconnect={provider.actions.disconnect}
+                providerKey={provider.key}
+                refreshHealth={provider.actions.refreshHealth}
+              />
             </div>
             <div className="grid gap-3 border-b border-[var(--color-border)] px-5 py-4 text-sm sm:grid-cols-3">
               <div>
                 <p className="text-[var(--color-text-muted)]">Configuration</p>
-                <p className="mt-1 font-medium">{provider.health.configured ? "Configured" : "Required"}</p>
+                <p className="mt-1 font-medium">{provider.configured ? "Configured" : "Required"}</p>
               </div>
               <div>
                 <p className="text-[var(--color-text-muted)]">Required scopes</p>
@@ -156,9 +183,36 @@ function ProviderSection({
               </div>
               <div>
                 <p className="text-[var(--color-text-muted)]">Account</p>
-                <p className="mt-1 font-medium">{provider.health.connectedAccountId ?? "Not selected"}</p>
+                <p className="mt-1 font-medium">{provider.account?.displayName ?? "Not selected"}</p>
               </div>
             </div>
+            {provider.account ? (
+              <div className="grid gap-3 border-b border-[var(--color-border)] px-5 py-4 text-sm sm:grid-cols-4">
+                <div>
+                  <p className="text-[var(--color-text-muted)]">Provider ID</p>
+                  <p className="mt-1 truncate font-mono text-xs">{provider.account.providerAccountId}</p>
+                </div>
+                <div>
+                  <p className="text-[var(--color-text-muted)]">Status</p>
+                  <p className="mt-1 font-medium">{provider.account.status}</p>
+                </div>
+                <div>
+                  <p className="text-[var(--color-text-muted)]">Scopes</p>
+                  <p className="mt-1 truncate">{provider.account.scopes.join(", ") || "None"}</p>
+                </div>
+                <div>
+                  <p className="text-[var(--color-text-muted)]">Last validated</p>
+                  <p className="mt-1">
+                    {provider.account.lastValidatedAt
+                      ? new Date(provider.account.lastValidatedAt).toLocaleString([], {
+                          dateStyle: "medium",
+                          timeStyle: "short"
+                        })
+                      : "Not checked"}
+                  </p>
+                </div>
+              </div>
+            ) : null}
             <div className="grid gap-2 p-4 sm:grid-cols-2">
               {provider.capabilities.map((capability) => (
                 <div
@@ -168,7 +222,7 @@ function ProviderSection({
                 >
                   <span className="text-sm font-medium">{capability.label}</span>
                   <Badge tone={capabilityTone[String(capability.supported) as "true" | "false"]}>
-                    {capabilityLabel(provider, capability.supported)}
+                    {capabilityLabel(provider, capability)}
                   </Badge>
                 </div>
               ))}

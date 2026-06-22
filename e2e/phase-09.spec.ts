@@ -70,3 +70,19 @@ test("agents control center creates, runs, pauses, and resumes missions", async 
     fullPage: true
   });
 });
+
+test("connections control center shows provider readiness and actions", async ({ page }, testInfo) => {
+  await page.goto("/connections");
+
+  await expect(page.getByRole("heading", { name: "Connections" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Social providers" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "LinkedIn" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Connect mock" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Refresh health" }).first()).toBeVisible();
+  await expect(page.getByText("Set LinkedIn OAuth credentials before connecting", { exact: false })).toBeVisible();
+
+  await page.screenshot({
+    path: testInfo.outputPath(`connections-${testInfo.project.name}.png`),
+    fullPage: true
+  });
+});

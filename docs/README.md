@@ -13,6 +13,7 @@ Specs:
 - `specs/05-langgraph-workflows.md` - durable workflows, checkpoints, and human approval.
 - `specs/06-provider-integrations.md` - social, messaging, and publishing adapters.
 - `specs/07-billing-usage.md` - Clerk Billing, entitlements, usage, and limits.
+- `worker-runtime-readiness.md` - worker queue setup, health states, and retry playbook.
 
 Phase plans:
 - `phases/phase-01-foundation.md`
@@ -23,6 +24,14 @@ Phase plans:
 - `phases/phase-06-provider-publishing.md`
 - `phases/phase-07-comment-reply-agent.md`
 - `phases/phase-08-analytics-n8n-release.md`
+
+Next feature plans:
+- `next-feature-plans/README.md` - ranked post-master roadmap and master `/goal` prompt.
+- `next-feature-plans/01-linkedin-provider-productionization.md`
+- `next-feature-plans/02-connections-control-center.md`
+- `next-feature-plans/03-worker-runtime-readiness.md`
+- `next-feature-plans/04-billing-activation-path.md`
+- `next-feature-plans/05-brand-memory-management-page.md`
 
 ## Execution Rules
 

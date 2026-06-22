@@ -53,7 +53,17 @@ function missingRequiredScopes(requiredScopes: string[], account?: ProviderHealt
     return requiredScopes;
   }
 
-  return requiredScopes.filter((scope) => !grantedScopes.includes(scope));
+  return requiredScopes.filter((scope) => {
+    if (grantedScopes.includes(scope)) {
+      return false;
+    }
+
+    if (scope === "publish") {
+      return !grantedScopes.includes("w_member_social");
+    }
+
+    return true;
+  });
 }
 
 function accountSupportsCapability(requiredCapability: ProviderCapability | undefined, account?: ProviderHealthAccount | null) {

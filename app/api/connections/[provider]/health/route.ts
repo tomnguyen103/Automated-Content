@@ -38,51 +38,49 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
     return jsonError("provider_not_found", "Provider was not found.", 404);
   }
 
-  const workspace = await resolvePersonalWorkspaceForUser(user);
-  const accountId = request.nextUrl.searchParams.get("accountId");
-  let refreshed: Awaited<ReturnType<typeof refreshProviderConnectionHealth>>;
-
   try {
-    refreshed = await refreshProviderConnectionHealth({
+    const workspace = await resolvePersonalWorkspaceForUser(user);
+    const accountId = request.nextUrl.searchParams.get("accountId");
+    const refreshed = await refreshProviderConnectionHealth({
       workspaceId: workspace.id,
       isLocalPreview: workspace.isLocalPreview,
       provider: rawProvider,
       accountId
+    });
+
+    if (refreshed) {
+      return NextResponse.json({
+        health: refreshed.health,
+        account: {
+          id: refreshed.account.id,
+          provider: refreshed.account.provider,
+          providerAccountId: refreshed.account.providerAccountId,
+          displayName: refreshed.account.displayName,
+          status: refreshed.account.status,
+          scopes: refreshed.account.scopes,
+          capabilities: refreshed.account.capabilities,
+          lastValidatedAt: refreshed.account.lastValidatedAt?.toISOString() ?? null
+        }
+      });
+    }
+
+    const states = await getProviderConnectionStates({
+      workspaceId: workspace.id,
+      isLocalPreview: workspace.isLocalPreview
+    });
+    const state = states.find((item) => item.key === rawProvider);
+
+    if (!state) {
+      return jsonError("provider_not_found", "Provider was not found.", 404);
+    }
+
+    return NextResponse.json({
+      health: state.health,
+      account: state.account
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to refresh provider health.";
 
     return jsonError("provider_health_failed", message, 502);
   }
-
-  if (refreshed) {
-    return NextResponse.json({
-      health: refreshed.health,
-      account: {
-        id: refreshed.account.id,
-        provider: refreshed.account.provider,
-        providerAccountId: refreshed.account.providerAccountId,
-        displayName: refreshed.account.displayName,
-        status: refreshed.account.status,
-        scopes: refreshed.account.scopes,
-        capabilities: refreshed.account.capabilities,
-        lastValidatedAt: refreshed.account.lastValidatedAt?.toISOString() ?? null
-      }
-    });
-  }
-
-  const states = await getProviderConnectionStates({
-    workspaceId: workspace.id,
-    isLocalPreview: workspace.isLocalPreview
-  });
-  const state = states.find((item) => item.key === rawProvider);
-
-  if (!state) {
-    return jsonError("provider_not_found", "Provider was not found.", 404);
-  }
-
-  return NextResponse.json({
-    health: state.health,
-    account: state.account
-  });
 }

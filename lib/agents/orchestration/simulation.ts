@@ -52,6 +52,10 @@ function timestamp(now: () => Date) {
   return now().toISOString();
 }
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown mission simulation error.";
+}
+
 function readString(input: Record<string, unknown>, key: string) {
   const value = input[key];
 
@@ -331,13 +335,13 @@ function createSimulationSummary({
   policyEvents: AgentPolicyEvent[];
 }) {
   const blockedActions = plannedActions.filter((action) => action.status === "blocked").length;
-  const reviewActions = plannedActions.filter((action) => action.status === "would_require_review").length;
+  const reviewEvents = policyEvents.filter((event) => event.action === "require_review").length;
 
   return {
     allowedActions: plannedActions.filter((action) => action.status === "would_run").length,
     blockedActions,
     policyBlocks: policyEvents.filter((event) => event.severity === "blocked").length,
-    reviewRequiredActions: reviewActions,
+    reviewRequiredActions: reviewEvents,
     sideEffectsSuppressed: estimatedUsage.sideEffectsSuppressed,
     taskCount: plannedActions.length
   };
@@ -356,121 +360,185 @@ export async function simulateAgentMission({
     throw new AgentMissionNotFoundError(missionId);
   }
 
-  const profiles = await repositories.profiles.list(workspaceId);
   const simulationRunId = `agent_sim_${crypto.randomUUID()}`;
-  const coordinator = mission.coordinatorProfileId
-    ? profiles.find((profile) => profile.id === mission.coordinatorProfileId) ?? null
-    : profiles.find((profile) => profile.role === "coordinator") ?? null;
-  const missionDecision = evaluateAgentPolicy({
-    action: "mission.run",
-    mission,
-    profile: coordinator,
-    now: now()
-  });
-  const policyEvents: AgentPolicyEvent[] = [
-    createSimulationPolicyEvent({
-      decision: missionDecision,
-      mission,
-      now: now(),
-      profile: coordinator,
-      simulationRunId
-    })
-  ];
-  const plan = createMissionPlan(mission);
   const plannedActions: AgentSimulationPlannedAction[] = [];
+  const policyEvents: AgentPolicyEvent[] = [];
   let estimatedUsage = agentSimulationUsageEstimateSchema.parse({});
 
-  for (const [taskIndex, task] of plan.tasks.slice(0, missionDecision.policy.maxTasksPerRun).entries()) {
-    const profile = selectProfileForTask({ profiles, role: task.role });
-    const plannedActionId = `sim_action_${crypto.randomUUID()}`;
-    const decision = profile
-      ? evaluateAgentPolicy({
-          action: task.action,
-          mission,
-          profile,
-          toolScope: task.toolScope,
-          provider: readString(mission.inputs, "provider"),
-          platform: readString(mission.inputs, "platform") ?? readStringArray(mission.inputs, "platforms")[0],
-          connectedAccountId: readString(mission.inputs, "connectedAccountId"),
-          confidence: typeof mission.inputs.confidence === "number" ? mission.inputs.confidence : undefined,
-          contentText: readString(mission.inputs, "contentText") ?? mission.brief,
-          now: now()
-        })
-      : createMissingProfileDecision({
-          action: task.action,
-          mission,
-          role: task.role
-        });
-    const taskEstimate = estimateUsageForTask({ decision, mission, task });
-    const policyEvent = createSimulationPolicyEvent({
-      decision,
+  try {
+    const profiles = await repositories.profiles.list(workspaceId);
+    const coordinator = mission.coordinatorProfileId
+      ? profiles.find((profile) => profile.id === mission.coordinatorProfileId) ?? null
+      : profiles.find((profile) => profile.role === "coordinator") ?? null;
+    const missionDecision = evaluateAgentPolicy({
+      action: "mission.run",
       mission,
-      now: now(),
-      plannedActionId,
-      profile,
-      simulationRunId,
-      task
+      profile: coordinator,
+      now: now()
     });
 
-    estimatedUsage = addUsageEstimate(estimatedUsage, taskEstimate);
-    policyEvents.push(policyEvent);
-    plannedActions.push(
-      {
-        id: plannedActionId,
-        taskIndex,
-        role: task.role,
-        taskName: task.taskName,
-        action: task.action,
-        toolScope: task.toolScope,
-        input: task.input,
-        profileId: profile?.id,
-        profileName: profile?.name,
-        status: plannedActionStatus(decision),
-        policy: {
-          allowed: decision.allowed,
-          action: decision.action,
-          severity: decision.severity,
-          policyKey: decision.policyKey,
-          message: decision.message
-        },
-        estimatedUsage: taskEstimate,
-        suppressedSideEffects: suppressedSideEffectsForDecision(task, decision)
-      }
+    policyEvents.push(
+      createSimulationPolicyEvent({
+        decision: missionDecision,
+        mission,
+        now: now(),
+        profile: coordinator,
+        simulationRunId
+      })
     );
+
+    if (missionDecision.allowed) {
+      const plan = createMissionPlan(mission);
+
+      for (const [taskIndex, task] of plan.tasks.slice(0, missionDecision.policy.maxTasksPerRun).entries()) {
+        const profile = selectProfileForTask({ profiles, role: task.role });
+        const plannedActionId = `sim_action_${crypto.randomUUID()}`;
+        const decision = profile
+          ? evaluateAgentPolicy({
+              action: task.action,
+              mission,
+              profile,
+              toolScope: task.toolScope,
+              provider: readString(mission.inputs, "provider"),
+              platform: readString(mission.inputs, "platform") ?? readStringArray(mission.inputs, "platforms")[0],
+              connectedAccountId: readString(mission.inputs, "connectedAccountId"),
+              confidence: typeof mission.inputs.confidence === "number" ? mission.inputs.confidence : undefined,
+              contentText: readString(mission.inputs, "contentText") ?? mission.brief,
+              now: now()
+            })
+          : createMissingProfileDecision({
+              action: task.action,
+              mission,
+              role: task.role
+            });
+        const taskEstimate = estimateUsageForTask({ decision, mission, task });
+        const policyEvent = createSimulationPolicyEvent({
+          decision,
+          mission,
+          now: now(),
+          plannedActionId,
+          profile,
+          simulationRunId,
+          task
+        });
+
+        estimatedUsage = addUsageEstimate(estimatedUsage, taskEstimate);
+        policyEvents.push(policyEvent);
+        plannedActions.push(
+          {
+            id: plannedActionId,
+            taskIndex,
+            role: task.role,
+            taskName: task.taskName,
+            action: task.action,
+            toolScope: task.toolScope,
+            input: task.input,
+            profileId: profile?.id,
+            profileName: profile?.name,
+            status: plannedActionStatus(decision),
+            policy: {
+              allowed: decision.allowed,
+              action: decision.action,
+              severity: decision.severity,
+              policyKey: decision.policyKey,
+              message: decision.message
+            },
+            estimatedUsage: taskEstimate,
+            suppressedSideEffects: suppressedSideEffectsForDecision(task, decision)
+          }
+        );
+      }
+    }
+
+    const simulationRun = agentMissionSimulationRunSchema.parse({
+      id: simulationRunId,
+      workspaceId,
+      missionId,
+      requestedByUserId,
+      status: "succeeded",
+      plannedActions,
+      policyEvents,
+      estimatedUsage,
+      summary: createSimulationSummary({ estimatedUsage, plannedActions, policyEvents }),
+      createdAt: timestamp(now),
+      completedAt: timestamp(now)
+    });
+
+    for (const policyEvent of policyEvents) {
+      await repositories.policyEvents.record(policyEvent);
+    }
+
+    const savedSimulation = await repositories.simulationRuns.save(simulationRun);
+
+    emitAgentOrchestrationEvent("agent.mission.simulated", {
+      missionId,
+      policyEventCount: policyEvents.length,
+      plannedActionCount: plannedActions.length,
+      simulationRunId: savedSimulation.id,
+      sideEffectsSuppressed: estimatedUsage.sideEffectsSuppressed,
+      workspaceId
+    });
+
+    return {
+      mission,
+      simulationRun: savedSimulation,
+      policyEvents
+    };
+  } catch (error) {
+    const message = errorMessage(error);
+    const failedSimulation = agentMissionSimulationRunSchema.parse({
+      id: simulationRunId,
+      workspaceId,
+      missionId,
+      requestedByUserId,
+      status: "failed",
+      plannedActions,
+      policyEvents,
+      estimatedUsage,
+      summary: {
+        ...createSimulationSummary({ estimatedUsage, plannedActions, policyEvents }),
+        error: message
+      },
+      error: message,
+      createdAt: timestamp(now),
+      completedAt: timestamp(now)
+    });
+    try {
+      const savedFailure = await repositories.simulationRuns.save(failedSimulation);
+
+      emitAgentOrchestrationEvent("agent.mission.simulated", {
+        error: message,
+        missionId,
+        policyEventCount: policyEvents.length,
+        plannedActionCount: plannedActions.length,
+        simulationRunId: savedFailure.id,
+        sideEffectsSuppressed: estimatedUsage.sideEffectsSuppressed,
+        status: "failed",
+        workspaceId
+      });
+
+      return {
+        mission,
+        simulationRun: savedFailure,
+        policyEvents
+      };
+    } catch (persistenceError) {
+      const persistenceMessage = errorMessage(persistenceError);
+
+      emitAgentOrchestrationEvent("agent.mission.simulated", {
+        error: message,
+        missionId,
+        persistenceError: persistenceMessage,
+        policyEventCount: policyEvents.length,
+        plannedActionCount: plannedActions.length,
+        sideEffectsSuppressed: estimatedUsage.sideEffectsSuppressed,
+        status: "failed",
+        workspaceId
+      });
+
+      throw new Error(
+        `Mission simulation failed: ${message}. Failed to persist simulation failure: ${persistenceMessage}`
+      );
+    }
   }
-
-  const simulationRun = agentMissionSimulationRunSchema.parse({
-    id: simulationRunId,
-    workspaceId,
-    missionId,
-    requestedByUserId,
-    status: "succeeded",
-    plannedActions,
-    policyEvents,
-    estimatedUsage,
-    summary: createSimulationSummary({ estimatedUsage, plannedActions, policyEvents }),
-    createdAt: timestamp(now),
-    completedAt: timestamp(now)
-  });
-
-  for (const policyEvent of policyEvents) {
-    await repositories.policyEvents.record(policyEvent);
-  }
-
-  const savedSimulation = await repositories.simulationRuns.save(simulationRun);
-
-  emitAgentOrchestrationEvent("agent.mission.simulated", {
-    missionId,
-    policyEventCount: policyEvents.length,
-    plannedActionCount: plannedActions.length,
-    simulationRunId: savedSimulation.id,
-    sideEffectsSuppressed: estimatedUsage.sideEffectsSuppressed,
-    workspaceId
-  });
-
-  return {
-    mission,
-    simulationRun: savedSimulation,
-    policyEvents
-  };
 }

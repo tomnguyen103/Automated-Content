@@ -109,4 +109,36 @@ describe("agent mission run API", () => {
     expect(routeMocks.enqueueAgentMission).not.toHaveBeenCalled();
     expect(routeMocks.runMissionWorkflow).not.toHaveBeenCalled();
   });
+
+  it("returns persisted failed simulation payloads without queueing execution work", async () => {
+    routeMocks.simulateAgentMission.mockResolvedValue({
+      mission: {
+        id: "mission_1"
+      },
+      simulationRun: {
+        id: "agent_sim_failed_1",
+        status: "failed",
+        error: "policy event store offline"
+      },
+      policyEvents: []
+    });
+    const { POST } = await import("@/app/api/agents/missions/[id]/simulate/route");
+
+    const response = await POST(new Request("http://localhost/api/agents/missions/mission_1/simulate"), {
+      params: Promise.resolve({ id: "mission_1" })
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({
+      execution: "simulation",
+      simulationRun: {
+        id: "agent_sim_failed_1",
+        status: "failed",
+        error: "policy event store offline"
+      }
+    });
+    expect(routeMocks.enqueueAgentMission).not.toHaveBeenCalled();
+    expect(routeMocks.runMissionWorkflow).not.toHaveBeenCalled();
+  });
 });

@@ -309,4 +309,50 @@ describe("linkedin provider", () => {
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("rejects arbitrary external image source URLs before outbound fetch", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const linkedinProvider = await loadLinkedInProvider();
+    const connection = await linkedinProvider.connect({
+      workspaceId,
+      providerAccountId: "member_123",
+      tokens: {
+        accessToken: "access-token",
+        expiresAt: new Date(Date.now() + 10 * 60_000),
+        scopes: ["openid", "profile", "w_member_social"]
+      },
+      metadata: {
+        profile: {
+          sub: "member_123",
+          name: "Ada Lovelace"
+        }
+      }
+    });
+
+    await expect(
+      linkedinProvider.publish({
+        workspaceId,
+        providerAccountId: connection.providerAccountId,
+        tokenRef: connection.tokenRef,
+        content: {
+          variantId: "variant_1",
+          title: "Launch post",
+          hook: "Hook",
+          body: "Body",
+          cta: "CTA",
+          hashtags: [],
+          media: [
+            {
+              sourceUrl: "https://cdn.example.com/customer-controlled.png"
+            }
+          ]
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "content_invalid"
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

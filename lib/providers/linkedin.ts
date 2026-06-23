@@ -31,6 +31,7 @@ const refreshSkewMs = 5 * 60 * 1000;
 const linkedInFetchTimeoutMs = 15_000;
 const maxLinkedInImageBytes = 10 * 1024 * 1024;
 const allowedLinkedInImageTypes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+const defaultImageKitHostname = "ik.imagekit.io";
 
 export const linkedinCapabilities = defineProviderCapabilities({
   supported: ["text_post", "image_post", "scheduled_publish", "immediate_publish"],
@@ -254,6 +255,28 @@ function isPrivateIpAddress(address: string) {
   return false;
 }
 
+function isImageKitHostname(hostname: string) {
+  return hostname === defaultImageKitHostname || hostname.endsWith(".imagekit.io");
+}
+
+function isTrustedLinkedInImageSource(parsed: URL) {
+  const hostname = parsed.hostname.toLowerCase();
+
+  if (isImageKitHostname(hostname)) {
+    return true;
+  }
+
+  if (!env.IMAGEKIT_URL_ENDPOINT) {
+    return false;
+  }
+
+  try {
+    return parsed.origin === new URL(env.IMAGEKIT_URL_ENDPOINT).origin;
+  } catch {
+    return false;
+  }
+}
+
 async function validatePublicImageSourceUrl(sourceUrl: string) {
   let parsed: URL;
 
@@ -287,6 +310,15 @@ async function validatePublicImageSourceUrl(sourceUrl: string) {
   }
 
   const hostname = parsed.hostname.toLowerCase();
+
+  if (!isTrustedLinkedInImageSource(parsed)) {
+    throw new ProviderError({
+      code: "content_invalid",
+      message: "LinkedIn image publishing only fetches trusted media asset URLs or existing LinkedIn image URNs.",
+      provider: "linkedin",
+      retryable: false
+    });
+  }
 
   if (hostname === "localhost" || hostname.endsWith(".localhost")) {
     throw new ProviderError({
@@ -706,7 +738,9 @@ async function uploadImageForLinkedIn({
     });
   }
 
-  const imageResponse = await fetchWithTimeout(safeSourceUrl);
+  const imageResponse = await fetchWithTimeout(safeSourceUrl, {
+    redirect: "error"
+  });
 
   if (!imageResponse.ok) {
     throw new ProviderError({

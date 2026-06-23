@@ -1,9 +1,9 @@
-import { CalendarClock, CheckCircle2, CircleAlert, Clock3, RotateCcw } from "lucide-react";
+import { CalendarClock, CheckCircle2, CircleAlert, Clock3 } from "lucide-react";
 import type { ReactNode } from "react";
+import { PublishRetryButton } from "@/components/calendar/publish-retry-button";
 import { PageShell } from "@/components/layout/page-shell";
 import { SubNav } from "@/components/layout/sub-nav";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getQueueRows, getQueueStats } from "@/lib/scheduler/queue-overview";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
@@ -49,10 +49,9 @@ export default async function CalendarPage() {
         title="Calendar"
         description="Track scheduled posts, queue enqueue state, worker attempts, and recoverable failures from one operational view."
         actions={
-          <Button variant="outline" disabled title="Retry action is not available yet">
-            <RotateCcw size={16} aria-hidden="true" />
-            Retry failed
-          </Button>
+          <Badge tone={queueStats.recoverable > 0 ? "critical" : "success"}>
+            {queueStats.recoverable > 0 ? `${queueStats.recoverable} retryable` : "Queue stable"}
+          </Badge>
         }
       >
         <div className="grid gap-4 md:grid-cols-3">
@@ -91,10 +90,18 @@ export default async function CalendarPage() {
           </div>
           <div className="divide-y divide-[var(--color-border)]">
             {queueRows.map((row) => (
-              <div key={row.id} className="grid gap-4 p-5 lg:grid-cols-[1fr_160px_150px_150px] lg:items-center">
+              <div
+                key={row.id}
+                className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_160px_150px_150px_160px] lg:items-center"
+              >
                 <div className="min-w-0">
                   <p className="font-medium">{row.title}</p>
                   <p className="mt-1 text-sm text-[var(--color-text-muted)]">{row.provider}</p>
+                  {row.recovery ? (
+                    <p className="mt-2 max-w-3xl text-xs text-[var(--color-text-muted)]">
+                      {row.recovery.recommendation}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
                   <Clock3 size={16} aria-hidden="true" />
@@ -102,6 +109,14 @@ export default async function CalendarPage() {
                 </div>
                 <Badge tone={statusTone[row.status]}>{row.status}</Badge>
                 <Badge tone={enqueueTone[row.enqueue as keyof typeof enqueueTone]}>{row.enqueue}</Badge>
+                {row.recovery?.actions.includes("retry") ? (
+                  <PublishRetryButton
+                    disabled={workspace?.isLocalPreview}
+                    scheduledJobId={row.id}
+                  />
+                ) : (
+                  <p className="text-sm text-[var(--color-text-muted)] lg:text-right">No action</p>
+                )}
               </div>
             ))}
           </div>

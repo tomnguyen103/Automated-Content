@@ -5,20 +5,24 @@ import { Worker } from "bullmq";
 import { env } from "@/lib/env";
 import type { PublishPostJobData } from "@/lib/scheduler/enqueue";
 import type { RunAgentMissionJobData } from "@/lib/agents/orchestration/queue";
+import type * as AgentMissionQueueModule from "@/lib/agents/orchestration/queue";
 import type * as PublishQueueModule from "@/lib/scheduler/enqueue";
 import type * as PublishPostJobModule from "@/workers/jobs/publish-post";
 import type * as RunAgentMissionJobModule from "@/workers/jobs/run-agent-mission";
 
 type SocialWorker = Worker<PublishPostJobData> | Worker<RunAgentMissionJobData>;
 type WorkerLogger = Pick<typeof console, "error" | "log">;
+type WorkerQueueNames = {
+  agentMissionQueueName: string;
+  publishQueueName: string;
+};
 type WorkerModules = {
+  agentMissionQueue: typeof AgentMissionQueueModule;
   publishPostJob: typeof PublishPostJobModule;
   publishQueue: typeof PublishQueueModule;
   runAgentMissionJob: typeof RunAgentMissionJobModule;
 };
 
-const PUBLISH_QUEUE_NAME = "social-publishing";
-const AGENT_MISSION_QUEUE_NAME = "agent-missions";
 const workerRequire = createRequire(import.meta.url);
 
 function installServerOnlyShim() {
@@ -42,9 +46,22 @@ function loadWorkerModules(): WorkerModules {
   installServerOnlyShim();
 
   return {
+    agentMissionQueue: workerRequire("@/lib/agents/orchestration/queue") as typeof AgentMissionQueueModule,
     publishPostJob: workerRequire("@/workers/jobs/publish-post") as typeof PublishPostJobModule,
     publishQueue: workerRequire("@/lib/scheduler/enqueue") as typeof PublishQueueModule,
     runAgentMissionJob: workerRequire("@/workers/jobs/run-agent-mission") as typeof RunAgentMissionJobModule
+  };
+}
+
+function readWorkerQueueNames(): WorkerQueueNames {
+  const {
+    agentMissionQueue: { AGENT_MISSION_QUEUE_NAME },
+    publishQueue: { PUBLISH_QUEUE_NAME }
+  } = loadWorkerModules();
+
+  return {
+    agentMissionQueueName: AGENT_MISSION_QUEUE_NAME,
+    publishQueueName: PUBLISH_QUEUE_NAME
   };
 }
 
@@ -66,7 +83,7 @@ export function createSocialPublishingWorker({
 } = {}) {
   const {
     publishPostJob: { publishScheduledPostJob },
-    publishQueue: { createRedisConnectionOptions }
+    publishQueue: { PUBLISH_QUEUE_NAME, createRedisConnectionOptions }
   } = loadWorkerModules();
 
   return new Worker<PublishPostJobData>(
@@ -87,6 +104,7 @@ export function createAgentMissionWorker({
   concurrency?: number;
 } = {}) {
   const {
+    agentMissionQueue: { AGENT_MISSION_QUEUE_NAME },
     publishQueue: { createRedisConnectionOptions },
     runAgentMissionJob: { runAgentMissionJob }
   } = loadWorkerModules();
@@ -107,6 +125,7 @@ export function startSocialWorkerRuntime({
   createPublishingWorker = createSocialPublishingWorker,
   logger = console,
   publishingConcurrency = readPositiveIntegerEnv(process.env.PUBLISH_WORKER_CONCURRENCY, 5),
+  queueNames = readWorkerQueueNames(),
   redisUrl = env.REDIS_URL
 }: {
   agentMissionConcurrency?: number;
@@ -114,6 +133,7 @@ export function startSocialWorkerRuntime({
   createPublishingWorker?: typeof createSocialPublishingWorker;
   logger?: WorkerLogger;
   publishingConcurrency?: number;
+  queueNames?: WorkerQueueNames;
   redisUrl?: string;
 } = {}) {
   const workers: SocialWorker[] = [];
@@ -133,7 +153,7 @@ export function startSocialWorkerRuntime({
   }
 
   logger.log(
-    `Social worker runtime started for queues: ${PUBLISH_QUEUE_NAME}, ${AGENT_MISSION_QUEUE_NAME}.`
+    `Social worker runtime started for queues: ${queueNames.publishQueueName}, ${queueNames.agentMissionQueueName}.`
   );
 
   return {

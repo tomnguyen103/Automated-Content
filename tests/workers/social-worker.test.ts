@@ -27,6 +27,10 @@ describe("social worker runtime", () => {
       createPublishingWorker,
       logger,
       publishingConcurrency: 7,
+      queueNames: {
+        agentMissionQueueName: "agent-missions",
+        publishQueueName: "social-publishing"
+      },
       redisUrl: "redis://localhost:6379/0"
     });
 
@@ -62,6 +66,10 @@ describe("social worker runtime", () => {
         logger: {
           error: vi.fn(),
           log: vi.fn()
+        },
+        queueNames: {
+          agentMissionQueueName: "agent-missions",
+          publishQueueName: "social-publishing"
         },
         redisUrl: "redis://localhost:6379/0"
       })

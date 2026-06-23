@@ -14,6 +14,8 @@ Specs:
 - `specs/06-provider-integrations.md` - social, messaging, and publishing adapters.
 - `specs/07-billing-usage.md` - Clerk Billing, entitlements, usage, and limits.
 - `worker-runtime-readiness.md` - worker queue setup, health states, and retry playbook.
+- `ai-agent-feature-roadmap-2026.md` - durable 2026 AI-agent feature roadmap synthesized from repo intelligence, trend research, feature ideation, and feasibility capsules.
+- `ai-agent-feature-goal-prompts-2026.md` - copy-pasteable `/goal` prompt batches for implementing the 2026 roadmap with CI, CodeRabbit, and merge closeout.
 
 Phase plans:
 - `phases/phase-01-foundation.md`

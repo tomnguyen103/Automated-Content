@@ -32,3 +32,35 @@
 - CodeRabbit flagged brittle string matching in the simulation route, so `simulateAgentMission` now throws a typed `AgentMissionNotFoundError`.
 - CodeRabbit flagged a possible partial success state when policy event persistence fails. The runner now records simulation policy events before saving the simulation run as succeeded.
 - CodeRabbit suggested the simulation history index should match the repository query shape, so the table now includes a `(workspace_id, mission_id, created_at)` index.
+
+# AI-Agent Roadmap 2026 Batch 1 Implementation Notes
+
+## 2026-06-23 Starting Context
+
+- Created branch `codex/agent-roadmap-batch-1-provider-campaign-approval` from `main` at `9448c84a1f3a11328f6b75e98fc8d83783018cc8`; local `main` matched `origin/main` and `gh pr list --state open` returned no open PR rows.
+- Treating `docs/ai-agent-feature-roadmap-2026.md`, `docs/ai-agent-feature-goal-prompts-2026.md`, and the matching `docs/README.md` links as user-provided scope artifacts even though they were local/untracked or modified at start.
+- Initial grep showed Batch 1 is partly implemented already: `supervised_campaign` exists in schema/planner/UI/tests, provider readiness labels exist in Connections and Agents, and simulation readiness warnings already appear in orchestration tests. I am doing an acceptance-criteria gap audit before adding new code so we do not create duplicate control-plane concepts.
+- Decision: prefer existing read models and repositories first. No new schema unless the unified approval queue cannot safely aggregate current content, reply, brand-memory, policy, or mission decision sources.
+- UI design read: operational B2B SaaS dashboard for content operators and team leads, with a quiet utility-first interface. I will keep density useful, labels plain, and avoid marketing-style visual flourishes.
+
+## Batch 1 Decisions And Changes
+
+- Provider readiness: `app/api/posts/[id]/schedule/route.ts` already blocked unready providers before scheduling, but `lib/scheduler/create-scheduled-post.ts` did not have a defensive preflight parameter. I added `providerHealth` plus `ProviderReadinessError` so any direct caller can fail closed before usage reservation, schedule row insertion, or queue enqueue.
+- Autonomous mission execution: `createAutonomousMissionTaskExecutor` could call `createScheduledPost` without the public schedule API's provider/account checks. I added a provider-readiness gate before usage consumption and schedule writes. The executor can use mission-input account snapshots for simulations/local preview and database connected-account rows for live execution.
+- Tradeoff: I kept provider readiness as a runtime check instead of persisting a new provider-health history table. The roadmap calls history a stretch item, and current acceptance criteria are hard blocks plus actionable warnings.
+- Approval Command Center: implemented a read model over existing sources instead of adding an `approval_items` table. The queue aggregates pending reply approvals, pending brand-memory proposals, pending content workflow checkpoints, and agent policy/provider/budget escalations with source deep links.
+- Local preview resilience: content workflow checkpoint aggregation is best-effort. If a preview database is configured but missing the current `workflow_checkpoints` table, `/approvals` logs a warning and still renders reply, brand-memory, and agent policy decisions instead of failing the whole page.
+- Redaction: the command-center read model intentionally exposes summarized details and reason strings only. It does not copy raw comment text, edited/original brand-memory text, provider token refs, webhook signatures, or provider responses into the aggregate queue.
+- UI: added `/approvals`, a sidebar nav item, URL filters, stats, and deep links back to Agents, Auto Replies, Brand Memory, or Create. Mission cards now have stable `#mission-...` anchors for policy-event deep links.
+- Verification so far: focused tests passed for scheduler, orchestration, approvals, schedule API, provider contracts, LinkedIn provider behavior, and publish worker preflight/classification.
+
+## Batch 1 Verification Closeout
+
+- `npm run lint` passed.
+- `npm run typecheck` passed.
+- `npm test` passed with 45 files and 188 tests.
+- `npm audit --omit=dev --audit-level=high` found 0 vulnerabilities.
+- `git diff --check` passed; it reported only Windows CRLF checkout warnings.
+- `npm run build` passed and included `/approvals` plus `/api/approvals` in the route manifest.
+- `npm run test:e2e` initially hit a transient Chromium `Page.captureScreenshot` protocol error in the existing Brand Memory desktop test after all page assertions passed. A clean rerun passed all 22 Playwright tests, including the new Approval Command Center desktop and mobile coverage.
+- `npm run worker` reached the expected local `QueueConfigurationError: REDIS_URL is required to enqueue publishing jobs.` boundary. It did not fail from import resolution, `server-only`, or provider/orchestration wiring.

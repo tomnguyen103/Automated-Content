@@ -8,6 +8,10 @@ import {
   type ConsumeUsageForLimitInput
 } from "@/lib/billing/usage";
 import { isDatabaseConfigured } from "@/lib/env";
+import {
+  isProviderHealthBlocking,
+  type ProviderHealthResult
+} from "@/lib/providers/health";
 import type { ProviderKey } from "@/lib/providers/types";
 import { enqueueScheduledPost, type EnqueueScheduledPostResult } from "@/lib/scheduler/enqueue";
 import {
@@ -33,6 +37,16 @@ type ScheduledJobCreation = {
 type CreateScheduledJobOptions = {
   usageReservation?: ConsumeUsageForLimitInput;
 };
+
+export class ProviderReadinessError extends Error {
+  readonly providerHealth: ProviderHealthResult;
+
+  constructor(providerHealth: ProviderHealthResult) {
+    super(providerHealth.blockingReason ?? `Provider ${providerHealth.provider} is not ready for scheduling.`);
+    this.name = "ProviderReadinessError";
+    this.providerHealth = providerHealth;
+  }
+}
 
 export type SchedulerRepository = {
   createScheduledJob: (
@@ -319,15 +333,21 @@ export async function createScheduledPost({
   input,
   repository = createSchedulerRepository(),
   enqueue = ({ scheduledJob }: { scheduledJob: ScheduledJob }) => enqueueScheduledPost({ scheduledJob }),
+  providerHealth,
   usageReservation
 }: {
   input: CreateScheduledPostInput;
   repository?: SchedulerRepository;
   enqueue?: (input: { scheduledJob: ScheduledJob }) => Promise<EnqueueScheduledPostResult>;
+  providerHealth?: ProviderHealthResult;
   usageReservation?: ConsumeUsageForLimitInput;
 }): Promise<CreateScheduledPostResult> {
   if (usageReservation?.sourceId && usageReservation.sourceId !== input.sourceId) {
     throw new Error("Usage reservation sourceId must match scheduled post sourceId.");
+  }
+
+  if (providerHealth && isProviderHealthBlocking(providerHealth)) {
+    throw new ProviderReadinessError(providerHealth);
   }
 
   const { scheduledJob } = await repository.createScheduledJob(input, {

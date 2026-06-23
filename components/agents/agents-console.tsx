@@ -829,7 +829,11 @@ export function AgentsConsole({ initialState }: AgentsConsoleProps) {
                 const latestSimulation = newestSimulation(record);
 
                 return (
-                <article key={record.mission.id} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-4">
+                <article
+                  id={`mission-${record.mission.id}`}
+                  key={record.mission.id}
+                  className="scroll-mt-24 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-4"
+                >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">

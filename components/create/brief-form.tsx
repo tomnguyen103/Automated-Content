@@ -353,7 +353,11 @@ export function BriefForm() {
 
   return (
     <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-      <form className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-5" onSubmit={submitBrief}>
+      <form
+        id="brief"
+        className="scroll-mt-24 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-5"
+        onSubmit={submitBrief}
+      >
         <div className="flex flex-col gap-3 border-b border-[var(--color-border)] pb-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-base font-semibold">Content brief</h2>
@@ -458,26 +462,36 @@ export function BriefForm() {
       </form>
 
       <div className="grid gap-5">
-        <GenerationTimeline run={result?.run ?? null} loading={loading} />
-        <DraftEditor contentPack={result?.contentPack ?? null} onChange={updateContentPack} />
-        <PlatformTabs
-          variants={result?.contentPack?.variants ?? []}
-          onChange={(variants) => {
-            const contentPack = result?.contentPack;
+        <div id="research" className="scroll-mt-24">
+          <GenerationTimeline run={result?.run ?? null} loading={loading} />
+        </div>
+        <div id="drafts" className="scroll-mt-24">
+          <DraftEditor contentPack={result?.contentPack ?? null} onChange={updateContentPack} />
+        </div>
+        <div id="variants" className="scroll-mt-24">
+          <PlatformTabs
+            variants={result?.contentPack?.variants ?? []}
+            onChange={(variants) => {
+              const contentPack = result?.contentPack;
 
-            if (contentPack) {
-              updateContentPack({ ...contentPack, variants });
-            }
-          }}
-        />
-        <ReviewStep
-          brandMemoryProposals={result?.brandMemoryProposals ?? []}
-          disabled={decisionLoading}
-          workflow={result?.workflow ?? null}
-          onDecision={submitApprovalDecision}
-          onReviewBrandMemoryProposal={reviewBrandMemoryProposal}
-          onScheduleApprovedVariants={scheduleApprovedVariants}
-        />
+              if (contentPack) {
+                updateContentPack({ ...contentPack, variants });
+              }
+            }}
+          />
+        </div>
+        <span id="media" className="block scroll-mt-24" aria-hidden="true" />
+        <div id="schedule" className="scroll-mt-24">
+          <span id="review" className="block scroll-mt-24" aria-hidden="true" />
+          <ReviewStep
+            brandMemoryProposals={result?.brandMemoryProposals ?? []}
+            disabled={decisionLoading}
+            workflow={result?.workflow ?? null}
+            onDecision={submitApprovalDecision}
+            onReviewBrandMemoryProposal={reviewBrandMemoryProposal}
+            onScheduleApprovedVariants={scheduleApprovedVariants}
+          />
+        </div>
       </div>
     </div>
   );

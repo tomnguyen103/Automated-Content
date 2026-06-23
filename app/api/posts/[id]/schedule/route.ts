@@ -5,7 +5,6 @@ import { getDb } from "@/db";
 import { connectedAccounts, platformVariants } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import {
-  consumeUsageForLimit,
   ensureFeatureAllowed,
   FeatureAccessError,
   UsageLimitExceededError
@@ -43,6 +42,29 @@ type ScheduleablePlatformVariant = {
   platform: SocialPlatform | null;
   policyStatus: string;
 };
+
+function buildScheduleSourceId({
+  connectedAccountId,
+  platformVariantId,
+  provider,
+  scheduledFor,
+  workspaceId
+}: {
+  connectedAccountId: string | null;
+  platformVariantId: string;
+  provider: ProviderKey;
+  scheduledFor: Date;
+  workspaceId: string;
+}) {
+  return [
+    "schedule",
+    workspaceId,
+    platformVariantId,
+    provider,
+    connectedAccountId ?? "default",
+    scheduledFor.toISOString()
+  ].join(":");
+}
 
 async function loadPlatformVariantForWorkspace({
   platformVariantId,
@@ -238,16 +260,12 @@ export async function POST(
       });
     }
 
-    await consumeUsageForLimit({
-      workspaceId: workspace.id,
-      key: "scheduledPostsPerDay",
-      metadata: {
-        platformVariantId,
-        provider: input.provider,
-        scheduledFor: input.scheduledFor,
-        userId: user.id
-      },
-      skip: workspace.isLocalPreview
+    const scheduleSourceId = buildScheduleSourceId({
+      connectedAccountId: resolvedConnectedAccountId,
+      platformVariantId,
+      provider: input.provider,
+      scheduledFor,
+      workspaceId: workspace.id
     });
 
     const result = await createScheduledPost({
@@ -256,6 +274,7 @@ export async function POST(
         platformVariantId,
         provider: input.provider,
         connectedAccountId: resolvedConnectedAccountId,
+        sourceId: scheduleSourceId,
         scheduledFor,
         metadata: {
           ...input.metadata,
@@ -264,7 +283,20 @@ export async function POST(
       },
       repository: createSchedulerRepository({
         allowMemoryFallback: workspace.isLocalPreview
-      })
+      }),
+      usageReservation: {
+        workspaceId: workspace.id,
+        key: "scheduledPostsPerDay",
+        sourceId: scheduleSourceId,
+        metadata: {
+          platformVariantId,
+          provider: input.provider,
+          scheduledFor: scheduledFor.toISOString(),
+          scheduledJobSourceId: scheduleSourceId,
+          userId: user.id
+        },
+        skip: workspace.isLocalPreview
+      }
     });
 
     return NextResponse.json(

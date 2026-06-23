@@ -639,17 +639,26 @@ describe("schedule post API", () => {
     );
 
     expect(response.status).toBe(201);
-    expect(consumeUsageForLimit).toHaveBeenCalledWith({
-      workspaceId: "workspace_usage_1",
-      key: "scheduledPostsPerDay",
-      metadata: {
-        platformVariantId: "variant_1",
-        provider: "mock",
-        scheduledFor: expect.any(String),
-        userId: "user_usage_1"
-      },
-      skip: false
-    });
+    expect(createScheduledPost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          sourceId: expect.stringContaining("schedule:workspace_usage_1:variant_1:mock")
+        }),
+        usageReservation: expect.objectContaining({
+          workspaceId: "workspace_usage_1",
+          key: "scheduledPostsPerDay",
+          sourceId: expect.stringContaining("schedule:workspace_usage_1:variant_1:mock"),
+          metadata: expect.objectContaining({
+            platformVariantId: "variant_1",
+            provider: "mock",
+            scheduledFor: expect.any(String),
+            scheduledJobSourceId: expect.stringContaining("schedule:workspace_usage_1:variant_1:mock"),
+            userId: "user_usage_1"
+          }),
+          skip: false
+        })
+      })
+    );
   });
 
   it("does not schedule when scheduled post usage is exhausted", async () => {
@@ -676,7 +685,9 @@ describe("schedule post API", () => {
     const consumeUsageForLimit = vi.fn(async () => {
       throw new UsageLimitExceededError();
     });
-    const createScheduledPost = vi.fn();
+    const createScheduledPost = vi.fn(async () => {
+      throw new UsageLimitExceededError();
+    });
 
     vi.doMock("@/lib/auth/current-user", () => ({
       getCurrentUser: vi.fn(async () => ({
@@ -727,6 +738,14 @@ describe("schedule post API", () => {
     expect(response.status).toBe(429);
     expect(payload.error).toBe("Scheduled posts limit reached for the current plan.");
     expect(payload.usage).toEqual(metric);
-    expect(createScheduledPost).not.toHaveBeenCalled();
+    expect(createScheduledPost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        usageReservation: expect.objectContaining({
+          key: "scheduledPostsPerDay",
+          sourceId: expect.stringContaining("schedule:workspace_usage_1:variant_1:mock"),
+          workspaceId: "workspace_usage_1"
+        })
+      })
+    );
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ScheduledJob } from "@/db/schema";
 import {
+  createMemorySchedulerRepository,
   createScheduledPost,
   type CreateScheduledPostInput,
   type SchedulerRepository
@@ -27,6 +28,7 @@ function createJob(overrides: Partial<ScheduledJob> = {}): ScheduledJob {
     platformVariantId: baseInput.platformVariantId,
     connectedAccountId: baseInput.connectedAccountId ?? null,
     provider: baseInput.provider,
+    sourceId: baseInput.sourceId ?? null,
     scheduledFor,
     status: "scheduled",
     enqueueStatus: "pending",
@@ -49,7 +51,10 @@ function createFakeRepository(events: string[]): SchedulerRepository {
   return {
     createScheduledJob: vi.fn(async () => {
       events.push("insert");
-      return insertedJob;
+      return {
+        created: true,
+        scheduledJob: insertedJob
+      };
     }),
     markEnqueueQueued: vi.fn(async ({ queueJobId }) => {
       events.push("mark-queued");
@@ -120,5 +125,36 @@ describe("createScheduledPost", () => {
     expect(result.scheduledJob.status).toBe("scheduled");
     expect(result.scheduledJob.enqueueStatus).toBe("failed");
     expect(result.scheduledJob.enqueueError).toBe("Redis connection refused");
+  });
+
+  it("returns an existing queued schedule without enqueueing a duplicate source", async () => {
+    const repository = createMemorySchedulerRepository();
+    const enqueue = vi.fn(async ({ scheduledJob }: { scheduledJob: ScheduledJob }) => ({
+      queueJobId: scheduledJob.id,
+      delayMs: 10_000
+    }));
+    const input = {
+      ...baseInput,
+      sourceId: "schedule:workspace:variant_1:mock:default:2026-06-21T15:00:00.000Z"
+    };
+
+    const first = await createScheduledPost({
+      input,
+      repository,
+      enqueue
+    });
+    const second = await createScheduledPost({
+      input,
+      repository,
+      enqueue
+    });
+
+    expect(repository.list()).toHaveLength(1);
+    expect(first.scheduledJob.id).toBe(second.scheduledJob.id);
+    expect(second.enqueue).toMatchObject({
+      status: "queued",
+      queueJobId: first.scheduledJob.id
+    });
+    expect(enqueue).toHaveBeenCalledOnce();
   });
 });

@@ -2,7 +2,7 @@
 
 import { RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 
 type PublishRetryButtonProps = {
@@ -30,13 +30,15 @@ export function PublishRetryButton({ disabled = false, scheduledJobId }: Publish
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const submitLockRef = useRef(false);
   const isBusy = isSubmitting || isPending;
 
   async function retryPublish() {
-    if (isBusy) {
+    if (isBusy || submitLockRef.current) {
       return;
     }
 
+    submitLockRef.current = true;
     setError(null);
     setMessage(null);
     setIsSubmitting(true);
@@ -63,6 +65,7 @@ export function PublishRetryButton({ disabled = false, scheduledJobId }: Publish
     } catch {
       setError("Unable to retry scheduled publish.");
     } finally {
+      submitLockRef.current = false;
       setIsSubmitting(false);
     }
   }

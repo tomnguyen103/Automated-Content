@@ -1,8 +1,12 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { getDb, type DatabaseClient } from "@/db";
 import { scheduledJobs, type ScheduledJob } from "@/db/schema";
+import {
+  consumeUsageForLimitInTransaction,
+  type ConsumeUsageForLimitInput
+} from "@/lib/billing/usage";
 import { isDatabaseConfigured } from "@/lib/env";
 import type { ProviderKey } from "@/lib/providers/types";
 import { enqueueScheduledPost, type EnqueueScheduledPostResult } from "@/lib/scheduler/enqueue";
@@ -16,12 +20,25 @@ export type CreateScheduledPostInput = {
   platformVariantId: string;
   provider: ProviderKey;
   connectedAccountId?: string | null;
+  sourceId?: string;
   scheduledFor: Date;
   metadata?: Record<string, unknown>;
 };
 
+type ScheduledJobCreation = {
+  created: boolean;
+  scheduledJob: ScheduledJob;
+};
+
+type CreateScheduledJobOptions = {
+  usageReservation?: ConsumeUsageForLimitInput;
+};
+
 export type SchedulerRepository = {
-  createScheduledJob: (input: CreateScheduledPostInput) => Promise<ScheduledJob>;
+  createScheduledJob: (
+    input: CreateScheduledPostInput,
+    options?: CreateScheduledJobOptions
+  ) => Promise<ScheduledJobCreation>;
   markEnqueueQueued: (input: {
     workspaceId: string;
     scheduledJobId: string;
@@ -49,6 +66,8 @@ export type CreateScheduledPostResult = {
       };
 };
 
+type SchedulerDatabaseExecutor = Pick<DatabaseClient, "insert" | "select">;
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unable to enqueue publishing job.";
 }
@@ -61,26 +80,101 @@ function assertUpdatedJob(job: ScheduledJob | undefined, scheduledJobId: string)
   return job;
 }
 
+async function findScheduledJobBySource({
+  db,
+  sourceId,
+  workspaceId
+}: {
+  db: SchedulerDatabaseExecutor;
+  sourceId: string;
+  workspaceId: string;
+}) {
+  const [job] = await db
+    .select()
+    .from(scheduledJobs)
+    .where(and(eq(scheduledJobs.workspaceId, workspaceId), eq(scheduledJobs.sourceId, sourceId)))
+    .limit(1);
+
+  return assertUpdatedJob(job, sourceId);
+}
+
+async function insertScheduledJobRecord(
+  db: SchedulerDatabaseExecutor,
+  input: CreateScheduledPostInput
+): Promise<ScheduledJobCreation> {
+  const now = new Date();
+  const insert = db
+    .insert(scheduledJobs)
+    .values({
+      workspaceId: input.workspaceId,
+      platformVariantId: input.platformVariantId,
+      connectedAccountId: input.connectedAccountId ?? null,
+      provider: input.provider,
+      sourceId: input.sourceId,
+      scheduledFor: input.scheduledFor,
+      status: "scheduled",
+      enqueueStatus: "pending",
+      metadata: input.metadata ?? {},
+      updatedAt: now
+    });
+
+  if (input.sourceId) {
+    const [job] = await insert
+      .onConflictDoNothing({
+        target: [scheduledJobs.workspaceId, scheduledJobs.sourceId],
+        where: sql`${scheduledJobs.sourceId} is not null`
+      })
+      .returning();
+
+    if (job) {
+      return {
+        created: true,
+        scheduledJob: job
+      };
+    }
+
+    return {
+      created: false,
+      scheduledJob: await findScheduledJobBySource({
+        db,
+        sourceId: input.sourceId,
+        workspaceId: input.workspaceId
+      })
+    };
+  }
+
+  const [job] = await insert.returning();
+
+  return {
+    created: true,
+    scheduledJob: assertUpdatedJob(job, "new")
+  };
+}
+
 export function createDatabaseSchedulerRepository(db: DatabaseClient = getDb()): SchedulerRepository {
   return {
-    async createScheduledJob(input) {
-      const now = new Date();
-      const [job] = await db
-        .insert(scheduledJobs)
-        .values({
-          workspaceId: input.workspaceId,
-          platformVariantId: input.platformVariantId,
-          connectedAccountId: input.connectedAccountId ?? null,
-          provider: input.provider,
-          scheduledFor: input.scheduledFor,
-          status: "scheduled",
-          enqueueStatus: "pending",
-          metadata: input.metadata ?? {},
-          updatedAt: now
-        })
-        .returning();
+    async createScheduledJob(input, options) {
+      const usageReservation = options?.usageReservation;
 
-      return assertUpdatedJob(job, "new");
+      if (usageReservation && !usageReservation.skip) {
+        return db.transaction(async (tx) => {
+          const creation = await insertScheduledJobRecord(tx, input);
+          await consumeUsageForLimitInTransaction({
+            workspaceId: usageReservation.workspaceId,
+            key: usageReservation.key,
+            quantity: usageReservation.quantity,
+            sourceId: usageReservation.sourceId,
+            metadata: usageReservation.metadata,
+            now: usageReservation.now,
+            skip: usageReservation.skip,
+            tx
+          });
+
+          return creation;
+        });
+      }
+
+      return insertScheduledJobRecord(db, input);
     },
     async markEnqueueQueued(input) {
       const now = new Date();
@@ -143,13 +237,27 @@ export function createMemorySchedulerRepository(): SchedulerRepository & {
 
   return {
     async createScheduledJob(input) {
+      if (input.sourceId) {
+        const existing = [...jobs.values()].find(
+          (job) => job.workspaceId === input.workspaceId && job.sourceId === input.sourceId
+        );
+
+        if (existing) {
+          return {
+            created: false,
+            scheduledJob: existing
+          };
+        }
+      }
+
       const now = new Date();
-      return save({
+      const scheduledJob = save({
         id: crypto.randomUUID(),
         workspaceId: input.workspaceId,
         platformVariantId: input.platformVariantId,
         connectedAccountId: input.connectedAccountId ?? null,
         provider: input.provider,
+        sourceId: input.sourceId ?? null,
         scheduledFor: input.scheduledFor,
         status: "scheduled",
         enqueueStatus: "pending",
@@ -163,6 +271,11 @@ export function createMemorySchedulerRepository(): SchedulerRepository & {
         createdAt: now,
         updatedAt: now
       });
+
+      return {
+        created: true,
+        scheduledJob
+      };
     },
     async markEnqueueQueued(input) {
       return update(input.workspaceId, input.scheduledJobId, {
@@ -205,13 +318,28 @@ export function createSchedulerRepository({ allowMemoryFallback = false } = {}) 
 export async function createScheduledPost({
   input,
   repository = createSchedulerRepository(),
-  enqueue = ({ scheduledJob }: { scheduledJob: ScheduledJob }) => enqueueScheduledPost({ scheduledJob })
+  enqueue = ({ scheduledJob }: { scheduledJob: ScheduledJob }) => enqueueScheduledPost({ scheduledJob }),
+  usageReservation
 }: {
   input: CreateScheduledPostInput;
   repository?: SchedulerRepository;
   enqueue?: (input: { scheduledJob: ScheduledJob }) => Promise<EnqueueScheduledPostResult>;
+  usageReservation?: ConsumeUsageForLimitInput;
 }): Promise<CreateScheduledPostResult> {
-  const scheduledJob = await repository.createScheduledJob(input);
+  const { scheduledJob } = await repository.createScheduledJob(input, {
+    usageReservation
+  });
+
+  if (scheduledJob.enqueueStatus === "queued" && scheduledJob.queueJobId) {
+    return {
+      scheduledJob,
+      enqueue: {
+        status: "queued",
+        queueJobId: scheduledJob.queueJobId,
+        delayMs: Math.max(0, scheduledJob.scheduledFor.getTime() - Date.now())
+      }
+    };
+  }
 
   try {
     const enqueueResult = await enqueue({ scheduledJob });

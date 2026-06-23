@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { Bell, ChevronDown, Menu, Plus, Search } from "lucide-react";
 import { AuthControls } from "@/components/auth/auth-controls";
+import { NavLinks } from "@/components/layout/nav-links";
 import { Button } from "@/components/ui/button";
-import { brand, navItems } from "@/lib/design/tokens";
+import { brand } from "@/lib/design/tokens";
 import type { CurrentAppUser } from "@/lib/auth/current-user";
 import { isClerkClientConfigured } from "@/lib/env";
 
@@ -26,19 +27,7 @@ export function TopBar({ user }: { user: CurrentAppUser | null }) {
                 <p className="text-xs text-[var(--color-text-muted)]">Growth workspace</p>
               </div>
               <nav className="mt-1 space-y-1" aria-label="Mobile navigation">
-                {navItems.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
-                    >
-                      <Icon size={17} aria-hidden="true" />
-                      {item.label}
-                    </Link>
-                  );
-                })}
+                <NavLinks />
               </nav>
             </div>
           </details>

@@ -56,7 +56,8 @@ export async function enforceAutoReplyUsage({
   }
 }
 
-export async function recordAutoReplyUsage() {
+export async function recordAutoReplyUsage(_input?: AutoReplyUsageInput): Promise<void> {
+  void _input;
   // Production usage is reserved by enforceAutoReplyUsage before the external provider call.
 }
 

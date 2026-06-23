@@ -92,4 +92,18 @@ describe("auto reply usage", () => {
       metric
     });
   });
+
+  it("rethrows unexpected billing failures", async () => {
+    const error = new Error("database unavailable");
+    billingMocks.consumeUsageForLimit.mockRejectedValue(error);
+
+    const { enforceAutoReplyUsage } = await import("@/lib/replies/usage");
+
+    await expect(
+      enforceAutoReplyUsage({
+        workspaceId: "workspace_1",
+        commentId: "comment_1"
+      })
+    ).rejects.toBe(error);
+  });
 });

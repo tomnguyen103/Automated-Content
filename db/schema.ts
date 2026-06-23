@@ -497,6 +497,7 @@ export const scheduledJobs = pgTable(
     platformVariantId: text("platform_variant_id").notNull(),
     connectedAccountId: uuid("connected_account_id").references(() => connectedAccounts.id, { onDelete: "set null" }),
     provider: providerKeyEnum("provider").notNull(),
+    sourceId: text("source_id"),
     scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
     status: scheduledJobStatusEnum("status").default("scheduled").notNull(),
     enqueueStatus: queueEnqueueStatusEnum("enqueue_status").default("pending").notNull(),
@@ -512,6 +513,9 @@ export const scheduledJobs = pgTable(
   },
   (table) => [
     uniqueIndex("scheduled_jobs_workspace_id_id_idx").on(table.workspaceId, table.id),
+    uniqueIndex("scheduled_jobs_workspace_source_idx")
+      .on(table.workspaceId, table.sourceId)
+      .where(sql`${table.sourceId} is not null`),
     foreignKey({
       columns: [table.workspaceId, table.platformVariantId],
       foreignColumns: [platformVariants.workspaceId, platformVariants.id],

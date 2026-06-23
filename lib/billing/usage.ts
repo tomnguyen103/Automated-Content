@@ -1,7 +1,7 @@
 import "server-only";
 
 import { and, desc, eq, gte, ne, sql } from "drizzle-orm";
-import { getDb } from "@/db";
+import { getDb, type DatabaseClient } from "@/db";
 import {
   agentMissions,
   brandMemoryProposals,
@@ -32,6 +32,18 @@ export type UsageMetric = {
   remaining: number;
   allowed: boolean;
   cadence: "daily" | "monthly" | "current";
+};
+
+type UsageTransaction = Parameters<Parameters<DatabaseClient["transaction"]>[0]>[0];
+
+export type ConsumeUsageForLimitInput = {
+  workspaceId: string;
+  key: UsageLimitKey;
+  quantity?: number;
+  sourceId?: string;
+  metadata?: Record<string, unknown>;
+  now?: Date;
+  skip?: boolean;
 };
 
 export type UsageLedgerRecord = {
@@ -254,15 +266,35 @@ export async function consumeUsageForLimit({
   metadata,
   now = new Date(),
   skip = false
-}: {
-  workspaceId: string;
-  key: UsageLimitKey;
-  quantity?: number;
-  sourceId?: string;
-  metadata?: Record<string, unknown>;
-  now?: Date;
-  skip?: boolean;
-}) {
+}: ConsumeUsageForLimitInput) {
+  if (skip) {
+    return null;
+  }
+
+  return getDb().transaction((tx) =>
+    consumeUsageForLimitInTransaction({
+      tx,
+      workspaceId,
+      key,
+      quantity,
+      sourceId,
+      metadata,
+      now,
+      skip
+    })
+  );
+}
+
+export async function consumeUsageForLimitInTransaction({
+  tx,
+  workspaceId,
+  key,
+  quantity = 1,
+  sourceId,
+  metadata,
+  now = new Date(),
+  skip = false
+}: ConsumeUsageForLimitInput & { tx: UsageTransaction }) {
   if (skip) {
     return null;
   }
@@ -277,75 +309,71 @@ export async function consumeUsageForLimit({
     throw new Error(`Usage metric ${key} does not map to a ledger event type.`);
   }
 
-  const db = getDb();
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${workspaceId}), hashtext(${key}))`);
 
-  return db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${workspaceId}), hashtext(${key}))`);
+  const [subscription] = await tx
+    .select({ plan: subscriptions.plan })
+    .from(subscriptions)
+    .where(eq(subscriptions.workspaceId, workspaceId))
+    .limit(1);
+  const activePlan = normalizeBillingPlan(subscription?.plan);
+  const conditions = [eq(usageLedger.workspaceId, workspaceId), eq(usageLedger.type, type)];
+  const since = getUsageWindowStart(key, now);
 
-    const [subscription] = await tx
-      .select({ plan: subscriptions.plan })
-      .from(subscriptions)
-      .where(eq(subscriptions.workspaceId, workspaceId))
-      .limit(1);
-    const activePlan = normalizeBillingPlan(subscription?.plan);
-    const conditions = [eq(usageLedger.workspaceId, workspaceId), eq(usageLedger.type, type)];
-    const since = getUsageWindowStart(key, now);
+  if (since) {
+    conditions.push(gte(usageLedger.occurredAt, since));
+  }
 
-    if (since) {
-      conditions.push(gte(usageLedger.occurredAt, since));
-    }
+  const [usageTotal] = await tx
+    .select({ total: sql<number>`coalesce(sum(${usageLedger.quantity}), 0)::int` })
+    .from(usageLedger)
+    .where(and(...conditions));
+  const used = usageTotal?.total ?? 0;
+  const metric = buildUsageMetric(activePlan, key, used);
 
-    const [usageTotal] = await tx
-      .select({ total: sql<number>`coalesce(sum(${usageLedger.quantity}), 0)::int` })
+  if (sourceId) {
+    const [existing] = await tx
+      .select({ id: usageLedger.id })
       .from(usageLedger)
-      .where(and(...conditions));
-    const used = usageTotal?.total ?? 0;
-    const metric = buildUsageMetric(activePlan, key, used);
-
-    if (sourceId) {
-      const [existing] = await tx
-        .select({ id: usageLedger.id })
-        .from(usageLedger)
-        .where(
-          and(
-            eq(usageLedger.workspaceId, workspaceId),
-            eq(usageLedger.type, type),
-            eq(usageLedger.sourceId, sourceId)
-          )
+      .where(
+        and(
+          eq(usageLedger.workspaceId, workspaceId),
+          eq(usageLedger.type, type),
+          eq(usageLedger.sourceId, sourceId)
         )
-        .limit(1);
+      )
+      .limit(1);
 
-      if (existing) {
-        return metric;
-      }
+    if (existing) {
+      return metric;
     }
+  }
 
-    if (!canConsumeUsage({ plan: activePlan, key, used, requested: quantity })) {
-      throw new UsageLimitExceededError({
-        ...metric,
-        allowed: false
-      });
-    }
-
-    const insert = tx.insert(usageLedger).values({
-      workspaceId,
-      type,
-      quantity,
-      sourceId,
-      metadata
+  if (!canConsumeUsage({ plan: activePlan, key, used, requested: quantity })) {
+    throw new UsageLimitExceededError({
+      ...metric,
+      allowed: false
     });
+  }
 
-    if (sourceId) {
-      await insert.onConflictDoNothing({
-        target: [usageLedger.workspaceId, usageLedger.type, usageLedger.sourceId],
-        where: sql`${usageLedger.sourceId} is not null`
-      });
-    } else {
-      await insert;
-    }
-
-    return buildUsageMetric(activePlan, key, used + quantity);
+  const insert = tx.insert(usageLedger).values({
+    workspaceId,
+    type,
+    quantity,
+    sourceId,
+    metadata
   });
+
+  if (sourceId) {
+    await insert.onConflictDoNothing({
+      target: [usageLedger.workspaceId, usageLedger.type, usageLedger.sourceId],
+      where: sql`${usageLedger.sourceId} is not null`
+    });
+  } else {
+    await insert;
+  }
+
+  return buildUsageMetric(activePlan, key, used + quantity);
 }
 
 export async function getWorkspaceBillingState({

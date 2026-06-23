@@ -259,22 +259,30 @@ function isImageKitHostname(hostname: string) {
   return hostname === defaultImageKitHostname || hostname.endsWith(".imagekit.io");
 }
 
-function isTrustedLinkedInImageSource(parsed: URL) {
-  const hostname = parsed.hostname.toLowerCase();
+function matchesConfiguredImageKitEndpoint(parsed: URL, endpoint: URL) {
+  const trustedPath = endpoint.pathname.replace(/\/+$/, "");
 
-  if (isImageKitHostname(hostname)) {
+  if (parsed.origin !== endpoint.origin) {
+    return false;
+  }
+
+  if (!trustedPath || trustedPath === "/") {
     return true;
   }
 
-  if (!env.IMAGEKIT_URL_ENDPOINT) {
-    return false;
+  return parsed.pathname === trustedPath || parsed.pathname.startsWith(`${trustedPath}/`);
+}
+
+function isTrustedLinkedInImageSource(parsed: URL) {
+  if (env.IMAGEKIT_URL_ENDPOINT) {
+    try {
+      return matchesConfiguredImageKitEndpoint(parsed, new URL(env.IMAGEKIT_URL_ENDPOINT));
+    } catch {
+      return false;
+    }
   }
 
-  try {
-    return parsed.origin === new URL(env.IMAGEKIT_URL_ENDPOINT).origin;
-  } catch {
-    return false;
-  }
+  return isImageKitHostname(parsed.hostname.toLowerCase());
 }
 
 async function validatePublicImageSourceUrl(sourceUrl: string) {
@@ -739,8 +747,17 @@ async function uploadImageForLinkedIn({
   }
 
   const imageResponse = await fetchWithTimeout(safeSourceUrl, {
-    redirect: "error"
+    redirect: "manual"
   });
+
+  if (imageResponse.status >= 300 && imageResponse.status < 400) {
+    throw new ProviderError({
+      code: "content_invalid",
+      message: "LinkedIn image source URL must not redirect.",
+      provider: "linkedin",
+      retryable: false
+    });
+  }
 
   if (!imageResponse.ok) {
     throw new ProviderError({

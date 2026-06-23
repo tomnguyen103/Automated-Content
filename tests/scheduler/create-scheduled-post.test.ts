@@ -157,4 +157,25 @@ describe("createScheduledPost", () => {
     });
     expect(enqueue).toHaveBeenCalledOnce();
   });
+
+  it("rejects divergent scheduled job and usage reservation source IDs", async () => {
+    const repository = createFakeRepository([]);
+
+    await expect(
+      createScheduledPost({
+        input: {
+          ...baseInput,
+          sourceId: "schedule:job-source"
+        },
+        repository,
+        usageReservation: {
+          workspaceId: baseInput.workspaceId,
+          key: "scheduledPostsPerDay",
+          sourceId: "schedule:usage-source"
+        }
+      })
+    ).rejects.toThrow("Usage reservation sourceId must match scheduled post sourceId.");
+
+    expect(repository.createScheduledJob).not.toHaveBeenCalled();
+  });
 });

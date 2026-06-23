@@ -55,12 +55,27 @@ export default async function CalendarPage() {
   const queueStats = getQueueStats(queueRows);
   const publishedRows = queueRows.filter((row) => row.status === "Published");
   const failedRows = queueRows.filter((row) => row.status === "Failed" || row.enqueue === "Retry needed");
+  const hasWaitingJobs = workerReadiness.queues.some((queue) => queue.status === "jobs_waiting");
   const workerBadge =
     workerReadiness.summary.blocked > 0
       ? `${workerReadiness.summary.blocked} blocked`
       : workerReadiness.summary.healthy > 0
         ? `${workerReadiness.summary.healthy} healthy`
-        : "Preview mode";
+        : workspace?.isLocalPreview
+          ? "Preview mode"
+          : hasWaitingJobs
+            ? "Workers idle"
+            : "Not configured";
+  const workerBadgeTone =
+    workerReadiness.summary.blocked > 0
+      ? "critical"
+      : workerReadiness.summary.healthy > 0
+        ? "success"
+        : hasWaitingJobs
+          ? "premium"
+          : workspace?.isLocalPreview
+            ? "community"
+            : "neutral";
 
   return (
     <>
@@ -114,9 +129,7 @@ export default async function CalendarPage() {
                 Rows stay visible when queue delivery needs attention.
               </p>
             </div>
-            <Badge tone={workerReadiness.summary.blocked > 0 ? "critical" : workerReadiness.summary.healthy > 0 ? "success" : "community"}>
-              {workerBadge}
-            </Badge>
+            <Badge tone={workerBadgeTone}>{workerBadge}</Badge>
           </div>
           <div className="grid gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] p-5 md:grid-cols-2">
             {workerReadiness.queues.map((queue) => (

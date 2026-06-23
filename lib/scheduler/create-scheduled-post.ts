@@ -326,6 +326,10 @@ export async function createScheduledPost({
   enqueue?: (input: { scheduledJob: ScheduledJob }) => Promise<EnqueueScheduledPostResult>;
   usageReservation?: ConsumeUsageForLimitInput;
 }): Promise<CreateScheduledPostResult> {
+  if (usageReservation?.sourceId && usageReservation.sourceId !== input.sourceId) {
+    throw new Error("Usage reservation sourceId must match scheduled post sourceId.");
+  }
+
   const { scheduledJob } = await repository.createScheduledJob(input, {
     usageReservation
   });

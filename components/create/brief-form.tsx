@@ -481,8 +481,8 @@ export function BriefForm() {
           />
         </div>
         <span id="media" className="block scroll-mt-24" aria-hidden="true" />
+        <span id="review" className="block scroll-mt-24" aria-hidden="true" />
         <div id="schedule" className="scroll-mt-24">
-          <span id="review" className="block scroll-mt-24" aria-hidden="true" />
           <ReviewStep
             brandMemoryProposals={result?.brandMemoryProposals ?? []}
             disabled={decisionLoading}

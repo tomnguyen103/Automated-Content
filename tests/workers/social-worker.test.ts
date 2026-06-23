@@ -48,6 +48,27 @@ describe("social worker runtime", () => {
     expect(missionWorker.close).toHaveBeenCalledOnce();
   });
 
+  it("closes a created publishing worker when mission worker creation fails", () => {
+    const publishingWorker = createWorkerStub();
+    const createPublishingWorker = vi.fn(() => publishingWorker as never);
+    const createMissionWorker = vi.fn(() => {
+      throw new Error("mission worker failed");
+    });
+
+    expect(() =>
+      startSocialWorkerRuntime({
+        createMissionWorker,
+        createPublishingWorker,
+        logger: {
+          error: vi.fn(),
+          log: vi.fn()
+        },
+        redisUrl: "redis://localhost:6379/0"
+      })
+    ).toThrow("mission worker failed");
+    expect(publishingWorker.close).toHaveBeenCalledOnce();
+  });
+
   it("unregisters shutdown handlers without closing workers", () => {
     const runtime = {
       close: vi.fn(async () => undefined),

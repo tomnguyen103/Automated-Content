@@ -421,6 +421,7 @@ describe("linkedin provider", () => {
         })
       )
       .mockResolvedValueOnce(
+        // Node's undici fetch returns a visible 3xx response for redirect: "manual".
         new Response(null, {
           status: 302,
           headers: {

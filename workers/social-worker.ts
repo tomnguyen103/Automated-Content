@@ -1,21 +1,52 @@
 import process from "node:process";
+import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { Worker } from "bullmq";
 import { env } from "@/lib/env";
-import {
-  PUBLISH_QUEUE_NAME,
-  createRedisConnectionOptions,
-  type PublishPostJobData
-} from "@/lib/scheduler/enqueue";
-import {
-  AGENT_MISSION_QUEUE_NAME,
-  type RunAgentMissionJobData
-} from "@/lib/agents/orchestration/queue";
-import { publishScheduledPostJob } from "@/workers/jobs/publish-post";
-import { runAgentMissionJob } from "@/workers/jobs/run-agent-mission";
+import type { PublishPostJobData } from "@/lib/scheduler/enqueue";
+import type { RunAgentMissionJobData } from "@/lib/agents/orchestration/queue";
+import type * as PublishQueueModule from "@/lib/scheduler/enqueue";
+import type * as PublishPostJobModule from "@/workers/jobs/publish-post";
+import type * as RunAgentMissionJobModule from "@/workers/jobs/run-agent-mission";
 
 type SocialWorker = Worker<PublishPostJobData> | Worker<RunAgentMissionJobData>;
 type WorkerLogger = Pick<typeof console, "error" | "log">;
+type WorkerModules = {
+  publishPostJob: typeof PublishPostJobModule;
+  publishQueue: typeof PublishQueueModule;
+  runAgentMissionJob: typeof RunAgentMissionJobModule;
+};
+
+const PUBLISH_QUEUE_NAME = "social-publishing";
+const AGENT_MISSION_QUEUE_NAME = "agent-missions";
+const workerRequire = createRequire(import.meta.url);
+
+function installServerOnlyShim() {
+  const serverOnlyPath = workerRequire.resolve("server-only");
+
+  if (!workerRequire.cache[serverOnlyPath]) {
+    workerRequire.cache[serverOnlyPath] = {
+      children: [],
+      exports: {},
+      filename: serverOnlyPath,
+      id: serverOnlyPath,
+      isPreloading: false,
+      loaded: true,
+      path: "",
+      paths: []
+    } as unknown as NodeJS.Module;
+  }
+}
+
+function loadWorkerModules(): WorkerModules {
+  installServerOnlyShim();
+
+  return {
+    publishPostJob: workerRequire("@/workers/jobs/publish-post") as typeof PublishPostJobModule,
+    publishQueue: workerRequire("@/lib/scheduler/enqueue") as typeof PublishQueueModule,
+    runAgentMissionJob: workerRequire("@/workers/jobs/run-agent-mission") as typeof RunAgentMissionJobModule
+  };
+}
 
 function readPositiveIntegerEnv(value: string | undefined, fallback: number) {
   if (!value) {
@@ -33,6 +64,11 @@ export function createSocialPublishingWorker({
   redisUrl?: string;
   concurrency?: number;
 } = {}) {
+  const {
+    publishPostJob: { publishScheduledPostJob },
+    publishQueue: { createRedisConnectionOptions }
+  } = loadWorkerModules();
+
   return new Worker<PublishPostJobData>(
     PUBLISH_QUEUE_NAME,
     async (job) => publishScheduledPostJob({ data: job.data }),
@@ -50,6 +86,11 @@ export function createAgentMissionWorker({
   redisUrl?: string;
   concurrency?: number;
 } = {}) {
+  const {
+    publishQueue: { createRedisConnectionOptions },
+    runAgentMissionJob: { runAgentMissionJob }
+  } = loadWorkerModules();
+
   return new Worker<RunAgentMissionJobData>(
     AGENT_MISSION_QUEUE_NAME,
     async (job) => runAgentMissionJob({ data: job.data }),
@@ -75,16 +116,21 @@ export function startSocialWorkerRuntime({
   publishingConcurrency?: number;
   redisUrl?: string;
 } = {}) {
-  const workers: SocialWorker[] = [
-    createPublishingWorker({
+  const workers: SocialWorker[] = [];
+
+  try {
+    workers.push(createPublishingWorker({
       concurrency: publishingConcurrency,
       redisUrl
-    }),
-    createMissionWorker({
+    }));
+    workers.push(createMissionWorker({
       concurrency: agentMissionConcurrency,
       redisUrl
-    })
-  ];
+    }));
+  } catch (error) {
+    void Promise.all(workers.map((worker) => worker.close().catch(() => undefined)));
+    throw error;
+  }
 
   logger.log(
     `Social worker runtime started for queues: ${PUBLISH_QUEUE_NAME}, ${AGENT_MISSION_QUEUE_NAME}.`

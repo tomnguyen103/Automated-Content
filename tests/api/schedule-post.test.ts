@@ -581,6 +581,8 @@ describe("schedule post API", () => {
     vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
     vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "");
 
+    const scheduledFor = futureIsoDate();
+    const expectedSourceId = `schedule:workspace_usage_1:variant_1:mock:default:${scheduledFor}`;
     const consumeUsageForLimit = vi.fn(async () => null);
     const createScheduledPost = vi.fn(async () => ({
       scheduledJob: {
@@ -630,7 +632,7 @@ describe("schedule post API", () => {
         method: "POST",
         body: JSON.stringify({
           provider: "mock",
-          scheduledFor: futureIsoDate()
+          scheduledFor
         })
       }),
       {
@@ -642,17 +644,17 @@ describe("schedule post API", () => {
     expect(createScheduledPost).toHaveBeenCalledWith(
       expect.objectContaining({
         input: expect.objectContaining({
-          sourceId: expect.stringContaining("schedule:workspace_usage_1:variant_1:mock")
+          sourceId: expectedSourceId
         }),
         usageReservation: expect.objectContaining({
           workspaceId: "workspace_usage_1",
           key: "scheduledPostsPerDay",
-          sourceId: expect.stringContaining("schedule:workspace_usage_1:variant_1:mock"),
+          sourceId: expectedSourceId,
           metadata: expect.objectContaining({
             platformVariantId: "variant_1",
             provider: "mock",
-            scheduledFor: expect.any(String),
-            scheduledJobSourceId: expect.stringContaining("schedule:workspace_usage_1:variant_1:mock"),
+            scheduledFor,
+            scheduledJobSourceId: expectedSourceId,
             userId: "user_usage_1"
           }),
           skip: false
@@ -666,6 +668,8 @@ describe("schedule post API", () => {
     vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
     vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "");
 
+    const scheduledFor = futureIsoDate();
+    const expectedSourceId = `schedule:workspace_usage_1:variant_1:mock:default:${scheduledFor}`;
     const metric = {
       key: "scheduledPostsPerDay",
       label: "Scheduled posts",
@@ -674,19 +678,20 @@ describe("schedule post API", () => {
       remaining: 0,
       allowed: false,
       cadence: "daily"
-    };
+    } as const;
     class UsageLimitExceededError extends Error {
-      readonly metric = metric;
+      readonly metric: typeof metric;
 
-      constructor() {
-        super("Scheduled posts limit reached for the current plan.");
+      constructor(metricInput: typeof metric) {
+        super(`${metricInput.label} limit reached for the current plan.`);
+        this.metric = metricInput;
       }
     }
     const consumeUsageForLimit = vi.fn(async () => {
-      throw new UsageLimitExceededError();
+      throw new UsageLimitExceededError(metric);
     });
     const createScheduledPost = vi.fn(async () => {
-      throw new UsageLimitExceededError();
+      throw new UsageLimitExceededError(metric);
     });
 
     vi.doMock("@/lib/auth/current-user", () => ({
@@ -726,7 +731,7 @@ describe("schedule post API", () => {
         method: "POST",
         body: JSON.stringify({
           provider: "mock",
-          scheduledFor: futureIsoDate()
+          scheduledFor
         })
       }),
       {
@@ -742,7 +747,7 @@ describe("schedule post API", () => {
       expect.objectContaining({
         usageReservation: expect.objectContaining({
           key: "scheduledPostsPerDay",
-          sourceId: expect.stringContaining("schedule:workspace_usage_1:variant_1:mock"),
+          sourceId: expectedSourceId,
           workspaceId: "workspace_usage_1"
         })
       })

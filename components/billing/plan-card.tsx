@@ -1,12 +1,18 @@
-import { CheckCircle2 } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2, CreditCard } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import type { BillingPlan, PlanEntitlements } from "@/lib/billing/entitlements";
+import { cn } from "@/lib/utils";
 
 type PlanCardProps = {
   plan: BillingPlan;
   entitlements: PlanEntitlements;
   active?: boolean;
+  action: {
+    label: string;
+    href?: string;
+    disabledReason?: string;
+  };
 };
 
 const planHighlights: Record<BillingPlan, string[]> = {
@@ -14,7 +20,19 @@ const planHighlights: Record<BillingPlan, string[]> = {
   premium: ["7 scheduled posts/day", "Multi-platform publishing", "Keyword auto replies"]
 };
 
-export function PlanCard({ plan, entitlements, active = false }: PlanCardProps) {
+function actionClasses(active: boolean, disabled: boolean) {
+  return cn(
+    "mt-6 inline-flex h-10 w-full items-center justify-center gap-2 rounded-[var(--radius-md)] border px-4 text-sm font-medium transition active:translate-y-px",
+    active
+      ? "border-[var(--color-border)] bg-white text-[var(--color-text)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface)]"
+      : "border-transparent bg-[var(--color-primary)] text-white shadow-sm hover:bg-[var(--color-primary-strong)]",
+    disabled && "pointer-events-none cursor-not-allowed opacity-50"
+  );
+}
+
+export function PlanCard({ plan, entitlements, active = false, action }: PlanCardProps) {
+  const disabled = !action.href;
+
   return (
     <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-5">
       <div className="flex items-start justify-between gap-4">
@@ -41,9 +59,22 @@ export function PlanCard({ plan, entitlements, active = false }: PlanCardProps) 
         ))}
       </ul>
 
-      <Button className="mt-6 w-full" variant={active ? "outline" : "primary"}>
-        {active ? "Manage plan" : plan === "premium" ? "Upgrade" : "Switch plan"}
-      </Button>
+      {action.href ? (
+        <Link href={action.href} className={actionClasses(active, disabled)}>
+          <CreditCard size={16} aria-hidden="true" />
+          {action.label}
+        </Link>
+      ) : (
+        <button
+          type="button"
+          className={actionClasses(active, disabled)}
+          disabled
+          title={action.disabledReason}
+        >
+          <CreditCard size={16} aria-hidden="true" />
+          {action.label}
+        </button>
+      )}
     </section>
   );
 }

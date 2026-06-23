@@ -4,6 +4,10 @@ import {
   persistProviderConnection
 } from "@/lib/providers/connections";
 import {
+  UsageLimitExceededError
+} from "@/lib/billing/usage";
+import { withProviderConnectionCapacity } from "@/lib/providers/connection-capacity";
+import {
   getLinkedInRedirectUri,
   linkedinProvider
 } from "@/lib/providers/linkedin";
@@ -131,9 +135,15 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
       authorizationCode: code,
       redirectUri: getLinkedInRedirectUri()
     });
-    await persistProviderConnection({
+    await withProviderConnectionCapacity({
+      provider: rawProvider,
       workspaceId: workspace.id,
-      result
+      isLocalPreview: workspace.isLocalPreview
+    }, async () => {
+      await persistProviderConnection({
+        workspaceId: workspace.id,
+        result
+      });
     });
 
     if (wantsJson(request)) {
@@ -153,6 +163,25 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
     response.cookies.delete(oauthStateCookieName(rawProvider));
     return response;
   } catch (error) {
+    if (error instanceof UsageLimitExceededError) {
+      const response = wantsJson(request)
+        ? NextResponse.json(
+            {
+              error: error.message,
+              code: "provider_connection_limit_reached",
+              usage: error.metric
+            },
+            { status: 429 }
+          )
+        : redirectToConnections(request, {
+            error: "provider_connection_limit_reached",
+            provider: rawProvider,
+            upgrade: "1"
+          });
+
+      return clearOauthStateCookie(response, rawProvider);
+    }
+
     const message = error instanceof Error ? error.message : "Unable to complete provider connection.";
     const response = wantsJson(request)
       ? jsonError("provider_callback_failed", message, 502)

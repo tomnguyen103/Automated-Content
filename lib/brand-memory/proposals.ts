@@ -1,11 +1,12 @@
 import "server-only";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { getDb, type DatabaseClient } from "@/db";
 import { brandMemoryProposals } from "@/db/schema";
 import {
   brandMemoryProposalSchema,
   type BrandMemoryProposal,
+  type BrandMemoryProposalScope,
   type BrandMemoryProposalStatus
 } from "@/lib/brand-memory/schemas";
 import { contentPackSchema, type ContentPack } from "@/lib/agents/schemas/content-pack";
@@ -23,6 +24,10 @@ export type BrandMemoryProposalRepository = {
   list: (input: {
     workspaceId: string;
     status?: BrandMemoryProposalStatus;
+    scope?: BrandMemoryProposalScope;
+    platform?: string;
+    minConfidence?: number;
+    maxConfidence?: number;
     limit?: number;
   }) => Promise<BrandMemoryProposal[]>;
   review: (input: {
@@ -32,6 +37,13 @@ export type BrandMemoryProposalRepository = {
     userId: string;
     now?: Date;
   }) => Promise<BrandMemoryProposal | null>;
+  reviewMany: (input: {
+    workspaceId: string;
+    ids: string[];
+    status: Extract<BrandMemoryProposalStatus, "accepted" | "rejected">;
+    userId: string;
+    now?: Date;
+  }) => Promise<BrandMemoryProposal[]>;
 };
 
 export type BuildBrandMemoryProposalsInput = {
@@ -103,6 +115,31 @@ function proposalToRow(proposal: BrandMemoryProposal) {
 
 function normalizeText(value: string | undefined) {
   return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function proposalMatchesFilters(
+  proposal: BrandMemoryProposal,
+  {
+    maxConfidence,
+    minConfidence,
+    platform,
+    scope,
+    status
+  }: {
+    status?: BrandMemoryProposalStatus;
+    scope?: BrandMemoryProposalScope;
+    platform?: string;
+    minConfidence?: number;
+    maxConfidence?: number;
+  }
+) {
+  return (
+    (!status || proposal.status === status) &&
+    (!scope || proposal.scope === scope) &&
+    (!platform || proposal.platform === platform) &&
+    (minConfidence === undefined || proposal.confidence >= minConfidence) &&
+    (maxConfidence === undefined || proposal.confidence <= maxConfidence)
+  );
 }
 
 function wordCount(value: string) {
@@ -277,9 +314,19 @@ function createMemoryBrandMemoryProposalRepository(): BrandMemoryProposalReposit
       return parsed;
     },
 
-    async list({ workspaceId, status, limit = DEFAULT_PROPOSAL_LIMIT }) {
+    async list({ workspaceId, status, scope, platform, minConfidence, maxConfidence, limit = DEFAULT_PROPOSAL_LIMIT }) {
       return [...sharedMemoryProposals.values()]
-        .filter((proposal) => proposal.workspaceId === workspaceId && (!status || proposal.status === status))
+        .filter(
+          (proposal) =>
+            proposal.workspaceId === workspaceId &&
+            proposalMatchesFilters(proposal, {
+              status,
+              scope,
+              platform,
+              minConfidence,
+              maxConfidence
+            })
+        )
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .slice(0, Math.max(1, Math.min(100, Math.floor(limit))));
     },
@@ -300,6 +347,32 @@ function createMemoryBrandMemoryProposalRepository(): BrandMemoryProposalReposit
       });
 
       sharedMemoryProposals.set(id, reviewed);
+      return reviewed;
+    },
+
+    async reviewMany({ workspaceId, ids, status, userId, now = new Date() }) {
+      const reviewed: BrandMemoryProposal[] = [];
+      const uniqueIds = [...new Set(ids)];
+
+      for (const id of uniqueIds) {
+        const existing = sharedMemoryProposals.get(id);
+
+        if (!existing || existing.workspaceId !== workspaceId) {
+          continue;
+        }
+
+        const proposal = brandMemoryProposalSchema.parse({
+          ...existing,
+          status,
+          reviewedByUserId: userId,
+          reviewedAt: now.toISOString(),
+          updatedAt: now.toISOString()
+        });
+
+        sharedMemoryProposals.set(id, proposal);
+        reviewed.push(proposal);
+      }
+
       return reviewed;
     },
 
@@ -330,15 +403,33 @@ export function createDatabaseBrandMemoryProposalRepository(
       return parsed;
     },
 
-    async list({ workspaceId, status, limit = DEFAULT_PROPOSAL_LIMIT }) {
+    async list({ workspaceId, status, scope, platform, minConfidence, maxConfidence, limit = DEFAULT_PROPOSAL_LIMIT }) {
+      const conditions = [eq(brandMemoryProposals.workspaceId, workspaceId)];
+
+      if (status) {
+        conditions.push(eq(brandMemoryProposals.status, status));
+      }
+
+      if (scope) {
+        conditions.push(eq(brandMemoryProposals.scope, scope));
+      }
+
+      if (platform) {
+        conditions.push(eq(brandMemoryProposals.platform, socialPlatformSchema.parse(platform)));
+      }
+
+      if (minConfidence !== undefined) {
+        conditions.push(gte(brandMemoryProposals.confidence, minConfidence));
+      }
+
+      if (maxConfidence !== undefined) {
+        conditions.push(lte(brandMemoryProposals.confidence, maxConfidence));
+      }
+
       const rows = await db
         .select()
         .from(brandMemoryProposals)
-        .where(
-          status
-            ? and(eq(brandMemoryProposals.workspaceId, workspaceId), eq(brandMemoryProposals.status, status))
-            : eq(brandMemoryProposals.workspaceId, workspaceId)
-        )
+        .where(and(...conditions))
         .orderBy(desc(brandMemoryProposals.createdAt))
         .limit(Math.max(1, Math.min(100, Math.floor(limit))));
 
@@ -358,6 +449,27 @@ export function createDatabaseBrandMemoryProposalRepository(
         .returning();
 
       return row ? proposalFromRow(row) : null;
+    },
+
+    async reviewMany({ workspaceId, ids, status, userId, now = new Date() }) {
+      const uniqueIds = [...new Set(ids)].filter(Boolean);
+
+      if (uniqueIds.length === 0) {
+        return [];
+      }
+
+      const rows = await db
+        .update(brandMemoryProposals)
+        .set({
+          status,
+          reviewedByUserId: userId,
+          reviewedAt: now,
+          updatedAt: now
+        })
+        .where(and(eq(brandMemoryProposals.workspaceId, workspaceId), inArray(brandMemoryProposals.id, uniqueIds)))
+        .returning();
+
+      return rows.map(proposalFromRow);
     }
   };
 }
@@ -385,6 +497,76 @@ export function createBrandMemoryProposalRepository({
 
 export function clearBrandMemoryProposalsForTests() {
   sharedMemoryBrandMemoryProposalRepository.clear();
+}
+
+export async function ensureLocalPreviewBrandMemoryProposals({
+  userId,
+  workspaceId,
+  now = new Date()
+}: {
+  workspaceId: string;
+  userId: string;
+  now?: Date;
+}) {
+  const repository = createBrandMemoryProposalRepository({
+    allowMemoryFallback: true,
+    preferMemoryFallback: true
+  });
+  const existing = await repository.list({
+    workspaceId,
+    limit: 50
+  });
+
+  if (existing.length > 0) {
+    return existing;
+  }
+
+  const timestamp = now.toISOString();
+  const proposals = [
+    {
+      id: "brand_memory_preview_workspace",
+      workspaceId,
+      createdByUserId: userId,
+      sourceAgentRunId: "preview_agent_run_1",
+      sourceContentPackId: "preview_content_pack_1",
+      scope: "workspace",
+      originalText: "Our automation makes content easier.",
+      editedText: "We make content operations easier by keeping approval in the loop.",
+      inferredRule: "Use first-person operator language when explaining automation benefits.",
+      confidence: 82,
+      status: "pending",
+      evidence: {
+        topic: "content operations",
+        changedFields: ["captions[0]"]
+      },
+      createdAt: timestamp,
+      updatedAt: timestamp
+    },
+    {
+      id: "brand_memory_preview_linkedin",
+      workspaceId,
+      createdByUserId: userId,
+      sourceAgentRunId: "preview_agent_run_2",
+      sourceContentPackId: "preview_content_pack_2",
+      sourceVariantId: "preview_variant_linkedin",
+      scope: "platform",
+      platform: "linkedin",
+      originalText: "Try our tool to schedule more posts.",
+      editedText: "Build a calm publishing cadence without handing the final call to automation.",
+      inferredRule: "For linkedin, avoid pure feature pitches and anchor copy in operator control.",
+      confidence: 76,
+      status: "pending",
+      evidence: {
+        topic: "publishing cadence",
+        platform: "linkedin",
+        changedFields: ["variants.linkedin.body"]
+      },
+      createdAt: timestamp,
+      updatedAt: timestamp
+    }
+  ] satisfies BrandMemoryProposal[];
+
+  return repository.saveMany(proposals);
 }
 
 export function applyAcceptedBrandMemoryToProfile(

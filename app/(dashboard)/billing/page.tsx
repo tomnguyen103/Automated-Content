@@ -8,10 +8,16 @@ import {
   planEntitlements,
   type BillingPlan
 } from "@/lib/billing/entitlements";
+import {
+  getBillingActionRoute,
+  isBillingActionConfigured
+} from "@/lib/billing/actions";
 import { buildUsageMetrics, getWorkspaceBillingState } from "@/lib/billing/usage";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { isDatabaseConfigured } from "@/lib/env";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
+
+export const dynamic = "force-dynamic";
 
 export default async function BillingPage() {
   const user = await getCurrentUser();
@@ -25,6 +31,53 @@ export default async function BillingPage() {
           usageMetrics: buildUsageMetrics(fallbackPlan, {})
         };
   const { activePlan, usageMetrics } = billingState;
+  const canUseBillingActions = Boolean(workspace && !workspace.isLocalPreview);
+  const checkoutHref =
+    canUseBillingActions && isBillingActionConfigured("checkout")
+      ? getBillingActionRoute("checkout")
+      : undefined;
+  const portalHref =
+    canUseBillingActions && isBillingActionConfigured("portal")
+      ? getBillingActionRoute("portal")
+      : undefined;
+  const disabledBillingReason = workspace?.isLocalPreview
+    ? "Billing actions are disabled in local preview."
+    : "Configure BILLING_UPGRADE_URL and BILLING_CUSTOMER_PORTAL_URL to enable this action.";
+  const billingBadge = workspace?.isLocalPreview
+    ? "Local preview"
+    : checkoutHref || portalHref
+      ? "Billing actions configured"
+      : "Billing setup needed";
+
+  function planAction(plan: BillingPlan) {
+    if (plan === activePlan && plan === "premium") {
+      return {
+        label: "Manage billing",
+        href: portalHref,
+        disabledReason: disabledBillingReason
+      };
+    }
+
+    if (plan === activePlan) {
+      return {
+        label: "Current plan",
+        disabledReason: "This plan is active."
+      };
+    }
+
+    if (plan === "premium") {
+      return {
+        label: "Upgrade",
+        href: checkoutHref,
+        disabledReason: disabledBillingReason
+      };
+    }
+
+    return {
+      label: "Included",
+      disabledReason: "Premium includes the Free plan baseline."
+    };
+  }
 
   return (
     <>
@@ -32,14 +85,24 @@ export default async function BillingPage() {
         items={[
           { label: "Plan", href: "#plan", active: true },
           { label: "Usage", href: "#usage" },
-          { label: "Invoices", disabled: true },
-          { label: "Upgrade", disabled: true }
+          {
+            label: "Invoices",
+            href: portalHref,
+            disabled: !portalHref,
+            title: disabledBillingReason
+          },
+          {
+            label: "Upgrade",
+            href: checkoutHref,
+            disabled: !checkoutHref || activePlan === "premium",
+            title: activePlan === "premium" ? "Premium is active." : disabledBillingReason
+          }
         ]}
       />
       <PageShell
         title="Billing"
         description="Manage plan state, usage limits, invoices, and seven-post-per-day Premium automation capacity."
-        actions={<Badge tone="primary">{user?.isLocalPreview ? "Local preview" : "Clerk synced"}</Badge>}
+        actions={<Badge tone={workspace?.isLocalPreview ? "community" : checkoutHref || portalHref ? "success" : "primary"}>{billingBadge}</Badge>}
       >
         <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
           <div id="plan" className="grid scroll-mt-20 gap-5 md:grid-cols-2 xl:grid-cols-1">
@@ -49,6 +112,7 @@ export default async function BillingPage() {
                 plan={plan}
                 entitlements={planEntitlements[plan]}
                 active={plan === activePlan}
+                action={planAction(plan)}
               />
             ))}
           </div>

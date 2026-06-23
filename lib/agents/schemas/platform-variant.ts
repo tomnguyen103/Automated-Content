@@ -9,6 +9,7 @@ export const socialPlatformSchema = z.enum([
   "tiktok",
   "threads"
 ]);
+export const socialPlatformOptions = socialPlatformSchema.options;
 
 export const platformPolicyStatusSchema = z.enum(["pass", "warn", "block"]);
 

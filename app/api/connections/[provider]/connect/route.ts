@@ -10,6 +10,10 @@ import {
   buildLinkedInAuthorizationUrl,
   getLinkedInRedirectUri
 } from "@/lib/providers/linkedin";
+import {
+  UsageLimitExceededError
+} from "@/lib/billing/usage";
+import { withProviderConnectionCapacity } from "@/lib/providers/connection-capacity";
 import { getProviderAdapter, isProviderKey } from "@/lib/providers/registry";
 import type { ProviderKey, ProviderConnectionResult } from "@/lib/providers/types";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
@@ -117,9 +121,15 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
         providerAccountId: `mock_${workspace.id}`,
         displayName: "Local preview account"
       });
-      await persistProviderConnection({
+      await withProviderConnectionCapacity({
+        provider,
         workspaceId: workspace.id,
-        result
+        isLocalPreview: workspace.isLocalPreview
+      }, async () => {
+        await persistProviderConnection({
+          workspaceId: workspace.id,
+          result
+        });
       });
 
       if (wantsJson(request)) {
@@ -144,6 +154,11 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
       );
     }
 
+    const existingStates = await withProviderConnectionCapacity({
+      provider,
+      workspaceId: workspace.id,
+      isLocalPreview: workspace.isLocalPreview
+    }, async (states) => states);
     const state = createOauthState();
     const authorizationUrl = buildLinkedInAuthorizationUrl({
       state,
@@ -151,10 +166,12 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
     });
 
     if (wantsJson(request)) {
-      const states = await getProviderConnectionStates({
-        workspaceId: workspace.id,
-        isLocalPreview: workspace.isLocalPreview
-      });
+      const states =
+        existingStates ??
+        (await getProviderConnectionStates({
+          workspaceId: workspace.id,
+          isLocalPreview: workspace.isLocalPreview
+        }));
 
       const response = NextResponse.json({
         authorizationUrl: authorizationUrl.toString(),
@@ -182,6 +199,25 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
 
     return response;
   } catch (error) {
+    if (error instanceof UsageLimitExceededError) {
+      if (wantsJson(request)) {
+        return NextResponse.json(
+          {
+            error: error.message,
+            code: "provider_connection_limit_reached",
+            usage: error.metric
+          },
+          { status: 429 }
+        );
+      }
+
+      return redirectToConnections(request, {
+        error: "provider_connection_limit_reached",
+        provider,
+        upgrade: "1"
+      });
+    }
+
     const message = error instanceof Error ? error.message : "Unable to start provider connection.";
 
     if (wantsJson(request)) {

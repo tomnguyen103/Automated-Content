@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Bot,
+  Brain,
   CalendarDays,
   CreditCard,
   Home,
@@ -24,6 +25,7 @@ export const navItems = [
   { label: "Media", href: "/media", icon: Image },
   { label: "Connections", href: "/connections", icon: Plug },
   { label: "Agents", href: "/agents", icon: Bot },
+  { label: "Brand Memory", href: "/brand-memory", icon: Brain },
   { label: "Auto Replies", href: "/auto-replies", icon: MessageCircleReply },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Billing", href: "/billing", icon: CreditCard },

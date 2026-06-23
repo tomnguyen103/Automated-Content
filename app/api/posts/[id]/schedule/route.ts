@@ -6,6 +6,8 @@ import { connectedAccounts, platformVariants } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import {
   consumeUsageForLimit,
+  ensureFeatureAllowed,
+  FeatureAccessError,
   UsageLimitExceededError
 } from "@/lib/billing/usage";
 import { isDatabaseConfigured } from "@/lib/env";
@@ -228,6 +230,14 @@ export async function POST(
       );
     }
 
+    if (input.provider !== "mock") {
+      await ensureFeatureAllowed({
+        workspaceId: workspace.id,
+        feature: "liveProviderPublishing",
+        skip: workspace.isLocalPreview
+      });
+    }
+
     await consumeUsageForLimit({
       workspaceId: workspace.id,
       key: "scheduledPostsPerDay",
@@ -285,6 +295,18 @@ export async function POST(
           usage: error.metric
         },
         { status: 429 }
+      );
+    }
+
+    if (error instanceof FeatureAccessError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: "upgrade_required",
+          feature: error.feature,
+          requiredPlan: error.requiredPlan
+        },
+        { status: 402 }
       );
     }
 

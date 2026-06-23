@@ -3,10 +3,12 @@ import {
   applyAcceptedBrandMemoryToProfile,
   buildBrandMemoryProposalsFromEdit,
   clearBrandMemoryProposalsForTests,
-  createBrandMemoryProposalRepository
+  createBrandMemoryProposalRepository,
+  readBrandProfileWithAcceptedMemory
 } from "@/lib/brand-memory/proposals";
 import { defaultBrandProfile } from "@/lib/agents/tools/read-brand-profile";
 import { contentPackSchema, type ContentPack } from "@/lib/agents/schemas/content-pack";
+import type { BrandMemoryProposal } from "@/lib/brand-memory/schemas";
 
 const workspaceId = "00000000-0000-0000-0000-000000000001";
 const timestamp = "2026-06-22T12:00:00.000Z";
@@ -56,6 +58,26 @@ function createContentPack(overrides: Partial<ContentPack> = {}) {
     },
     ...overrides
   });
+}
+
+function createProposal(overrides: Partial<BrandMemoryProposal> = {}) {
+  return {
+    id: "brand_memory_test_1",
+    workspaceId,
+    createdByUserId: "user_1",
+    sourceAgentRunId: "run_1",
+    sourceContentPackId: "pack_1",
+    scope: "workspace",
+    originalText: "Original copy",
+    editedText: "Edited copy",
+    inferredRule: "prefer concise operator language.",
+    confidence: 80,
+    status: "pending",
+    evidence: {},
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    ...overrides
+  } satisfies BrandMemoryProposal;
 }
 
 describe("brand memory proposals", () => {
@@ -144,5 +166,92 @@ describe("brand memory proposals", () => {
 
     expect(profile.pillars).toHaveLength(8);
     expect(profile.pillars).toContain("Learned: prefer concise operator language.");
+  });
+
+  it("lists proposals by status, scope, platform, and confidence", async () => {
+    const repository = createBrandMemoryProposalRepository({
+      allowMemoryFallback: true,
+      preferMemoryFallback: true
+    });
+    const workspaceProposal = createProposal({
+      id: "brand_memory_workspace",
+      confidence: 92
+    });
+    const linkedinProposal = createProposal({
+      id: "brand_memory_linkedin",
+      scope: "platform",
+      platform: "linkedin",
+      confidence: 76
+    });
+    const rejectedProposal = createProposal({
+      id: "brand_memory_rejected",
+      status: "rejected",
+      confidence: 60
+    });
+
+    await repository.saveMany([workspaceProposal, linkedinProposal, rejectedProposal]);
+
+    await expect(
+      repository.list({
+        workspaceId,
+        status: "pending",
+        scope: "platform",
+        platform: "linkedin",
+        minConfidence: 70,
+        maxConfidence: 80
+      })
+    ).resolves.toEqual([linkedinProposal]);
+  });
+
+  it("bulk reviews proposals while preserving workspace scope", async () => {
+    const repository = createBrandMemoryProposalRepository({
+      allowMemoryFallback: true,
+      preferMemoryFallback: true
+    });
+
+    await repository.saveMany([
+      createProposal({ id: "brand_memory_bulk_1" }),
+      createProposal({ id: "brand_memory_bulk_2" }),
+      createProposal({
+        id: "brand_memory_other_workspace",
+        workspaceId: "00000000-0000-0000-0000-000000000099"
+      })
+    ]);
+
+    const reviewed = await repository.reviewMany({
+      workspaceId,
+      ids: ["brand_memory_bulk_1", "brand_memory_bulk_2", "brand_memory_other_workspace"],
+      status: "accepted",
+      userId: "user_1",
+      now: new Date(timestamp)
+    });
+
+    expect(reviewed).toHaveLength(2);
+    expect(reviewed.map((proposal) => proposal.status).sort()).toEqual(["accepted", "accepted"]);
+    await expect(repository.list({ workspaceId, status: "accepted" })).resolves.toHaveLength(2);
+  });
+
+  it("reads accepted rules through the brand profile path and excludes rejected rules", async () => {
+    const repository = createBrandMemoryProposalRepository({
+      allowMemoryFallback: true,
+      preferMemoryFallback: true
+    });
+    const accepted = createProposal({
+      id: "brand_memory_accepted_rule",
+      status: "accepted",
+      inferredRule: "keep launches grounded in operator control."
+    });
+    const rejected = createProposal({
+      id: "brand_memory_rejected_rule",
+      status: "rejected",
+      inferredRule: "use hype-heavy launch claims."
+    });
+
+    await repository.saveMany([accepted, rejected]);
+
+    const profile = await readBrandProfileWithAcceptedMemory({ workspaceId, userId: "user_1" });
+
+    expect(profile.pillars).toContain("Learned: keep launches grounded in operator control.");
+    expect(profile.pillars).not.toContain("Learned: use hype-heavy launch claims.");
   });
 });

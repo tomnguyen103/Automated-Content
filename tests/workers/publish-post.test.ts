@@ -17,6 +17,7 @@ function createScheduledJob(overrides: Partial<ScheduledJob> = {}): ScheduledJob
     platformVariantId: "variant_1",
     connectedAccountId: null,
     provider: "mock",
+    sourceId: null,
     scheduledFor: new Date("2026-06-21T12:00:00.000Z"),
     status: "queued",
     enqueueStatus: "queued",

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
-import { brand, navItems } from "@/lib/design/tokens";
+import { NavLinks } from "@/components/layout/nav-links";
+import { brand } from "@/lib/design/tokens";
 
 export function AppSidebar() {
   return (
@@ -16,19 +17,7 @@ export function AppSidebar() {
       </Link>
 
       <nav className="mt-6 space-y-1" aria-label="Main navigation">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
-            >
-              <Icon size={17} />
-              {item.label}
-            </Link>
-          );
-        })}
+        <NavLinks />
       </nav>
 
       <div className="mt-8 rounded-[var(--radius-lg)] border border-amber-200 bg-amber-50 p-3">

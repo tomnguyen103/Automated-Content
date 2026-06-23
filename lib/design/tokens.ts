@@ -37,10 +37,8 @@ export const platformLabels = [
   "Facebook",
   "LinkedIn",
   "X",
-  "YouTube",
   "TikTok",
-  "Discord",
-  "Slack"
+  "Threads"
 ];
 
 export const createTabs = ["Brief", "Research", "Drafts", "Variants", "Media", "Schedule", "Review"];

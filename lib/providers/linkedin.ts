@@ -31,6 +31,7 @@ const refreshSkewMs = 5 * 60 * 1000;
 const linkedInFetchTimeoutMs = 15_000;
 const maxLinkedInImageBytes = 10 * 1024 * 1024;
 const allowedLinkedInImageTypes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+const defaultImageKitHostname = "ik.imagekit.io";
 
 export const linkedinCapabilities = defineProviderCapabilities({
   supported: ["text_post", "image_post", "scheduled_publish", "immediate_publish"],
@@ -254,6 +255,36 @@ function isPrivateIpAddress(address: string) {
   return false;
 }
 
+function isImageKitHostname(hostname: string) {
+  return hostname === defaultImageKitHostname || hostname.endsWith(".imagekit.io");
+}
+
+function matchesConfiguredImageKitEndpoint(parsed: URL, endpoint: URL) {
+  const trustedPath = endpoint.pathname.replace(/\/+$/, "");
+
+  if (parsed.origin !== endpoint.origin) {
+    return false;
+  }
+
+  if (!trustedPath || trustedPath === "/") {
+    return true;
+  }
+
+  return parsed.pathname === trustedPath || parsed.pathname.startsWith(`${trustedPath}/`);
+}
+
+function isTrustedLinkedInImageSource(parsed: URL) {
+  if (env.IMAGEKIT_URL_ENDPOINT) {
+    try {
+      return matchesConfiguredImageKitEndpoint(parsed, new URL(env.IMAGEKIT_URL_ENDPOINT));
+    } catch {
+      return false;
+    }
+  }
+
+  return isImageKitHostname(parsed.hostname.toLowerCase());
+}
+
 async function validatePublicImageSourceUrl(sourceUrl: string) {
   let parsed: URL;
 
@@ -287,6 +318,15 @@ async function validatePublicImageSourceUrl(sourceUrl: string) {
   }
 
   const hostname = parsed.hostname.toLowerCase();
+
+  if (!isTrustedLinkedInImageSource(parsed)) {
+    throw new ProviderError({
+      code: "content_invalid",
+      message: "LinkedIn image publishing only fetches trusted media asset URLs or existing LinkedIn image URNs.",
+      provider: "linkedin",
+      retryable: false
+    });
+  }
 
   if (hostname === "localhost" || hostname.endsWith(".localhost")) {
     throw new ProviderError({
@@ -706,7 +746,18 @@ async function uploadImageForLinkedIn({
     });
   }
 
-  const imageResponse = await fetchWithTimeout(safeSourceUrl);
+  const imageResponse = await fetchWithTimeout(safeSourceUrl, {
+    redirect: "manual"
+  });
+
+  if (imageResponse.status >= 300 && imageResponse.status < 400) {
+    throw new ProviderError({
+      code: "content_invalid",
+      message: "LinkedIn image source URL must not redirect.",
+      provider: "linkedin",
+      retryable: false
+    });
+  }
 
   if (!imageResponse.ok) {
     throw new ProviderError({

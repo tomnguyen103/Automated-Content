@@ -1,0 +1,2 @@
+ALTER TABLE "scheduled_jobs" ADD COLUMN "source_id" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "scheduled_jobs_workspace_source_idx" ON "scheduled_jobs" USING btree ("workspace_id","source_id") WHERE "scheduled_jobs"."source_id" is not null;

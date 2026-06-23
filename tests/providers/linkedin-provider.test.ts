@@ -38,6 +38,7 @@ describe("linkedin provider", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.doUnmock("node:dns/promises");
     vi.unstubAllEnvs();
     vi.resetModules();
   });
@@ -308,5 +309,175 @@ describe("linkedin provider", () => {
       code: "content_invalid"
     });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects arbitrary external image source URLs before outbound fetch", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const linkedinProvider = await loadLinkedInProvider();
+    const connection = await linkedinProvider.connect({
+      workspaceId,
+      providerAccountId: "member_123",
+      tokens: {
+        accessToken: "access-token",
+        expiresAt: new Date(Date.now() + 10 * 60_000),
+        scopes: ["openid", "profile", "w_member_social"]
+      },
+      metadata: {
+        profile: {
+          sub: "member_123",
+          name: "Ada Lovelace"
+        }
+      }
+    });
+
+    await expect(
+      linkedinProvider.publish({
+        workspaceId,
+        providerAccountId: connection.providerAccountId,
+        tokenRef: connection.tokenRef,
+        content: {
+          variantId: "variant_1",
+          title: "Launch post",
+          hook: "Hook",
+          body: "Body",
+          cta: "CTA",
+          hashtags: [],
+          media: [
+            {
+              sourceUrl: "https://cdn.example.com/customer-controlled.png"
+            }
+          ]
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "content_invalid"
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects default ImageKit tenant URLs when a custom endpoint is configured", async () => {
+    vi.stubEnv("IMAGEKIT_URL_ENDPOINT", "https://ik.imagekit.io/trusted-account");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const linkedinProvider = await loadLinkedInProvider();
+    const connection = await linkedinProvider.connect({
+      workspaceId,
+      providerAccountId: "member_123",
+      tokens: {
+        accessToken: "access-token",
+        expiresAt: new Date(Date.now() + 10 * 60_000),
+        scopes: ["openid", "profile", "w_member_social"]
+      },
+      metadata: {
+        profile: {
+          sub: "member_123",
+          name: "Ada Lovelace"
+        }
+      }
+    });
+
+    await expect(
+      linkedinProvider.publish({
+        workspaceId,
+        providerAccountId: connection.providerAccountId,
+        tokenRef: connection.tokenRef,
+        content: {
+          variantId: "variant_1",
+          title: "Launch post",
+          hook: "Hook",
+          body: "Body",
+          cta: "CTA",
+          hashtags: [],
+          media: [
+            {
+              sourceUrl: "https://ik.imagekit.io/other-account/customer-controlled.png"
+            }
+          ]
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "content_invalid"
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("classifies trusted image source redirects as non-retryable invalid content", async () => {
+    vi.stubEnv("IMAGEKIT_URL_ENDPOINT", "");
+    vi.doMock("node:dns/promises", () => ({
+      lookup: vi.fn(async () => [{ address: "203.0.113.10", family: 4 }])
+    }));
+    const sourceUrl = "https://ik.imagekit.io/local-preview/redirect.png";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          value: {
+            image: "urn:li:image:123",
+            uploadUrl: "https://linkedin-upload.test/image"
+          }
+        })
+      )
+      .mockResolvedValueOnce(
+        // Node's undici fetch returns a visible 3xx response for redirect: "manual".
+        new Response(null, {
+          status: 302,
+          headers: {
+            Location: "https://127.0.0.1/private.png"
+          }
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const linkedinProvider = await loadLinkedInProvider();
+    const connection = await linkedinProvider.connect({
+      workspaceId,
+      providerAccountId: "member_123",
+      tokens: {
+        accessToken: "access-token",
+        expiresAt: new Date(Date.now() + 10 * 60_000),
+        scopes: ["openid", "profile", "w_member_social"]
+      },
+      metadata: {
+        profile: {
+          sub: "member_123",
+          name: "Ada Lovelace"
+        }
+      }
+    });
+
+    await expect(
+      linkedinProvider.publish({
+        workspaceId,
+        providerAccountId: connection.providerAccountId,
+        tokenRef: connection.tokenRef,
+        content: {
+          variantId: "variant_1",
+          title: "Launch post",
+          hook: "Hook",
+          body: "Body",
+          cta: "CTA",
+          hashtags: [],
+          media: [
+            {
+              sourceUrl
+            }
+          ]
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "content_invalid",
+      retryable: false
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      sourceUrl,
+      expect.objectContaining({
+        redirect: "manual"
+      })
+    );
   });
 });

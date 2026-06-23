@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   MessageSquareReply,
   Play,
+  Plug,
   Sparkles,
   Workflow
 } from "lucide-react";
@@ -19,6 +20,12 @@ const workflowSteps = [
   { label: "Agent drafts", icon: Bot, detail: "Captions, variants, ideas" },
   { label: "Schedule", icon: CalendarDays, detail: "Seven posts per day" },
   { label: "Publish", icon: Workflow, detail: "Queue, retry, report" }
+];
+
+const productAreas = [
+  { label: "Dashboard", href: "/dashboard", detail: "Queue health, usage, and worker readiness" },
+  { label: "Create", href: "/create", detail: "Briefs, variants, review, and scheduling" },
+  { label: "Connections", href: "/connections", detail: "Provider readiness and account status" }
 ];
 
 const appHref = (path: string) => {
@@ -91,8 +98,8 @@ export default function MarketingPage() {
               <p className="text-sm text-[var(--color-text-muted)]">posts per day</p>
             </div>
             <div>
-              <p className="text-3xl font-semibold">8+</p>
-              <p className="text-sm text-[var(--color-text-muted)]">platform targets</p>
+              <p className="text-3xl font-semibold">{platformLabels.length}</p>
+              <p className="text-sm text-[var(--color-text-muted)]">social targets</p>
             </div>
             <div>
               <p className="text-3xl font-semibold">24h</p>
@@ -105,10 +112,10 @@ export default function MarketingPage() {
           <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold">Today&apos;s agent plan</p>
-                <p className="text-xs text-[var(--color-text-muted)]">Creator launch campaign</p>
+                <p className="text-sm font-semibold">Product workspace</p>
+                <p className="text-xs text-[var(--color-text-muted)]">Live app areas behind the workflow</p>
               </div>
-              <Badge tone="community">Healthy queue</Badge>
+              <Badge tone="community">Operational view</Badge>
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -126,18 +133,23 @@ export default function MarketingPage() {
 
             <div className="mt-5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold">Platform variants</p>
-                <span className="text-xs text-[var(--color-text-muted)]">Review required</span>
+                <p className="text-sm font-semibold">Open app areas</p>
+                <Plug size={16} className="text-[var(--color-text-subtle)]" aria-hidden="true" />
               </div>
               <div className="mt-4 space-y-3">
-                {["LinkedIn thought post", "Instagram caption", "Slack community note"].map((item, index) => (
-                  <div key={item} className="flex items-center gap-3 rounded-[var(--radius-md)] bg-white p-3">
-                    <CheckCircle2
-                      size={17}
-                      className={index === 0 ? "text-[var(--color-community)]" : "text-[var(--color-text-subtle)]"}
-                    />
-                    <span className="text-sm">{item}</span>
-                  </div>
+                {productAreas.map((area) => (
+                  <Link
+                    key={area.href}
+                    href={appHref(area.href)}
+                    prefetch={false}
+                    className="flex items-start gap-3 rounded-[var(--radius-md)] bg-white p-3 transition hover:bg-[var(--color-surface)]"
+                  >
+                    <CheckCircle2 size={17} className="mt-0.5 text-[var(--color-community)]" aria-hidden="true" />
+                    <span>
+                      <span className="block text-sm font-medium">{area.label}</span>
+                      <span className="mt-1 block text-xs text-[var(--color-text-muted)]">{area.detail}</span>
+                    </span>
+                  </Link>
                 ))}
               </div>
             </div>
@@ -170,7 +182,7 @@ export default function MarketingPage() {
           </div>
           <Badge tone="premium">Premium scheduling</Badge>
         </div>
-        <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+        <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {platformLabels.map((label) => (
             <div key={label} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 py-4 text-center text-sm font-medium">
               {label}

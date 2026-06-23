@@ -8,6 +8,7 @@ export default function CreatePage() {
       <SubNav
         items={["Brief", "Research", "Drafts", "Variants", "Media", "Schedule", "Review"].map((label, index) => ({
           label,
+          href: `#${label.toLowerCase()}`,
           active: index === 0
         }))}
       />

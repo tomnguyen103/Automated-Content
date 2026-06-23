@@ -51,10 +51,10 @@ npm run start
 Start the worker through the deployment platform's worker command. The worker entrypoint is:
 
 ```powershell
-node workers/social-worker.ts
+npm run worker
 ```
 
-If the host does not run TypeScript directly, compile or bundle the worker with the same Next.js build step used for server code.
+The `worker` script runs the TypeScript entrypoint with `tsx workers/social-worker.ts`. The worker installs a local `server-only` shim before loading app server modules so the same `@/` path aliases and server-only boundaries used by the app resolve in the worker process. If the host does not run TypeScript directly, compile or bundle the worker with the same server-code build step used by the app.
 
 ## Failure Handling
 

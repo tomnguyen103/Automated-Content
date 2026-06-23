@@ -11,13 +11,15 @@ const routeMocks = vi.hoisted(() => {
 
   return {
     QueueConfigurationError,
+    ensureUsageAllowed: vi.fn(),
     enqueueAgentMission: vi.fn(),
     getMission: vi.fn(),
     resolveAgentOrchestrationContext: vi.fn(),
     runMissionWorkflow: vi.fn(),
     saveMission: vi.fn(),
     seedRoleTemplates: vi.fn(),
-    simulateAgentMission: vi.fn()
+    simulateAgentMission: vi.fn(),
+    withUsageLimitLock: vi.fn()
   };
 });
 
@@ -33,6 +35,20 @@ vi.mock("@/lib/agents/orchestration/server", () => ({
   resolveAgentOrchestrationContext: routeMocks.resolveAgentOrchestrationContext
 }));
 
+vi.mock("@/lib/billing/usage", () => ({
+  UsageLimitExceededError: class UsageLimitExceededError extends Error {
+    readonly metric: unknown;
+
+    constructor(metric: unknown = null) {
+      super("Usage limit exceeded.");
+      this.name = "UsageLimitExceededError";
+      this.metric = metric;
+    }
+  },
+  ensureUsageAllowed: routeMocks.ensureUsageAllowed,
+  withUsageLimitLock: routeMocks.withUsageLimitLock
+}));
+
 vi.mock("@/lib/agents/orchestration/simulation", () => ({
   simulateAgentMission: routeMocks.simulateAgentMission
 }));
@@ -45,6 +61,10 @@ describe("agent mission run API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     routeMocks.getMission.mockResolvedValue({ id: "mission_1" });
+    routeMocks.ensureUsageAllowed.mockResolvedValue(null);
+    routeMocks.withUsageLimitLock.mockImplementation(
+      async (_input: unknown, callback: () => Promise<unknown>) => callback()
+    );
     routeMocks.saveMission.mockImplementation(async (mission) => mission);
     routeMocks.seedRoleTemplates.mockResolvedValue([
       {
@@ -184,5 +204,10 @@ describe("agent mission run API", () => {
         })
       })
     );
+    expect(routeMocks.ensureUsageAllowed).toHaveBeenCalledWith({
+      workspaceId: "00000000-0000-0000-0000-000000000001",
+      key: "agentMissionsPerMonth",
+      skip: false
+    });
   });
 });

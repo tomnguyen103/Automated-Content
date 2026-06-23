@@ -31,6 +31,16 @@ describe("billing entitlements", () => {
     expect(hasFeature("free", "keywordAutoReplies")).toBe(false);
     expect(hasFeature("premium", "keywordAutoReplies")).toBe(true);
     expect(hasFeature("premium", "multiPlatformPublishing")).toBe(true);
+    expect(hasFeature("free", "governanceExport")).toBe(false);
+    expect(hasFeature("premium", "liveProviderPublishing")).toBe(true);
+  });
+
+  it("defines non-ledger operational budgets", () => {
+    expect(getUsageLimit("free", "agentMissionsPerMonth")).toBe(5);
+    expect(getUsageLimit("premium", "agentMissionsPerMonth")).toBeGreaterThan(
+      getUsageLimit("free", "agentMissionsPerMonth")
+    );
+    expect(getUsageLimit("free", "brandMemoryProposalsPerMonth")).toBe(10);
   });
 
   it("rejects invalid usage consumption requests", () => {

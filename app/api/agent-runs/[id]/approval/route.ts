@@ -16,6 +16,11 @@ import {
   buildBrandMemoryProposalsFromEdit,
   createBrandMemoryProposalRepository
 } from "@/lib/brand-memory/proposals";
+import {
+  ensureUsageAllowed,
+  UsageLimitExceededError,
+  withUsageLimitLock
+} from "@/lib/billing/usage";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
 
 export const runtime = "nodejs";
@@ -50,22 +55,78 @@ async function createBrandMemoryProposals({
   preferMemoryFallback: boolean;
 }) {
   if (!before || !after) {
-    return [];
+    return {
+      proposals: [],
+      limit: null
+    };
   }
 
   try {
-    return await createBrandMemoryProposalRepository({
-      allowMemoryFallback,
-      preferMemoryFallback
-    }).saveMany(
-      buildBrandMemoryProposalsFromEdit({
+    const proposals = buildBrandMemoryProposalsFromEdit({
+      workspaceId,
+      userId,
+      agentRunId,
+      before,
+      after
+    });
+
+    if (proposals.length === 0) {
+      return {
+        proposals: [],
+        limit: null
+      };
+    }
+
+    const saved = await withUsageLimitLock(
+      {
         workspaceId,
-        userId,
-        agentRunId,
-        before,
-        after
-      })
+        key: "brandMemoryProposalsPerMonth",
+        skip: allowMemoryFallback
+      },
+      async () => {
+        try {
+          await ensureUsageAllowed({
+            workspaceId,
+            key: "brandMemoryProposalsPerMonth",
+            quantity: proposals.length,
+            skip: allowMemoryFallback
+          });
+        } catch (error) {
+          if (error instanceof UsageLimitExceededError) {
+            return {
+              skipped: {
+                code: "brand_memory_proposal_limit_reached",
+                error: error.message,
+                usage: error.metric
+              }
+            };
+          }
+
+          throw error;
+        }
+
+        const savedProposals = await createBrandMemoryProposalRepository({
+          allowMemoryFallback,
+          preferMemoryFallback
+        }).saveMany(proposals);
+
+        return {
+          savedProposals
+        };
+      }
     );
+
+    if ("skipped" in saved) {
+      return {
+        proposals: [],
+        limit: saved.skipped
+      };
+    }
+
+    return {
+      proposals: saved.savedProposals,
+      limit: null
+    };
   } catch (error) {
     console.error("Unable to create brand memory proposals", error);
     throw error;
@@ -106,7 +167,7 @@ export async function POST(request: Request, context: ApprovalRouteContext) {
       storage,
       checkpoints
     });
-    const brandMemoryProposals = action === "approve"
+    const brandMemoryResult = action === "approve"
         ? await createBrandMemoryProposals({
             workspaceId: workspace.id,
             userId: user.id,
@@ -116,14 +177,18 @@ export async function POST(request: Request, context: ApprovalRouteContext) {
             allowMemoryFallback: workspace.isLocalPreview,
             preferMemoryFallback: workspace.isLocalPreview
           })
-        : [];
+        : {
+            proposals: [],
+            limit: null
+          };
 
     return NextResponse.json({
       run: result.run,
       workflow: result.workflow,
       contentPack: result.contentPack,
       draft: result.draft,
-      brandMemoryProposals
+      brandMemoryProposals: brandMemoryResult.proposals,
+      ...(brandMemoryResult.limit ? { brandMemoryLimit: brandMemoryResult.limit } : {})
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

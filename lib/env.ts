@@ -22,6 +22,8 @@ const envSchema = z.object({
   NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: optionalString,
   CLERK_SECRET_KEY: optionalString,
   CLERK_WEBHOOK_SIGNING_SECRET: optionalString,
+  BILLING_UPGRADE_URL: optionalUrl,
+  BILLING_CUSTOMER_PORTAL_URL: optionalUrl,
   AUTH_LOCAL_PREVIEW: optionalString,
   DATABASE_URL: optionalUrl,
   AI_PROVIDER: z.enum(["openai", "gemini"]).default("openai"),

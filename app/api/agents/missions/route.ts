@@ -8,6 +8,11 @@ import {
 import { resolveAgentOrchestrationContext } from "@/lib/agents/orchestration/server";
 import { listAgentMissionAuditRecords } from "@/lib/agents/orchestration/audit";
 import { AGENT_MISSION_HISTORY_LIMIT } from "@/lib/agents/orchestration/repository";
+import {
+  ensureUsageAllowed,
+  UsageLimitExceededError,
+  withUsageLimitLock
+} from "@/lib/billing/usage";
 
 export const runtime = "nodejs";
 
@@ -86,16 +91,43 @@ export async function POST(request: NextRequest) {
       createdAt: timestamp,
       updatedAt: timestamp
     });
+    const savedMission = await withUsageLimitLock(
+      {
+        workspaceId: context.workspace.id,
+        key: "agentMissionsPerMonth",
+        skip: context.workspace.isLocalPreview
+      },
+      async () => {
+        await ensureUsageAllowed({
+          workspaceId: context.workspace.id,
+          key: "agentMissionsPerMonth",
+          skip: context.workspace.isLocalPreview
+        });
+
+        return context.repositories.missions.save(mission);
+      }
+    );
 
     return NextResponse.json(
       {
-        mission: await context.repositories.missions.save(mission)
+        mission: savedMission
       },
       { status: 201 }
     );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "Invalid agent mission.", issues: error.issues }, { status: 400 });
+    }
+
+    if (error instanceof UsageLimitExceededError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: "agent_mission_limit_reached",
+          usage: error.metric
+        },
+        { status: 429 }
+      );
     }
 
     console.error("Unexpected agent mission create error", error);

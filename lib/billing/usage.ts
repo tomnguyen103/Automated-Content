@@ -1,14 +1,23 @@
 import "server-only";
 
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ne, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { subscriptions, usageLedger, type usageEventTypeEnum } from "@/db/schema";
+import {
+  agentMissions,
+  brandMemoryProposals,
+  connectedAccounts,
+  subscriptions,
+  usageLedger,
+  type usageEventTypeEnum
+} from "@/db/schema";
 import {
   canConsumeUsage,
   getRemainingUsage,
   getUsageLimit,
+  hasFeature,
   normalizeBillingPlan,
   type BillingPlan,
+  type FeatureKey,
   type UsageLimitKey
 } from "@/lib/billing/entitlements";
 import { isDatabaseConfigured } from "@/lib/env";
@@ -45,12 +54,33 @@ export class UsageLimitExceededError extends Error {
   }
 }
 
+export class FeatureAccessError extends Error {
+  readonly feature: FeatureKey;
+  readonly plan: BillingPlan;
+  readonly requiredPlan = "premium";
+
+  constructor({
+    feature,
+    plan
+  }: {
+    feature: FeatureKey;
+    plan: BillingPlan;
+  }) {
+    super("This feature requires a Premium plan.");
+    this.name = "FeatureAccessError";
+    this.feature = feature;
+    this.plan = plan;
+  }
+}
+
 export const usageLimitToLedgerType: Record<UsageLimitKey, UsageEventType | null> = {
   aiGenerationsPerMonth: "ai_generation",
   scheduledPostsPerDay: "scheduled_post",
   providerConnections: null,
   mediaTransformsPerMonth: "media_transform",
-  autoRepliesPerMonth: "auto_reply"
+  autoRepliesPerMonth: "auto_reply",
+  agentMissionsPerMonth: null,
+  brandMemoryProposalsPerMonth: null
 };
 
 export const usageMetricLabels: Record<UsageLimitKey, string> = {
@@ -58,7 +88,9 @@ export const usageMetricLabels: Record<UsageLimitKey, string> = {
   scheduledPostsPerDay: "Scheduled posts",
   providerConnections: "Provider connections",
   mediaTransformsPerMonth: "Media transforms",
-  autoRepliesPerMonth: "Auto replies"
+  autoRepliesPerMonth: "Auto replies",
+  agentMissionsPerMonth: "Agent missions",
+  brandMemoryProposalsPerMonth: "Brand memory proposals"
 };
 
 const usageCadence: Record<UsageLimitKey, UsageMetric["cadence"]> = {
@@ -66,7 +98,9 @@ const usageCadence: Record<UsageLimitKey, UsageMetric["cadence"]> = {
   scheduledPostsPerDay: "daily",
   providerConnections: "current",
   mediaTransformsPerMonth: "monthly",
-  autoRepliesPerMonth: "monthly"
+  autoRepliesPerMonth: "monthly",
+  agentMissionsPerMonth: "monthly",
+  brandMemoryProposalsPerMonth: "monthly"
 };
 
 export function buildUsageMetric(plan: BillingPlan, key: UsageLimitKey, used: number): UsageMetric {
@@ -88,6 +122,7 @@ export function buildUsageMetrics(plan: BillingPlan, used: Partial<Record<UsageL
 }
 
 export async function ensureUsageAllowed({
+  quantity = 1,
   workspaceId,
   key,
   now = new Date(),
@@ -95,6 +130,7 @@ export async function ensureUsageAllowed({
 }: {
   workspaceId: string;
   key: UsageLimitKey;
+  quantity?: number;
   now?: Date;
   skip?: boolean;
 }) {
@@ -109,11 +145,71 @@ export async function ensureUsageAllowed({
     throw new Error(`Usage metric ${key} is not configured.`);
   }
 
-  if (!metric.allowed) {
-    throw new UsageLimitExceededError(metric);
+  if (!canConsumeUsage({ plan: billingState.activePlan, key, used: metric.used, requested: quantity })) {
+    throw new UsageLimitExceededError({
+      ...metric,
+      allowed: false
+    });
   }
 
   return metric;
+}
+
+export async function withUsageLimitLock<T>({
+  key,
+  workspaceId,
+  skip = false
+}: {
+  workspaceId: string;
+  key: UsageLimitKey;
+  skip?: boolean;
+}, callback: () => Promise<T>) {
+  if (skip) {
+    return callback();
+  }
+
+  return getDb().transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${workspaceId}), hashtext(${key}))`);
+    return callback();
+  });
+}
+
+export async function getWorkspaceBillingPlan(workspaceId: string): Promise<BillingPlan> {
+  const [subscription] = await getDb()
+    .select({ plan: subscriptions.plan })
+    .from(subscriptions)
+    .where(eq(subscriptions.workspaceId, workspaceId))
+    .limit(1);
+
+  return normalizeBillingPlan(subscription?.plan);
+}
+
+export async function ensureFeatureAllowed({
+  feature,
+  workspaceId,
+  skip = false
+}: {
+  workspaceId: string;
+  feature: FeatureKey;
+  skip?: boolean;
+}) {
+  if (skip) {
+    return null;
+  }
+
+  const plan = await getWorkspaceBillingPlan(workspaceId);
+
+  if (!hasFeature(plan, feature)) {
+    throw new FeatureAccessError({
+      feature,
+      plan
+    });
+  }
+
+  return {
+    feature,
+    plan
+  };
 }
 
 export async function recordUsageForLimit({
@@ -225,7 +321,10 @@ export async function consumeUsageForLimit({
     }
 
     if (!canConsumeUsage({ plan: activePlan, key, used, requested: quantity })) {
-      throw new UsageLimitExceededError(metric);
+      throw new UsageLimitExceededError({
+        ...metric,
+        allowed: false
+      });
     }
 
     const insert = tx.insert(usageLedger).values({
@@ -274,7 +373,11 @@ export async function getWorkspaceBillingState({
             type: ledgerType,
             since: getUsageWindowStart(key, now)
           })
-        : 0;
+        : await getCountedUsageTotal({
+            key,
+            workspaceId,
+            since: getUsageWindowStart(key, now)
+          });
     })
   );
 
@@ -282,6 +385,64 @@ export async function getWorkspaceBillingState({
     activePlan,
     usageMetrics: buildUsageMetrics(activePlan, used)
   };
+}
+
+async function getCountedUsageTotal({
+  key,
+  since,
+  workspaceId
+}: {
+  workspaceId: string;
+  key: UsageLimitKey;
+  since: Date | null;
+}) {
+  const db = getDb();
+
+  if (key === "providerConnections") {
+    const [row] = await db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(connectedAccounts)
+      .where(
+        and(
+          eq(connectedAccounts.workspaceId, workspaceId),
+          ne(connectedAccounts.status, "disconnected")
+        )
+      );
+
+    return row?.total ?? 0;
+  }
+
+  if (key === "agentMissionsPerMonth") {
+    const conditions = [eq(agentMissions.workspaceId, workspaceId)];
+
+    if (since) {
+      conditions.push(gte(agentMissions.createdAt, since));
+    }
+
+    const [row] = await db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(agentMissions)
+      .where(and(...conditions));
+
+    return row?.total ?? 0;
+  }
+
+  if (key === "brandMemoryProposalsPerMonth") {
+    const conditions = [eq(brandMemoryProposals.workspaceId, workspaceId)];
+
+    if (since) {
+      conditions.push(gte(brandMemoryProposals.createdAt, since));
+    }
+
+    const [row] = await db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(brandMemoryProposals)
+      .where(and(...conditions));
+
+    return row?.total ?? 0;
+  }
+
+  return 0;
 }
 
 export function getUsageWindowStart(key: UsageLimitKey, now = new Date()) {

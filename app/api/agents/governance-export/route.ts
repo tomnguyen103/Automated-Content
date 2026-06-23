@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { buildAgentGovernanceExport } from "@/lib/agents/governance-export";
 import { resolveAgentOrchestrationContext } from "@/lib/agents/orchestration/server";
+import {
+  ensureFeatureAllowed,
+  FeatureAccessError
+} from "@/lib/billing/usage";
 
 export const runtime = "nodejs";
 
@@ -9,6 +13,28 @@ export async function GET() {
 
   if (!context) {
     return NextResponse.json({ error: "Authentication is required." }, { status: 401 });
+  }
+
+  try {
+    await ensureFeatureAllowed({
+      workspaceId: context.workspace.id,
+      feature: "governanceExport",
+      skip: context.workspace.isLocalPreview
+    });
+  } catch (error) {
+    if (error instanceof FeatureAccessError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: "upgrade_required",
+          feature: error.feature,
+          requiredPlan: error.requiredPlan
+        },
+        { status: 402 }
+      );
+    }
+
+    throw error;
   }
 
   const payload = await buildAgentGovernanceExport({

@@ -44,3 +44,22 @@ test("billing page shows plan and usage state", async ({ page }, testInfo) => {
     fullPage: true
   });
 });
+
+test("brand memory workbench shows review evidence", async ({ page }, testInfo) => {
+  await page.goto("/brand-memory");
+
+  await expect(page.getByRole("heading", { name: "Brand Memory" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Proposals" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Review detail" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Inferred rule" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Original text" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Edited text" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Evidence" })).toBeVisible();
+  await expect(page.getByLabel("Page navigation").getByRole("link", { name: "Billing" })).toHaveAttribute("href", "/billing");
+  await expect(page.getByRole("link", { name: "Reset" })).toHaveAttribute("href", "/brand-memory");
+
+  await page.screenshot({
+    path: testInfo.outputPath(`brand-memory-${testInfo.project.name}.png`),
+    fullPage: true
+  });
+});

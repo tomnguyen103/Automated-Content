@@ -432,8 +432,10 @@ describe("schedule post API", () => {
       isDatabaseConfigured: true
     }));
     vi.doMock("@/lib/billing/usage", () => ({
+      FeatureAccessError: class FeatureAccessError extends Error {},
       UsageLimitExceededError: class UsageLimitExceededError extends Error {},
-      consumeUsageForLimit
+      consumeUsageForLimit,
+      ensureFeatureAllowed: vi.fn(async () => null)
     }));
     vi.doMock("@/lib/scheduler/create-scheduled-post", () => ({
       createScheduledPost,
@@ -476,6 +478,104 @@ describe("schedule post API", () => {
     );
   });
 
+  it("blocks live provider publishing when the workspace plan lacks access", async () => {
+    vi.resetModules();
+
+    const connectedAccountId = "22222222-2222-4222-8222-222222222222";
+    const limit = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: "variant_linkedin", platform: "linkedin", policyStatus: "pass" }])
+      .mockResolvedValueOnce([
+        {
+          id: connectedAccountId,
+          status: "connected",
+          scopes: ["w_member_social"],
+          capabilities: ["scheduled_publish"],
+          lastValidatedAt: new Date("2026-06-22T12:00:00.000Z")
+        }
+      ]);
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit
+          }))
+        }))
+      }))
+    };
+    class FeatureAccessError extends Error {
+      readonly feature = "liveProviderPublishing";
+      readonly requiredPlan = "premium";
+
+      constructor() {
+        super("This feature requires a Premium plan.");
+      }
+    }
+    const ensureFeatureAllowed = vi.fn(async () => {
+      throw new FeatureAccessError();
+    });
+    const consumeUsageForLimit = vi.fn();
+    const createScheduledPost = vi.fn();
+
+    vi.doMock("@/db", () => ({
+      getDb: () => db
+    }));
+    vi.doMock("@/lib/auth/current-user", () => ({
+      getCurrentUser: vi.fn(async () => ({
+        id: "user_1",
+        email: "user@example.com",
+        name: "User One",
+        imageUrl: null,
+        initials: "UO",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/env", () => ({
+      isDatabaseConfigured: true
+    }));
+    vi.doMock("@/lib/billing/usage", () => ({
+      FeatureAccessError,
+      UsageLimitExceededError: class UsageLimitExceededError extends Error {},
+      consumeUsageForLimit,
+      ensureFeatureAllowed
+    }));
+    vi.doMock("@/lib/scheduler/create-scheduled-post", () => ({
+      createScheduledPost,
+      createSchedulerRepository: vi.fn()
+    }));
+    vi.doMock("@/lib/workspaces/personal-workspace", () => ({
+      resolvePersonalWorkspaceForUser: vi.fn(async () => ({
+        id: "00000000-0000-0000-0000-000000000001",
+        role: "owner",
+        isLocalPreview: false
+      }))
+    }));
+
+    const { POST } = await import("@/app/api/posts/[id]/schedule/route");
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/posts/variant_linkedin/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "linkedin",
+          scheduledFor: futureIsoDate()
+        })
+      }),
+      {
+        params: Promise.resolve({ id: "variant_linkedin" })
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(402);
+    expect(payload).toMatchObject({
+      code: "upgrade_required",
+      feature: "liveProviderPublishing",
+      requiredPlan: "premium"
+    });
+    expect(consumeUsageForLimit).not.toHaveBeenCalled();
+    expect(createScheduledPost).not.toHaveBeenCalled();
+  });
+
   it("atomically consumes scheduled post usage for workspace-backed users", async () => {
     vi.resetModules();
     vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
@@ -514,8 +614,10 @@ describe("schedule post API", () => {
       isDatabaseConfigured: false
     }));
     vi.doMock("@/lib/billing/usage", () => ({
+      FeatureAccessError: class FeatureAccessError extends Error {},
       UsageLimitExceededError: class UsageLimitExceededError extends Error {},
-      consumeUsageForLimit
+      consumeUsageForLimit,
+      ensureFeatureAllowed: vi.fn(async () => null)
     }));
     vi.doMock("@/lib/scheduler/create-scheduled-post", () => ({
       createScheduledPost,
@@ -597,8 +699,10 @@ describe("schedule post API", () => {
       isDatabaseConfigured: false
     }));
     vi.doMock("@/lib/billing/usage", () => ({
+      FeatureAccessError: class FeatureAccessError extends Error {},
       UsageLimitExceededError,
-      consumeUsageForLimit
+      consumeUsageForLimit,
+      ensureFeatureAllowed: vi.fn(async () => null)
     }));
     vi.doMock("@/lib/scheduler/create-scheduled-post", () => ({
       createScheduledPost,

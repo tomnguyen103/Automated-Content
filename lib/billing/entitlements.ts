@@ -5,14 +5,18 @@ export type UsageLimitKey =
   | "scheduledPostsPerDay"
   | "providerConnections"
   | "mediaTransformsPerMonth"
-  | "autoRepliesPerMonth";
+  | "autoRepliesPerMonth"
+  | "agentMissionsPerMonth"
+  | "brandMemoryProposalsPerMonth";
 
 export type FeatureKey =
   | "multiPlatformPublishing"
   | "advancedAiGeneration"
   | "imageTransformations"
   | "keywordAutoReplies"
-  | "analyticsHistory";
+  | "analyticsHistory"
+  | "liveProviderPublishing"
+  | "governanceExport";
 
 export type PlanEntitlements = {
   label: string;
@@ -32,14 +36,18 @@ export const planEntitlements = {
       scheduledPostsPerDay: 1,
       providerConnections: 1,
       mediaTransformsPerMonth: 10,
-      autoRepliesPerMonth: 0
+      autoRepliesPerMonth: 0,
+      agentMissionsPerMonth: 5,
+      brandMemoryProposalsPerMonth: 10
     },
     features: {
       multiPlatformPublishing: false,
       advancedAiGeneration: false,
       imageTransformations: false,
       keywordAutoReplies: false,
-      analyticsHistory: false
+      analyticsHistory: false,
+      liveProviderPublishing: false,
+      governanceExport: false
     }
   },
   premium: {
@@ -51,14 +59,18 @@ export const planEntitlements = {
       scheduledPostsPerDay: 7,
       providerConnections: 8,
       mediaTransformsPerMonth: 250,
-      autoRepliesPerMonth: 500
+      autoRepliesPerMonth: 500,
+      agentMissionsPerMonth: 100,
+      brandMemoryProposalsPerMonth: 200
     },
     features: {
       multiPlatformPublishing: true,
       advancedAiGeneration: true,
       imageTransformations: true,
       keywordAutoReplies: true,
-      analyticsHistory: true
+      analyticsHistory: true,
+      liveProviderPublishing: true,
+      governanceExport: true
     }
   }
 } as const satisfies Record<BillingPlan, PlanEntitlements>;

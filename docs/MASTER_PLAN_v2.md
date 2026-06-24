@@ -124,11 +124,11 @@ _Last updated: 2026-06-24 (run #2)._
   - Sources: `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/n8n/workflows.md`, `docs/MASTER_PLAN.md`.
 
 - [x] **n8n Automation Agent Packs** - Curated importable workflow templates, setup checks, required variables, and supported/unsupported actions are implemented.
-  - Evidence: `lib/n8n/packs.ts:30-205`, `docs/n8n/automation-packs.md:1-57`, `docs/n8n/packs/publish-failure-alert.json`, `docs/n8n/packs/reply-approval-reminder.json`, `docs/n8n/packs/usage-threshold-alert.json`, `tests/n8n/packs.test.ts:18-97`.
+  - Evidence: `lib/n8n/packs.ts:30-205`, `docs/n8n/automation-packs.md:1-58`, `docs/n8n/packs/publish-failure-alert.json`, `docs/n8n/packs/reply-approval-reminder.json`, `docs/n8n/packs/usage-threshold-alert.json`, `tests/n8n/packs.test.ts:47-150`.
   - Sources: `docs/archive/n8n/workflows.md`, `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/MASTER_PLAN.md`.
 
 - [x] **Observability and release gates** - Local gates, runtime logs, worker readiness, and a release readiness report are implemented.
-  - Evidence: `package.json:6-15`, `lib/release/readiness.ts:1-286`, `scripts/release-readiness.ts:1-13`, `tests/release/readiness.test.ts:42-96`, `lib/agents/orchestration/repository.ts:535-584`, `lib/n8n/event-log.ts:79-163`, `lib/scheduler/worker-health.ts:121-388`.
+  - Evidence: `package.json:6-15`, `lib/release/readiness.ts:1-298`, `scripts/release-readiness.ts:1-14`, `tests/release/readiness.test.ts:42-124`, `lib/agents/orchestration/repository.ts:535-584`, `lib/n8n/event-log.ts:79-163`, `lib/scheduler/worker-health.ts:121-388`.
   - Note: live production smoke remains separate in the production readiness item.
   - Sources: `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/specs/07-release-checklist.md`, `docs/archive/worker-runtime-readiness.md`, `docs/MASTER_PLAN.md`.
 
@@ -158,7 +158,7 @@ _Last updated: 2026-06-24 (run #2)._
   - Sources: `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/archive/ai-agent-feature-goal-prompts-2026.md`, `docs/MASTER_PLAN.md`.
 
 - [?] **Production release readiness and live smoke verification** - Release readiness tooling exists, but external services still need credentialed live verification.
-  - Evidence: `lib/release/readiness.ts:1-286`, `scripts/release-readiness.ts:1-13`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/n8n/client.ts:30-139`.
+  - Evidence: `lib/release/readiness.ts:1-298`, `scripts/release-readiness.ts:1-14`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/n8n/client.ts:30-139`.
   - Sources: `docs/archive/specs/07-release-checklist.md`, `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/worker-runtime-readiness.md`, `docs/MASTER_PLAN.md`.
   - Notes: Needs `npm run release:readiness` with production env plus live service smoke against database, Redis, Clerk, ImageKit, LinkedIn, n8n, billing, worker, and callback URLs.
 

@@ -9,6 +9,6 @@ const report = buildReleaseReadinessReport({
 
 console.log(formatReleaseReadinessMarkdown(report));
 
-if (report.blockerCount > 0) {
+if (!report.ready) {
   process.exitCode = 1;
 }

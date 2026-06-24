@@ -187,7 +187,18 @@ function hasValue(env: EnvMap, key: string) {
 }
 
 function aiProviderCheck(env: EnvMap): ReleaseReadinessCheck {
-  const provider = env.AI_PROVIDER === "gemini" ? "gemini" : "openai";
+  const provider = env.AI_PROVIDER;
+
+  if (provider !== "openai" && provider !== "gemini") {
+    return {
+      id: "ai-provider-key",
+      category: "environment",
+      label: "AI provider selection",
+      status: "blocked",
+      detail: "AI_PROVIDER must be either 'openai' or 'gemini'."
+    };
+  }
+
   const key = provider === "gemini" ? "GEMINI_API_KEY" : "OPENAI_API_KEY";
 
   return {

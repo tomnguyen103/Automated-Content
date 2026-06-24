@@ -7,12 +7,40 @@ import {
 } from "@/lib/n8n/packs";
 import { n8nEventTypeSchema } from "@/lib/n8n/events";
 
+type WorkflowConnection = {
+  node: string;
+  type: string;
+  index: number;
+};
+
+type WorkflowNode = {
+  name: string;
+  type: string;
+  parameters?: Record<string, unknown>;
+};
+
+type WorkflowTemplate = {
+  name: string;
+  nodes: WorkflowNode[];
+  connections: Record<string, { main?: WorkflowConnection[][] }>;
+};
+
 function readWorkflowTemplate(workflowFile: string) {
-  return JSON.parse(readFileSync(join(process.cwd(), workflowFile), "utf8")) as {
-    name: string;
-    nodes: Array<{ name: string; type: string }>;
-    connections: Record<string, unknown>;
-  };
+  return JSON.parse(readFileSync(join(process.cwd(), workflowFile), "utf8")) as WorkflowTemplate;
+}
+
+function nodeNamed(workflow: WorkflowTemplate, nodeName: string) {
+  const node = workflow.nodes.find((candidate) => candidate.name === nodeName);
+
+  if (!node) {
+    throw new Error(`Missing workflow node: ${nodeName}`);
+  }
+
+  return node;
+}
+
+function mainTargets(workflow: WorkflowTemplate, sourceNode: string, outputIndex = 0) {
+  return (workflow.connections[sourceNode]?.main?.[outputIndex] ?? []).map((target) => target.node);
 }
 
 describe("n8n automation packs", () => {
@@ -58,9 +86,34 @@ describe("n8n automation packs", () => {
       expect(JSON.stringify(workflow)).toContain(pack.triggerEvent);
       expect(JSON.stringify(workflow)).toContain(pack.callbackWorkflow);
       expect(JSON.stringify(workflow)).toContain("AUTOMATED_CONTENT_WEBHOOK_SECRET");
+      expect(nodeNamed(workflow, "Receive signed app event").parameters).toEqual(
+        expect.objectContaining({
+          options: expect.objectContaining({
+            rawBody: true
+          })
+        })
+      );
+      expect(String(nodeNamed(workflow, "Validate signature").parameters?.jsCode)).toContain(
+        "getBinaryDataBuffer(0, 'data')"
+      );
+      expect(String(nodeNamed(workflow, "Validate signature").parameters?.jsCode)).toContain("Buffer.concat");
+      expect(String(nodeNamed(workflow, "Validate signature").parameters?.jsCode)).toContain("JSON.parse(rawBody)");
+      expect(String(nodeNamed(workflow, "Validate signature").parameters?.jsCode)).not.toContain("JSON.stringify");
       expect(Object.keys(workflow.connections)).toContain("Receive signed app event");
       expect(Object.keys(workflow.connections)).toContain("Validate signature");
+      expect(mainTargets(workflow, "Receive signed app event")).toEqual(["Validate signature"]);
     }
+  });
+
+  it("responds to reply approval reminder webhooks before the long reminder wait", () => {
+    const workflow = readWorkflowTemplate("docs/n8n/packs/reply-approval-reminder.json");
+
+    expect(mainTargets(workflow, "Require reply.approval_requested", 0)).toEqual(["Respond accepted"]);
+    expect(mainTargets(workflow, "Require reply.approval_requested", 1)).toEqual(["Respond ignored"]);
+    expect(mainTargets(workflow, "Respond accepted")).toEqual(["Wait before reminder"]);
+    expect(mainTargets(workflow, "Wait before reminder")).toEqual(["Notify review channel"]);
+    expect(mainTargets(workflow, "Notify review channel")).toEqual(["Record accepted callback"]);
+    expect(mainTargets(workflow, "Record accepted callback")).toEqual([]);
   });
 
   it("reports setup readiness without exposing secret values", () => {

@@ -79,6 +79,31 @@ describe("release readiness", () => {
     expect(report.passedCount).toBe(report.checks.length);
   });
 
+  it("blocks unsupported AI provider values instead of falling back to OpenAI", () => {
+    const report = buildReleaseReadinessReport({
+      env: {
+        ...completeEnv,
+        AI_PROVIDER: "anthropic",
+        GEMINI_API_KEY: "gemini-secret"
+      },
+      gateResults: passingGates,
+      manualChecks: passedManualChecks,
+      now: new Date("2026-06-24T12:00:00.000Z")
+    });
+
+    expect(report.ready).toBe(false);
+    expect(report.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "ai-provider-key",
+          label: "AI provider selection",
+          status: "blocked",
+          detail: "AI_PROVIDER must be either 'openai' or 'gemini'."
+        })
+      ])
+    );
+  });
+
   it("formats an operator report without leaking secret values", () => {
     const report = buildReleaseReadinessReport({
       env: completeEnv,
@@ -87,6 +112,9 @@ describe("release readiness", () => {
     });
     const markdown = formatReleaseReadinessMarkdown(report);
 
+    expect(report.ready).toBe(false);
+    expect(report.blockerCount).toBe(0);
+    expect(report.manualCount).toBeGreaterThan(0);
     expect(markdown).toContain("# Release Readiness Report");
     expect(markdown).toContain("Billing checkout URL");
     expect(markdown).not.toContain("openai-secret");

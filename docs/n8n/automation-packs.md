@@ -36,9 +36,10 @@ Each imported workflow needs these variables or equivalent credentials:
 https://<app-host>/api/webhooks/n8n
 ```
 
-The templates include a `Validate signature` code node. Confirm the imported
-workflow uses the raw webhook body your n8n version exposes before activating
-the workflow; the app signs `<timestamp>.<raw body>`.
+The templates keep the Webhook node's Raw Body option enabled and the
+`Validate signature` code node reads the `data` binary payload before parsing
+JSON. Confirm the imported workflow preserves that raw-body setting before
+activating the workflow; the app signs `<timestamp>.<raw body>`.
 
 ## Supported Actions
 

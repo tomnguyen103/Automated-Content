@@ -34,6 +34,12 @@ function parseLiteral<T extends string>(value: string | undefined, allowed: read
   return value && allowed.includes(value as T) ? (value as T) : undefined;
 }
 
+function parseOptionalText(value: string | undefined) {
+  const trimmed = value?.trim();
+
+  return trimmed ? trimmed : undefined;
+}
+
 function parsePositiveNumber(value: string | undefined) {
   if (!value) {
     return undefined;
@@ -49,8 +55,8 @@ function parseFilters(params: Record<string, string | string[] | undefined>): Ap
     type: parseLiteral(firstParam(params.type), approvalTypes),
     severity: parseLiteral(firstParam(params.severity), approvalSeverities),
     provider: parseLiteral(firstParam(params.provider), providerKeys),
-    platform: firstParam(params.platform),
-    missionId: firstParam(params.missionId),
+    platform: parseOptionalText(firstParam(params.platform)),
+    missionId: parseOptionalText(firstParam(params.missionId)),
     maxAgeHours: parsePositiveNumber(firstParam(params.maxAgeHours))
   };
 }

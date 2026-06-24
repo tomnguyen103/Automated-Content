@@ -17,7 +17,7 @@ import {
   type ReplyRepository
 } from "@/lib/replies/repository";
 import { logger } from "@/lib/observability/logger";
-import type { ProviderKey } from "@/lib/providers/types";
+import { providerKeys, type ProviderKey } from "@/lib/providers/types";
 
 export type ApprovalDecisionType =
   | "content_review"
@@ -87,6 +87,12 @@ function readString(value: Record<string, unknown>, key: string) {
   const candidate = value[key];
 
   return typeof candidate === "string" && candidate.trim() ? candidate.trim() : undefined;
+}
+
+function readProvider(value: Record<string, unknown>, key: string): ProviderKey | undefined {
+  const candidate = readString(value, key);
+
+  return candidate && providerKeys.includes(candidate as ProviderKey) ? (candidate as ProviderKey) : undefined;
 }
 
 function ageMinutes(createdAt: string, now: Date) {
@@ -296,7 +302,7 @@ async function listAgentPolicyApprovalItems({
             createdAt,
             ageMinutes: ageMinutes(createdAt, now),
             href: `/agents#mission-${mission.id}`,
-            provider: readString(details, "provider") as ProviderKey | undefined,
+            provider: readProvider(details, "provider"),
             platform: readString(details, "platform"),
             missionId: mission.id,
             decisionKey: event.policyKey

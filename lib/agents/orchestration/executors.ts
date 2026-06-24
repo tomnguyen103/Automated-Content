@@ -320,10 +320,11 @@ async function evaluateScheduleProviderReadiness({
 }): Promise<ProviderHealthResult> {
   const accountByProvider = readRecordMap(context.mission.inputs, "connectedAccountsByProvider");
   const accountByPlatform = readRecordMap(context.mission.inputs, "connectedAccountsByPlatform");
-  const inputAccount =
-    readProviderHealthAccount(scheduledVariant.platform ? accountByPlatform[scheduledVariant.platform] : undefined)
-    ?? readProviderHealthAccount(accountByProvider[scheduledVariant.provider])
-    ?? readProviderHealthAccount(context.mission.inputs.connectedAccount);
+  const inputAccount = allowMemoryFallback
+    ? readProviderHealthAccount(scheduledVariant.platform ? accountByPlatform[scheduledVariant.platform] : undefined)
+      ?? readProviderHealthAccount(accountByProvider[scheduledVariant.provider])
+      ?? readProviderHealthAccount(context.mission.inputs.connectedAccount)
+    : null;
   const connectedAccount = inputAccount && (!scheduledVariant.connectedAccountId || inputAccount.id === scheduledVariant.connectedAccountId)
     ? inputAccount
     : await loadConnectedAccountForReadiness({

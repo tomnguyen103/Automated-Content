@@ -58,9 +58,18 @@
 
 - `npm run lint` passed.
 - `npm run typecheck` passed.
-- `npm test` passed with 45 files and 188 tests.
+- `npm test` passed with 45 files and 189 tests after the CodeRabbit follow-up regression was added.
 - `npm audit --omit=dev --audit-level=high` found 0 vulnerabilities.
 - `git diff --check` passed; it reported only Windows CRLF checkout warnings.
 - `npm run build` passed and included `/approvals` plus `/api/approvals` in the route manifest.
 - `npm run test:e2e` initially hit a transient Chromium `Page.captureScreenshot` protocol error in the existing Brand Memory desktop test after all page assertions passed. A clean rerun passed all 22 Playwright tests, including the new Approval Command Center desktop and mobile coverage.
 - `npm run worker` reached the expected local `QueueConfigurationError: REDIS_URL is required to enqueue publishing jobs.` boundary. It did not fail from import resolution, `server-only`, or provider/orchestration wiring.
+
+## CodeRabbit Review Follow-up
+
+- Normalized blank `platform` and `missionId` query params to `undefined` on both `/approvals` and `/api/approvals` so empty query strings do not act as active filters.
+- Removed machine-specific local paths from the 2026 roadmap and prompt-pack docs so the artifacts remain portable.
+- Limited mission-input connected-account snapshots to local preview/memory execution. Non-preview autonomous scheduling must now derive provider readiness from durable connected-account state and blocks snapshot-only payloads.
+- Added provider-key validation when converting agent policy-event details into Approval Command Center items.
+- Removed a duplicate current-user lookup from the approvals API route; the shared orchestration context resolver remains the single auth/workspace source for that request.
+- Re-ran the full local gate stack after the review fixes: `npm run lint`, `npm run typecheck`, `npm test`, `npm audit --omit=dev --audit-level=high`, `git diff --check`, `npm run build`, `npm run test:e2e`, and the expected-boundary `npm run worker` smoke.

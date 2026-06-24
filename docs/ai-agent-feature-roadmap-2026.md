@@ -8,7 +8,7 @@ This document is a planning artifact, not an implementation diff. Before impleme
 
 ## Current Repo Snapshot
 
-- Repo: `C:\Users\huuth\Desktop\Automated-Content`
+- Repo: Automated-Content
 - Verified branch snapshot when this plan was created: `main`
 - Verified head/origin snapshot when this plan was created: `9448c84a1f3a11328f6b75e98fc8d83783018cc8`
 - Product identity: governed social-content operations SaaS with AI-assisted generation, platform variants, media, approval checkpoints, scheduling/publishing, keyword auto-replies, analytics, billing/usage limits, provider connections, n8n events, and supervised autonomous-agent control plane.

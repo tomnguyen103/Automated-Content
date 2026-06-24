@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getApprovalCommandCenter } from "@/lib/approvals/command-center";
-import { getCurrentUser } from "@/lib/auth/current-user";
 import { providerKeys } from "@/lib/providers/types";
 import { resolveAgentOrchestrationContext } from "@/lib/agents/orchestration/server";
 
@@ -58,17 +57,17 @@ function parseMaxAgeHours(value: string | null) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
+function parseOptionalText(value: string | null) {
+  const trimmed = value?.trim();
+
+  return trimmed ? trimmed : undefined;
+}
+
 export async function GET(request: NextRequest) {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Authentication is required." }, { status: 401 });
-  }
-
   const context = await resolveAgentOrchestrationContext();
 
   if (!context) {
-    return NextResponse.json({ error: "Workspace is required." }, { status: 401 });
+    return NextResponse.json({ error: "Authentication is required." }, { status: 401 });
   }
 
   const params = request.nextUrl.searchParams;
@@ -78,8 +77,8 @@ export async function GET(request: NextRequest) {
       type: parseApprovalType(params.get("type")),
       severity: parseApprovalSeverity(params.get("severity")),
       provider: parseProviderKey(params.get("provider")),
-      platform: params.get("platform") ?? undefined,
-      missionId: params.get("missionId") ?? undefined,
+      platform: parseOptionalText(params.get("platform")),
+      missionId: parseOptionalText(params.get("missionId")),
       maxAgeHours: parseMaxAgeHours(params.get("maxAgeHours"))
     },
     isLocalPreview: context.workspace.isLocalPreview,

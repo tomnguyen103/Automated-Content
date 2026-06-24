@@ -34,7 +34,7 @@ Do not start a later batch from an old feature branch. After each batch merges, 
 
 Every batch prompt should preserve these rules:
 
-- Work from `C:\Users\huuth\Desktop\Automated-Content`.
+- Work from the Automated-Content repository root.
 - Read `docs/ai-agent-feature-roadmap-2026.md` first.
 - Verify live state before editing:
   - `git status --short`

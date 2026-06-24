@@ -168,7 +168,7 @@ describe("approval command center", () => {
 
     const { GET } = await import("@/app/api/approvals/route");
     const response = await GET(
-      new NextRequest("http://localhost:3000/api/approvals?severity=blocked&provider=linkedin&maxAgeHours=24")
+      new NextRequest("http://localhost:3000/api/approvals?severity=blocked&provider=linkedin&platform=&missionId=&maxAgeHours=24")
     );
 
     expect(response.status).toBe(200);
@@ -176,6 +176,8 @@ describe("approval command center", () => {
       expect.objectContaining({
         filters: expect.objectContaining({
           maxAgeHours: 24,
+          missionId: undefined,
+          platform: undefined,
           provider: "linkedin",
           severity: "blocked"
         }),

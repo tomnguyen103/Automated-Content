@@ -1161,6 +1161,10 @@ describe("agent orchestration foundation", () => {
       now: () => new Date(timestamp)
     });
     const output = result.tasks[0].output as Record<string, unknown>;
+    const policyEvents = await repositories.policyEvents.listForMission({
+      workspaceId,
+      missionId: "mission_provider_snapshot_bypass_1"
+    });
 
     expect(schedulePost).not.toHaveBeenCalled();
     expect(output).toMatchObject({
@@ -1173,6 +1177,15 @@ describe("agent orchestration foundation", () => {
         })
       ]
     });
+    expect(policyEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "block",
+          policyKey: "provider_readiness",
+          severity: "blocked"
+        })
+      ])
+    );
   });
 
   it("runs supervised campaign missions through approval-gated scheduling and report tasks", async () => {

@@ -72,4 +72,5 @@
 - Limited mission-input connected-account snapshots to local preview/memory execution. Non-preview autonomous scheduling must now derive provider readiness from durable connected-account state and blocks snapshot-only payloads.
 - Added provider-key validation when converting agent policy-event details into Approval Command Center items.
 - Removed a duplicate current-user lookup from the approvals API route; the shared orchestration context resolver remains the single auth/workspace source for that request.
+- Extended the non-preview provider snapshot regression to assert the blocked `provider_readiness` policy event is persisted, matching the surrounding orchestration test pattern.
 - Re-ran the full local gate stack after the review fixes: `npm run lint`, `npm run typecheck`, `npm test`, `npm audit --omit=dev --audit-level=high`, `git diff --check`, `npm run build`, `npm run test:e2e`, and the expected-boundary `npm run worker` smoke.

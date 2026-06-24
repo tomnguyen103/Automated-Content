@@ -1,0 +1,122 @@
+{
+  "name": "Automated Content - Usage Threshold Alert",
+  "nodes": [
+    {
+      "id": "receive-app-event",
+      "name": "Receive signed app event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "automated-content/usage-threshold-alert",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "validate-signature",
+      "name": "Validate signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 0],
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst item = $input.first();\nconst headers = item.json.headers || {};\nconst body = item.json.body || item.json;\nconst timestamp = headers['x-automated-content-timestamp'];\nconst signature = headers['x-automated-content-signature'];\nconst rawBody = JSON.stringify(body);\nconst expected = 'sha256=' + crypto.createHmac('sha256', $env.AUTOMATED_CONTENT_WEBHOOK_SECRET).update(`${timestamp}.${rawBody}`).digest('hex');\nif (!timestamp || !signature || signature !== expected) {\n  throw new Error('Invalid Automated Content signature');\n}\nreturn [{ json: body }];"
+      }
+    },
+    {
+      "id": "filter-event",
+      "name": "Require usage.threshold_reached",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [520, 0],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.event}}",
+              "operation": "equals",
+              "value2": "usage.threshold_reached"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "notify-owners",
+      "name": "Notify usage channel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, -80],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.USAGE_ALERT_WEBHOOK_URL}}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{'Usage threshold reached for ' + ($json.data.usageKey || 'unknown') + ': ' + ($json.data.quantity || '?') + '/' + ($json.data.limit || '?')}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "callback-complete",
+      "name": "Record completed callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1040, -80],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.AUTOMATED_CONTENT_CALLBACK_URL}}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "id", "value": "={{'callback_' + $json.id}}" },
+            { "name": "workflow", "value": "usage-threshold-alert" },
+            { "name": "status", "value": "completed" },
+            { "name": "eventId", "value": "={{$json.id}}" },
+            { "name": "workspaceId", "value": "={{$json.workspaceId}}" },
+            { "name": "message", "value": "Usage threshold alert delivered." }
+          ]
+        }
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Respond accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1300, 0],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"accepted\":true,\"workflow\":\"usage-threshold-alert\"}"
+      }
+    }
+  ],
+  "connections": {
+    "Receive signed app event": {
+      "main": [[{ "node": "Validate signature", "type": "main", "index": 0 }]]
+    },
+    "Validate signature": {
+      "main": [[{ "node": "Require usage.threshold_reached", "type": "main", "index": 0 }]]
+    },
+    "Require usage.threshold_reached": {
+      "main": [
+        [{ "node": "Notify usage channel", "type": "main", "index": 0 }],
+        [{ "node": "Respond accepted", "type": "main", "index": 0 }]
+      ]
+    },
+    "Notify usage channel": {
+      "main": [[{ "node": "Record completed callback", "type": "main", "index": 0 }]]
+    },
+    "Record completed callback": {
+      "main": [[{ "node": "Respond accepted", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -7,8 +7,8 @@ _Last updated: 2026-06-24 (run #2)._
 
 ## Summary
 - Source docs merged: 31
-- Items: 35 total / 27 done / 6 partial / 1 not started / 1 unclear
-- Headline: The repo is well past initial planning: the app shell, auth/workspace model, content generation, LangGraph approval flow, media library, LinkedIn publishing, scheduling worker, replies, analytics, n8n events, brand-memory base flow, and agent control plane all have code and tests. The remaining plan value is concentrated in production activation, expanding providers beyond LinkedIn/mock, packaging automation workflows, and turning existing agent telemetry into richer recommendation and scorecard products.
+- Items: 35 total / 32 done / 2 partial / 0 not started / 1 unclear
+- Headline: The repo is well past initial planning: the app shell, auth/workspace model, content generation, LangGraph approval flow, media library, LinkedIn publishing, scheduling worker, replies, analytics, n8n automation packs, brand-memory intelligence, and agent control plane all have code and tests. The remaining plan value is concentrated in production billing activation, expanding providers beyond LinkedIn/mock, and live production smoke verification.
 
 ## Plan (grouped by theme or phase)
 
@@ -123,14 +123,13 @@ _Last updated: 2026-06-24 (run #2)._
   - Evidence: `lib/n8n/events.ts:9-102`, `lib/n8n/client.ts:30-139`, `lib/n8n/event-log.ts:79-163`, `app/api/webhooks/n8n/route.ts:10-67`, `tests/n8n/events.test.ts:29-344`.
   - Sources: `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/n8n/workflows.md`, `docs/MASTER_PLAN.md`.
 
-- [~] **n8n Automation Agent Packs** — The event substrate and docs exist, but importable workflow packs and in-app pack management were not evidenced.
-  - Missing: importable n8n JSON/templates, pack setup checks, secrets/callback setup flow, and supported-action docs.
-  - Evidence: `docs/archive/n8n/workflows.md:84-86`, `lib/n8n/events.ts:9-26`.
+- [x] **n8n Automation Agent Packs** - Curated importable workflow templates, setup checks, required variables, and supported/unsupported actions are implemented.
+  - Evidence: `lib/n8n/packs.ts:30-205`, `docs/n8n/automation-packs.md:1-57`, `docs/n8n/packs/publish-failure-alert.json`, `docs/n8n/packs/reply-approval-reminder.json`, `docs/n8n/packs/usage-threshold-alert.json`, `tests/n8n/packs.test.ts:18-97`.
   - Sources: `docs/archive/n8n/workflows.md`, `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/MASTER_PLAN.md`.
 
-- [~] **Observability and release gates** — Runtime health and logs exist, but full current release-gate proof was not run as part of this docs consolidation.
-  - Missing: current lint/typecheck/test/build/e2e output, production secrets verification, live provider/database/Redis/n8n/billing smoke.
-  - Evidence: `package.json:6-14`, `lib/agents/orchestration/repository.ts:535-584`, `lib/n8n/event-log.ts:79-163`, `lib/scheduler/worker-health.ts:121-388`.
+- [x] **Observability and release gates** - Local gates, runtime logs, worker readiness, and a release readiness report are implemented.
+  - Evidence: `package.json:6-15`, `lib/release/readiness.ts:1-286`, `scripts/release-readiness.ts:1-13`, `tests/release/readiness.test.ts:42-96`, `lib/agents/orchestration/repository.ts:535-584`, `lib/n8n/event-log.ts:79-163`, `lib/scheduler/worker-health.ts:121-388`.
+  - Note: live production smoke remains separate in the production readiness item.
   - Sources: `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/specs/07-release-checklist.md`, `docs/archive/worker-runtime-readiness.md`, `docs/MASTER_PLAN.md`.
 
 ### Agent Control Plane And Autonomous Workflows
@@ -158,10 +157,10 @@ _Last updated: 2026-06-24 (run #2)._
   - Evidence: `lib/agents/governance-export.ts:13-159`, `app/api/agents/governance-export/route.ts:11-53`, `components/agents/agents-console.tsx:569-583`, `tests/agents/governance-export.test.ts:19-135`.
   - Sources: `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/archive/ai-agent-feature-goal-prompts-2026.md`, `docs/MASTER_PLAN.md`.
 
-- [?] **Production release readiness and live smoke verification** — Code and checklists exist, but external services and full gates need current human/environment verification.
-  - Evidence: `docs/archive/specs/07-release-checklist.md`, `package.json:6-14`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/n8n/client.ts:30-139`.
+- [?] **Production release readiness and live smoke verification** - Release readiness tooling exists, but external services still need credentialed live verification.
+  - Evidence: `lib/release/readiness.ts:1-286`, `scripts/release-readiness.ts:1-13`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/n8n/client.ts:30-139`.
   - Sources: `docs/archive/specs/07-release-checklist.md`, `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/worker-runtime-readiness.md`, `docs/MASTER_PLAN.md`.
-  - Notes: Needs current lint, typecheck, tests, build, e2e, and live service smoke against database, Redis, Clerk, ImageKit, LinkedIn, n8n, billing, worker, and callback URLs.
+  - Notes: Needs `npm run release:readiness` with production env plus live service smoke against database, Redis, Clerk, ImageKit, LinkedIn, n8n, billing, worker, and callback URLs.
 
 ## Conflicts & decisions needed
 - Provider status: `docs/archive/next-feature-plans/README.md` describes live provider adapters as scaffold-level except mock, while current code has a live LinkedIn provider in `lib/providers/linkedin.ts:877-883`. Recommend treating LinkedIn as the canonical first live provider and leaving other providers as expansion work.

@@ -34,7 +34,9 @@ test("analytics shows Phase 8 operational metrics", async ({ page }, testInfo) =
   await expect(page.getByText("Replies", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Usage events")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Platform breakdown" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Next best actions" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Usage history" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agent quality scorecards" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Agent activity" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Platforms" })).toHaveAttribute("href", "#platforms");
   await expect(page.getByRole("link", { name: "Usage" })).toHaveAttribute("href", "#usage");

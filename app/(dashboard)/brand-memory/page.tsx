@@ -12,6 +12,7 @@ import {
   createBrandMemoryProposalRepository,
   ensureLocalPreviewBrandMemoryProposals
 } from "@/lib/brand-memory/proposals";
+import { buildBrandMemoryCurationSummary } from "@/lib/brand-memory/curator";
 import { socialPlatformSchema } from "@/lib/agents/schemas/platform-variant";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
@@ -118,13 +119,20 @@ export default async function BrandMemoryPage({ searchParams }: BrandMemoryPageP
     });
   }
 
-  const proposals = filterError
-    ? []
-    : await repository.list({
-        workspaceId: workspace.id,
-        ...filters,
-        limit: 50
-      });
+  const [proposals, curationProposals] = filterError
+    ? [[], []]
+    : await Promise.all([
+        repository.list({
+          workspaceId: workspace.id,
+          ...filters,
+          limit: 50
+        }),
+        repository.list({
+          workspaceId: workspace.id,
+          limit: 100
+        })
+      ]);
+  const curation = buildBrandMemoryCurationSummary(curationProposals);
 
   return (
     <>
@@ -146,7 +154,7 @@ export default async function BrandMemoryPage({ searchParams }: BrandMemoryPageP
               {filterError}
             </div>
           ) : (
-            <BrandMemoryWorkbench initialFilters={filters} initialProposals={proposals} />
+            <BrandMemoryWorkbench initialCuration={curation} initialFilters={filters} initialProposals={proposals} />
           )}
         </div>
       </PageShell>

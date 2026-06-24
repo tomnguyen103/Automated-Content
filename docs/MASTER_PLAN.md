@@ -123,9 +123,9 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
     - Tests: `tests/brand-memory/proposals.test.ts:88-252`, `e2e/phase-02.spec.ts:48-59`.
     - Sources: `docs/next-feature-plans/05-brand-memory-management-page.md`, `docs/ai-agent-feature-roadmap-2026.md`.
 
-21. [ ] Brand Voice Memory Curator 2.0 clustering, merge suggestions, and contradiction/conflict warnings.
-    - Current status: base proposal lifecycle exists, but no code evidence was found for clustering, merge-suggestion workflows, or contradiction/conflict detection.
-    - Remaining work: add clustering/grouping, duplicate or overlapping rule merge suggestions, contradiction warnings, batch review UX, and tests proving accepted/rejected memory remains workspace-scoped and generation-visible.
+21. [x] Brand Voice Memory Curator 2.0 clustering, merge suggestions, and contradiction/conflict warnings.
+    - Evidence: `lib/brand-memory/curator.ts:30-273` builds curation summaries, clusters related proposals, suggests merge candidates, and flags contradiction warnings; `app/(dashboard)/brand-memory/page.tsx:122-157` passes curation data into the workbench; `components/brand-memory/brand-memory-workbench.tsx:248-313` surfaces Curator 2.0 clusters, merges, and conflicts.
+    - Tests: `tests/brand-memory/proposals.test.ts:280-353`.
     - Sources: `docs/ai-agent-feature-roadmap-2026.md`, `docs/ai-agent-feature-goal-prompts-2026.md`.
 
 22. [x] Unified Approval Command Center across replies, brand memory, content workflows, and agent policies.
@@ -140,16 +140,14 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
     - Tests: `tests/analytics/metrics.test.ts:10-266`, `tests/analytics/snapshot-fallback.test.ts:17-38`, `tests/analytics/usage-chart.test.ts:5-9`, `e2e/phase-08.spec.ts:28-44`.
     - Sources: `docs/phases/phase-08-analytics-n8n-release.md`, `docs/specs/07-release-checklist.md`.
 
-24. [~] Agent Quality Scorecards.
-    - Current status: agent runs, task runs, tool usage, policy events, usage ledgers, mission reports, and analytics tables exist; no dedicated scorecard service/panel was found in code.
-    - Evidence: `db/schema.ts:816-907` stores agent task runs, policy events, and simulations; `lib/analytics/metrics.ts:442-489` aggregates agent overview; `components/analytics/agent-run-table.tsx:37-85` renders agent run rows; roadmap mentions scorecards, but code search found no `scorecard` implementation outside docs.
-    - Remaining work: define deterministic score dimensions, generate per-run/per-agent scorecards, explain scoring inputs, expose score history, and add tests against fixture runs.
+24. [x] Agent Quality Scorecards.
+    - Evidence: `lib/analytics/scorecards.ts:1-131` defines deterministic score dimensions, grades, and evidence; `lib/analytics/metrics.ts:430-509` attaches scorecards to recent agent runs and analytics snapshots; `components/analytics/agent-run-table.tsx:65-91` renders quality badges; `app/(dashboard)/analytics/page.tsx:92-137` surfaces the scorecard panel.
+    - Tests: `tests/analytics/metrics.test.ts:161-178`, `tests/analytics/metrics.test.ts:288-291`, `tests/agents/orchestration.test.ts:567-653`.
     - Sources: `docs/ai-agent-feature-roadmap-2026.md`, `docs/ai-agent-feature-goal-prompts-2026.md`.
 
-25. [~] Analytics Next-Best-Action Agent.
-    - Current status: recovery recommendations, weekly operator report recommendations, and analytics summaries exist; a dedicated analytics recommendation panel or next-best-action workflow was not evidenced.
-    - Evidence: `lib/scheduler/publish-recovery.ts:14-19` classifies recovery guidance; `lib/agents/orchestration/executors.ts:981-989` includes report recommendations; `app/(dashboard)/analytics/page.tsx:49-147` renders analytics without a dedicated next-best-action module.
-    - Remaining work: define recommendation inputs, add explainable recommendation records, surface prioritized actions in analytics, and ensure recommendations never trigger side effects without approval.
+25. [x] Analytics Next-Best-Action Agent.
+    - Evidence: `lib/analytics/recommendations.ts:1-110` ranks explainable, side-effect-free recommendations from analytics signals; `lib/analytics/metrics.ts:504-509` attaches recommendations to snapshots; `app/(dashboard)/analytics/page.tsx:61-89` renders the next-best-action panel with evidence links.
+    - Tests: `tests/analytics/metrics.test.ts:170-183`, `tests/analytics/metrics.test.ts:327-333`.
     - Sources: `docs/ai-agent-feature-roadmap-2026.md`, `docs/ai-agent-feature-goal-prompts-2026.md`.
 
 26. [x] Signed n8n outbound events, inbound callback verification, and event log persistence.
@@ -227,7 +225,7 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
 
 5. Brand memory has two scopes.
    - Conflict: next-feature plan 05 is satisfied by the current brand-memory workbench, while AI-agent roadmap asks for clustering, merge suggestions, and contradiction handling.
-   - Decision: split the item. Base brand-memory review/apply is done; Brand Voice Memory Curator 2.0 remains not started.
+   - Decision: split the item. Base brand-memory review/apply is done, and Brand Voice Memory Curator 2.0 is now implemented by the curation summary and workbench surface.
 
 ## Deduplication Log
 

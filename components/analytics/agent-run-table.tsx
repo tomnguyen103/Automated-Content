@@ -8,6 +8,13 @@ const statusTone = {
   failed: "critical"
 } as const;
 
+const gradeTone = {
+  excellent: "success",
+  healthy: "primary",
+  watch: "premium",
+  blocked: "critical"
+} as const;
+
 function formatDuration(durationMs: number | null) {
   if (durationMs === null) {
     return "In progress";
@@ -55,6 +62,7 @@ export function AgentRunTable({ runs }: { runs: AgentRunSummary[] }) {
                 <th className="px-5 py-3 font-medium">Run</th>
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 font-medium">Model</th>
+                <th className="px-5 py-3 font-medium">Quality</th>
                 <th className="px-5 py-3 font-medium">Tools</th>
                 <th className="px-5 py-3 font-medium">Duration</th>
                 <th className="px-5 py-3 font-medium">Started</th>
@@ -72,6 +80,9 @@ export function AgentRunTable({ runs }: { runs: AgentRunSummary[] }) {
                   </td>
                   <td className="px-5 py-4 text-[var(--color-text-muted)]">
                     {run.provider} / {run.model}
+                  </td>
+                  <td className="px-5 py-4">
+                    <Badge tone={gradeTone[run.scorecard.grade]}>{run.scorecard.score} {run.scorecard.grade}</Badge>
                   </td>
                   <td className="px-5 py-4 text-[var(--color-text-muted)]">{run.toolCallCount}</td>
                   <td className="px-5 py-4 text-[var(--color-text-muted)]">{formatDuration(run.durationMs)}</td>

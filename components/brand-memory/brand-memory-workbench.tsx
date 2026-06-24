@@ -8,6 +8,7 @@ import type {
   BrandMemoryProposalScope,
   BrandMemoryProposalStatus
 } from "@/lib/brand-memory/schemas";
+import type { BrandMemoryCurationSummary } from "@/lib/brand-memory/curator";
 import { socialPlatformOptions } from "@/lib/agents/schemas/platform-variant";
 
 type BrandMemoryFilters = {
@@ -19,6 +20,7 @@ type BrandMemoryFilters = {
 };
 
 type BrandMemoryWorkbenchProps = {
+  initialCuration: BrandMemoryCurationSummary;
   initialFilters: BrandMemoryFilters;
   initialProposals: BrandMemoryProposal[];
 };
@@ -63,6 +65,7 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
 }
 
 export function BrandMemoryWorkbench({
+  initialCuration,
   initialFilters,
   initialProposals
 }: BrandMemoryWorkbenchProps) {
@@ -238,6 +241,80 @@ export function BrandMemoryWorkbench({
           <p className="mt-2 text-3xl font-semibold">{rejectedCount}</p>
         </section>
       </div>
+
+      <section className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold">Curator 2.0</h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Groups related memory, suggests merges, and flags conflicting guidance before activation.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge tone="neutral">{initialCuration.clusters.length} clusters</Badge>
+            <Badge tone="premium">{initialCuration.mergeSuggestions.length} merges</Badge>
+            <Badge tone={initialCuration.contradictionWarnings.length > 0 ? "critical" : "success"}>
+              {initialCuration.contradictionWarnings.length} conflicts
+            </Badge>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-3">
+          <div className="rounded-[var(--radius-md)] bg-[var(--color-surface)] p-4">
+            <h3 className="text-sm font-semibold">Top clusters</h3>
+            <div className="mt-3 grid gap-3">
+              {initialCuration.clusters.slice(0, 3).map((cluster) => (
+                <div key={cluster.id} className="grid gap-2 rounded-[var(--radius-sm)] bg-white p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium">{cluster.label}</p>
+                    <Badge tone="neutral">{cluster.proposalIds.length}</Badge>
+                  </div>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    {cluster.scope}
+                    {cluster.platform ? ` / ${cluster.platform}` : ""} | {cluster.averageConfidence}% average confidence
+                  </p>
+                </div>
+              ))}
+              {initialCuration.clusters.length === 0 ? (
+                <p className="text-sm text-[var(--color-text-muted)]">No active memory clusters yet.</p>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="rounded-[var(--radius-md)] bg-[var(--color-surface)] p-4">
+            <h3 className="text-sm font-semibold">Merge suggestions</h3>
+            <div className="mt-3 grid gap-3">
+              {initialCuration.mergeSuggestions.slice(0, 3).map((suggestion) => (
+                <div key={suggestion.id} className="grid gap-2 rounded-[var(--radius-sm)] bg-white p-3">
+                  <p className="line-clamp-2 text-sm font-medium">{suggestion.recommendedRule}</p>
+                  <p className="text-xs leading-5 text-[var(--color-text-muted)]">{suggestion.reason}</p>
+                </div>
+              ))}
+              {initialCuration.mergeSuggestions.length === 0 ? (
+                <p className="text-sm text-[var(--color-text-muted)]">No overlapping rules need merging.</p>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="rounded-[var(--radius-md)] bg-[var(--color-surface)] p-4">
+            <h3 className="text-sm font-semibold">Contradictions</h3>
+            <div className="mt-3 grid gap-3">
+              {initialCuration.contradictionWarnings.slice(0, 3).map((warning) => (
+                <div key={warning.id} className="grid gap-2 rounded-[var(--radius-sm)] bg-white p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium">{warning.dimension.replaceAll("_", " ")}</p>
+                    <Badge tone={warning.severity === "blocked" ? "critical" : "premium"}>{warning.severity}</Badge>
+                  </div>
+                  <p className="text-xs leading-5 text-[var(--color-text-muted)]">{warning.reason}</p>
+                </div>
+              ))}
+              {initialCuration.contradictionWarnings.length === 0 ? (
+                <p className="text-sm text-[var(--color-text-muted)]">No contradictions detected.</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {error ? (
         <div className="rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-4 text-sm text-red-700">

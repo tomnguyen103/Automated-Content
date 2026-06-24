@@ -10,6 +10,8 @@ import {
   scheduledJobs,
   usageLedger
 } from "@/db/schema";
+import { buildAnalyticsRecommendations, type AnalyticsRecommendation } from "@/lib/analytics/recommendations";
+import { buildAgentQualityScorecard, type AgentQualityScorecard } from "@/lib/analytics/scorecards";
 import { isDatabaseConfigured } from "@/lib/env";
 
 export type AnalyticsPlatformKey =
@@ -119,6 +121,7 @@ export type AgentRunSummary = {
   startedAt: string;
   completedAt: string | null;
   error: string | null;
+  scorecard: AgentQualityScorecard;
 };
 
 export type AnalyticsSnapshot = {
@@ -157,11 +160,13 @@ export type AnalyticsSnapshot = {
     failed: number;
     averageToolCalls: number;
     recent: AgentRunSummary[];
+    scorecards: AgentQualityScorecard[];
   };
   platformBreakdown: PlatformBreakdownItem[];
+  recommendations: AnalyticsRecommendation[];
 };
 
-type AnalyticsAgentOverview = Omit<AnalyticsSnapshot["agents"], "recent">;
+type AnalyticsAgentOverview = Omit<AnalyticsSnapshot["agents"], "recent" | "scorecards">;
 
 type AnalyticsAggregateSummary = {
   posting: AnalyticsSnapshot["posting"];
@@ -424,6 +429,7 @@ function buildPlatformBreakdownFromAggregates({
 
 function summarizeAgentRun(row: AgentRunMetricRow): AgentRunSummary {
   const completedAt = row.completedAt ?? null;
+  const durationMs = completedAt ? Math.max(0, completedAt.getTime() - row.startedAt.getTime()) : null;
 
   return {
     id: row.id,
@@ -432,10 +438,17 @@ function summarizeAgentRun(row: AgentRunMetricRow): AgentRunSummary {
     provider: row.provider,
     model: row.model,
     toolCallCount: row.toolCalls.length,
-    durationMs: completedAt ? Math.max(0, completedAt.getTime() - row.startedAt.getTime()) : null,
+    durationMs,
     startedAt: row.startedAt.toISOString(),
     completedAt: completedAt?.toISOString() ?? null,
-    error: row.error ?? null
+    error: row.error ?? null,
+    scorecard: buildAgentQualityScorecard({
+      id: row.id,
+      status: row.status,
+      toolCallCount: row.toolCalls.length,
+      durationMs,
+      error: row.error
+    })
   };
 }
 
@@ -467,8 +480,11 @@ export function aggregateAnalyticsMetrics({
   const publishingFailures = posting.failed;
   const replyFailures = repliesSummary.failed;
   const agentFailures = agentOverview.failed;
-
-  return {
+  const recentAgentRuns = [...agentRunRows]
+    .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())
+    .slice(0, 8)
+    .map(summarizeAgentRun);
+  const snapshot: AnalyticsSnapshot = {
     generatedAt: now.toISOString(),
     posting,
     failures: {
@@ -481,12 +497,16 @@ export function aggregateAnalyticsMetrics({
     usage: usageSummary,
     agents: {
       ...agentOverview,
-      recent: [...agentRunRows]
-        .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())
-        .slice(0, 8)
-        .map(summarizeAgentRun)
+      recent: recentAgentRuns,
+      scorecards: recentAgentRuns.map((run) => run.scorecard)
     },
-    platformBreakdown: summary?.platformBreakdown ?? buildPlatformBreakdown({ comments, posts, replies })
+    platformBreakdown: summary?.platformBreakdown ?? buildPlatformBreakdown({ comments, posts, replies }),
+    recommendations: []
+  };
+
+  return {
+    ...snapshot,
+    recommendations: buildAnalyticsRecommendations(snapshot)
   };
 }
 

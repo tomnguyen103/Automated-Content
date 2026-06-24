@@ -98,9 +98,9 @@ _Last updated: 2026-06-24 (run #2)._
   - Evidence: `db/schema.ts:674`, `lib/brand-memory/proposals.ts:240-302`, `lib/brand-memory/proposals.ts:305-376`, `lib/brand-memory/proposals.ts:572-611`, `app/(dashboard)/brand-memory/page.tsx:90-149`, `components/brand-memory/brand-memory-workbench.tsx:65-399`, `tests/brand-memory/proposals.test.ts:88-252`.
   - Sources: `docs/archive/next-feature-plans/05-brand-memory-management-page.md`, `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/MASTER_PLAN.md`.
 
-- [ ] **Brand Voice Memory Curator 2.0 clustering, merge suggestions, and contradiction warnings** — No meaningful code evidence was found for the advanced clustering/conflict layer.
+- [x] **Brand Voice Memory Curator 2.0 clustering, merge suggestions, and contradiction warnings** - Advanced clustering, merge suggestions, and contradiction warnings are implemented.
+  - Evidence: `lib/brand-memory/curator.ts:30-273`, `app/(dashboard)/brand-memory/page.tsx:122-157`, `components/brand-memory/brand-memory-workbench.tsx:248-313`, `tests/brand-memory/proposals.test.ts:280-353`.
   - Sources: `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/archive/ai-agent-feature-goal-prompts-2026.md`, `docs/MASTER_PLAN.md`.
-  - Notes: The base brand-memory proposal/review/apply loop is done; this is the extra roadmap scope.
 
 - [x] **Unified Approval Command Center across replies, brand memory, content workflows, and agent policies** — Approval items are normalized and filterable through an API and dashboard page.
   - Evidence: `lib/approvals/command-center.ts:20-351`, `app/api/approvals/route.ts:9-85`, `app/(dashboard)/approvals/page.tsx:19-114`, `components/approvals/approval-command-center.tsx:30-208`, `tests/approvals/command-center.test.ts:16-185`.
@@ -111,14 +111,12 @@ _Last updated: 2026-06-24 (run #2)._
   - Evidence: `lib/analytics/metrics.ts:90-873`, `app/(dashboard)/analytics/page.tsx:49-147`, `components/analytics/usage-chart.tsx:12-61`, `components/analytics/agent-run-table.tsx:37-85`, `tests/analytics/metrics.test.ts:10-266`.
   - Sources: `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/specs/07-release-checklist.md`, `docs/MASTER_PLAN.md`.
 
-- [~] **Agent Quality Scorecards** — Agent telemetry exists, but no dedicated scorecard service or scorecard panel was found.
-  - Missing: deterministic score dimensions, scorecard generation, history, explanations, and tests.
-  - Evidence: `db/schema.ts:816-907`, `lib/analytics/metrics.ts:442-489`, `components/analytics/agent-run-table.tsx:37-85`.
+- [x] **Agent Quality Scorecards** - Deterministic per-run scorecards are generated, explained, and surfaced in analytics.
+  - Evidence: `lib/analytics/scorecards.ts:1-131`, `lib/analytics/metrics.ts:430-509`, `components/analytics/agent-run-table.tsx:65-91`, `app/(dashboard)/analytics/page.tsx:92-137`, `tests/analytics/metrics.test.ts:161-178`.
   - Sources: `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/archive/ai-agent-feature-goal-prompts-2026.md`, `docs/MASTER_PLAN.md`.
 
-- [~] **Analytics Next-Best-Action Agent** — Some recommendations exist in reports/recovery, but no dedicated analytics recommendation workflow or panel was evidenced.
-  - Missing: recommendation records, prioritized analytics UI, explainable inputs, and approval-safe actions.
-  - Evidence: `lib/scheduler/publish-recovery.ts:14-19`, `lib/agents/orchestration/executors.ts:981-989`, `app/(dashboard)/analytics/page.tsx:49-147`.
+- [x] **Analytics Next-Best-Action Agent** - Prioritized, explainable, approval-safe recommendations are derived from analytics and surfaced in the dashboard.
+  - Evidence: `lib/analytics/recommendations.ts:1-110`, `lib/analytics/metrics.ts:504-509`, `app/(dashboard)/analytics/page.tsx:61-89`, `tests/analytics/metrics.test.ts:170-183`.
   - Sources: `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/archive/ai-agent-feature-goal-prompts-2026.md`, `docs/MASTER_PLAN.md`.
 
 - [x] **Signed n8n outbound events, inbound callback verification, and event log persistence** — Signed events and callback verification are implemented with tests.
@@ -181,8 +179,8 @@ _Last updated: 2026-06-24 (run #2)._
 - Merged "provider contracts, LinkedIn, connections, scheduling, worker readiness, retry, and queue health" from phase 06, provider specs, next-feature plans 01-03, and `docs/archive/worker-runtime-readiness.md` (partial overlap).
 - Merged "comment triage, auto replies, reply approvals, and safety labels" from phase 07 and AI-agent roadmap/goal prompt docs (partial overlap).
 - Merged "analytics, n8n, observability, and release" from phase 08, `docs/archive/n8n/workflows.md`, release checklist, and AI-agent roadmap items (partial overlap).
-- Split "brand memory" into base workflow done and Brand Voice Memory Curator 2.0 not started because code supports proposal review/apply but not clustering/merge/conflict warnings.
-- Split "analytics" into implemented dashboard, partial scorecards, and partial next-best-action agent because telemetry exists but dedicated product surfaces do not.
+- Split "brand memory" into base workflow and Brand Voice Memory Curator 2.0; both are now implemented.
+- Split "analytics" into implemented dashboard, scorecards, and next-best-action recommendations; all three now have dedicated product surfaces.
 - Carried forward `docs/MASTER_PLAN.md` as a source plan and re-derived statuses from live code evidence instead of copying v1 blindly.
 
 ## Source documents

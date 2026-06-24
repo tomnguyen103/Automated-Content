@@ -6,6 +6,7 @@ import {
   createBrandMemoryProposalRepository,
   readBrandProfileWithAcceptedMemory
 } from "@/lib/brand-memory/proposals";
+import { buildBrandMemoryCurationSummary } from "@/lib/brand-memory/curator";
 import { defaultBrandProfile } from "@/lib/agents/tools/read-brand-profile";
 import { contentPackSchema, type ContentPack } from "@/lib/agents/schemas/content-pack";
 import type { BrandMemoryProposal } from "@/lib/brand-memory/schemas";
@@ -253,5 +254,98 @@ describe("brand memory proposals", () => {
 
     expect(profile.pillars).toContain("Learned: keep launches grounded in operator control.");
     expect(profile.pillars).not.toContain("Learned: use hype-heavy launch claims.");
+  });
+
+  it("clusters overlapping proposals and recommends the clearest merge candidate", () => {
+    const accepted = createProposal({
+      id: "brand_memory_cluster_accepted",
+      confidence: 82,
+      status: "accepted",
+      inferredRule: "prefer concise operator language for launch posts.",
+      editedText: "We ship launches with operator control and concise proof."
+    });
+    const pending = createProposal({
+      id: "brand_memory_cluster_pending",
+      confidence: 91,
+      inferredRule: "prefer tighter operator language when writing launch copy.",
+      editedText: "Keep launch copy concise and grounded in operator control."
+    });
+    const rejected = createProposal({
+      id: "brand_memory_cluster_rejected",
+      status: "rejected",
+      inferredRule: "prefer hype-heavy launch claims.",
+      editedText: "Launch copy should sound unstoppable."
+    });
+
+    const summary = buildBrandMemoryCurationSummary([pending, rejected, accepted]);
+
+    expect(summary.clusters).toHaveLength(1);
+    expect(summary.clusters[0]).toMatchObject({
+      proposalIds: ["brand_memory_cluster_pending", "brand_memory_cluster_accepted"],
+      averageConfidence: 87,
+      statusCounts: {
+        accepted: 1,
+        pending: 1,
+        rejected: 0
+      }
+    });
+    expect(summary.mergeSuggestions).toHaveLength(1);
+    expect(summary.mergeSuggestions[0]).toMatchObject({
+      proposalIds: ["brand_memory_cluster_pending", "brand_memory_cluster_accepted"],
+      recommendedRule: accepted.inferredRule
+    });
+  });
+
+  it("clusters transitively related proposals regardless of input order", () => {
+    const founderLed = createProposal({
+      id: "brand_memory_transitive_first_person",
+      inferredRule: "prefer founder-led voice.",
+      editedText: "We write in a founder-led voice."
+    });
+    const operator = createProposal({
+      id: "brand_memory_transitive_operator",
+      inferredRule: "prefer operator proof.",
+      editedText: "Operator proof should anchor posts."
+    });
+    const bridge = createProposal({
+      id: "brand_memory_transitive_bridge",
+      inferredRule: "prefer founder-led operator proof.",
+      editedText: "We anchor posts in operator proof."
+    });
+
+    const summary = buildBrandMemoryCurationSummary([founderLed, operator, bridge]);
+
+    expect(summary.clusters).toHaveLength(1);
+    expect(summary.clusters[0].proposalIds).toEqual([
+      "brand_memory_transitive_first_person",
+      "brand_memory_transitive_bridge",
+      "brand_memory_transitive_operator"
+    ]);
+  });
+
+  it("flags contradictions before conflicting memory can be accepted", () => {
+    const concise = createProposal({
+      id: "brand_memory_conflict_concise",
+      status: "accepted",
+      inferredRule: "prefer concise first-person operator language for launch copy.",
+      editedText: "We keep launches concise."
+    });
+    const longForm = createProposal({
+      id: "brand_memory_conflict_long",
+      inferredRule: "use expanded long-form launch copy with more context.",
+      editedText: "We keep launches concise, then add detailed setup and more context."
+    });
+
+    const summary = buildBrandMemoryCurationSummary([concise, longForm]);
+
+    expect(summary.contradictionWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          dimension: "brevity",
+          proposalIds: ["brand_memory_conflict_concise", "brand_memory_conflict_long"],
+          severity: "blocked"
+        })
+      ])
+    );
   });
 });

@@ -157,8 +157,29 @@ describe("aggregateAnalyticsMetrics", () => {
     });
     expect(snapshot.agents.recent[0]).toMatchObject({
       id: "run_2",
-      durationMs: 5000
+      durationMs: 5000,
+      scorecard: expect.objectContaining({
+        grade: "blocked",
+        dimensions: expect.objectContaining({
+          completion: 25,
+          reliability: 30
+        })
+      })
     });
+    expect(snapshot.agents.scorecards).toHaveLength(2);
+    expect(snapshot.recommendations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "review_failed_operations",
+          severity: "critical",
+          href: "/calendar#failed"
+        }),
+        expect.objectContaining({
+          id: "inspect_agent_scorecards",
+          href: "/analytics#agent-quality"
+        })
+      ])
+    );
     expect(snapshot.platformBreakdown).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -264,5 +285,51 @@ describe("aggregateAnalyticsMetrics", () => {
     expect(snapshot.usage.totalQuantity).toBe(900);
     expect(snapshot.agents.total).toBe(150);
     expect(snapshot.agents.recent).toHaveLength(1);
+    expect(snapshot.agents.scorecards[0]).toMatchObject({
+      runId: "recent_run",
+      grade: "excellent"
+    });
+  });
+
+  it("emits a safe maintenance recommendation when no action is required", () => {
+    const snapshot = aggregateAnalyticsMetrics({
+      now,
+      posts: [
+        {
+          id: "post_healthy",
+          platform: "linkedin",
+          provider: "linkedin",
+          status: "queued",
+          scheduledFor: new Date("2026-06-21T12:00:00.000Z"),
+          publishedAt: null,
+          failedAt: null,
+          createdAt: new Date("2026-06-20T10:00:00.000Z")
+        }
+      ],
+      comments: [],
+      replies: [],
+      usage: [],
+      agentRuns: [
+        {
+          id: "run_healthy",
+          traceId: "trace_healthy",
+          status: "succeeded",
+          provider: "gemini",
+          model: "gemini-2.5-flash",
+          toolCalls: [{ name: "save_draft" }],
+          startedAt: new Date("2026-06-20T11:00:00.000Z"),
+          completedAt: new Date("2026-06-20T11:00:05.000Z"),
+          error: null
+        }
+      ]
+    });
+
+    expect(snapshot.recommendations).toEqual([
+      expect.objectContaining({
+        id: "maintain_operational_posture",
+        severity: "info",
+        href: "/agents"
+      })
+    ]);
   });
 });

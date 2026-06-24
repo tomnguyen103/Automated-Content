@@ -7,14 +7,14 @@ _Last updated: 2026-06-24 (run #2)._
 
 ## Summary
 - Source docs merged: 31
-- Items: 35 total / 32 done / 2 partial / 0 not started / 1 unclear
-- Headline: The repo is well past initial planning: the app shell, auth/workspace model, content generation, LangGraph approval flow, media library, LinkedIn publishing, scheduling worker, replies, analytics, n8n automation packs, brand-memory intelligence, and agent control plane all have code and tests. The remaining plan value is concentrated in production billing activation, expanding providers beyond LinkedIn/mock, and live production smoke verification.
+- Items: 35 total / 33 done / 1 partial / 0 not started / 1 unclear
+- Headline: The repo is well past initial planning: the app shell, auth/workspace model, content generation, LangGraph approval flow, media library, LinkedIn and X publishing, scheduling worker, replies, analytics, n8n automation packs, brand-memory intelligence, and agent control plane all have code and tests. The remaining plan value is concentrated in production billing activation and live production smoke verification.
 
 ## Plan (grouped by theme or phase)
 
 ### Foundation, Product Shell, And Release Surface
 - [x] **Repository foundation, scripts, environment contract, and app configuration** — Next app scripts, environment validation, and runtime config are present.
-  - Evidence: `package.json:6-14`, `.env.example:21`, `.env.example:36-50`, `lib/env.ts:16-47`, `lib/env.ts:94-107`.
+  - Evidence: `package.json:6-14`, `.env.example:21-56`, `lib/env.ts:16-53`, `lib/env.ts:100-113`.
   - Sources: `docs/archive/phases/phase-01-foundation.md`, `docs/archive/specs/01-architecture.md`, `docs/archive/specs/02-ui-design-system.md`, `docs/MASTER_PLAN.md`.
 
 - [x] **Dashboard shell, navigation, marketing entry, and route structure** — The app has a real dashboard shell and route set for the planned product surfaces.
@@ -69,12 +69,12 @@ _Last updated: 2026-06-24 (run #2)._
   - Sources: `docs/archive/next-feature-plans/01-linkedin-provider-productionization.md`, `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/MASTER_PLAN.md`.
 
 - [x] **Connections control center with lifecycle routes and provider health** — Connect, callback, health refresh, disconnect, and structured provider errors are implemented.
-  - Evidence: `app/(dashboard)/connections/page.tsx:59-122`, `app/api/connections/[provider]/connect/route.ts:82-229`, `app/api/connections/[provider]/callback/route.ts:80-190`, `app/api/connections/[provider]/health/route.ts:35-122`, `app/api/connections/[provider]/disconnect/route.ts:31-82`, `tests/api/connections.test.ts:35-186`.
+  - Evidence: `app/(dashboard)/connections/page.tsx:59-122`, `app/api/connections/[provider]/connect/route.ts:82-278`, `app/api/connections/[provider]/callback/route.ts:80-232`, `app/api/connections/[provider]/health/route.ts:35-122`, `app/api/connections/[provider]/disconnect/route.ts:31-82`, `tests/api/connections.test.ts:35-302`.
   - Sources: `docs/archive/next-feature-plans/02-connections-control-center.md`, `docs/MASTER_PLAN.md`.
 
-- [~] **Provider expansion beyond mock and LinkedIn** — The abstractions are ready and stubs are explicit, but only LinkedIn is evidenced as a live non-mock provider.
-  - Missing: production OAuth/publish/media/metrics/reply implementations for additional channels.
-  - Evidence: `lib/providers/skeleton.ts:37-87`, `lib/providers/platform-compatibility.ts:22-26`, `lib/providers/linkedin.ts:877-883`.
+- [x] **Provider expansion beyond mock and LinkedIn** - X is now the second live non-mock provider, with OAuth 2.0 PKCE, token refresh, profile lookup, text-post publishing, explicit capability boundaries, route support, and tests.
+  - Evidence: `lib/providers/x.ts:28-42`, `lib/providers/x.ts:94-144`, `lib/providers/x.ts:469-566`, `lib/providers/x.ts:626-690`, `app/api/connections/[provider]/connect/route.ts:173-239`, `app/api/connections/[provider]/callback/route.ts:97-174`, `tests/providers/x-provider.test.ts:45-304`, `tests/api/connections.test.ts:205-302`.
+  - Notes: Meta, Slack, and Discord remain future stubs.
   - Sources: `docs/archive/phases/phase-06-provider-publishing.md`, `docs/archive/specs/06-provider-integrations.md`, `docs/archive/ai-agent-feature-master-update-plan.md`, `docs/MASTER_PLAN.md`.
 
 - [x] **Durable scheduling, BullMQ enqueue, social worker, and publish attempt tracking** — Scheduling is durable and executed through the worker path.
@@ -128,7 +128,7 @@ _Last updated: 2026-06-24 (run #2)._
   - Sources: `docs/archive/n8n/workflows.md`, `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/MASTER_PLAN.md`.
 
 - [x] **Observability and release gates** - Local gates, runtime logs, worker readiness, and a release readiness report are implemented.
-  - Evidence: `package.json:6-15`, `lib/release/readiness.ts:1-298`, `scripts/release-readiness.ts:1-14`, `tests/release/readiness.test.ts:42-124`, `lib/agents/orchestration/repository.ts:535-584`, `lib/n8n/event-log.ts:79-163`, `lib/scheduler/worker-health.ts:121-388`.
+  - Evidence: `package.json:6-15`, `lib/release/readiness.ts:1-312`, `scripts/release-readiness.ts:1-14`, `tests/release/readiness.test.ts:42-126`, `lib/agents/orchestration/repository.ts:535-584`, `lib/n8n/event-log.ts:79-163`, `lib/scheduler/worker-health.ts:121-388`.
   - Note: live production smoke remains separate in the production readiness item.
   - Sources: `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/specs/07-release-checklist.md`, `docs/archive/worker-runtime-readiness.md`, `docs/MASTER_PLAN.md`.
 
@@ -158,12 +158,12 @@ _Last updated: 2026-06-24 (run #2)._
   - Sources: `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/archive/ai-agent-feature-goal-prompts-2026.md`, `docs/MASTER_PLAN.md`.
 
 - [?] **Production release readiness and live smoke verification** - Release readiness tooling exists, but external services still need credentialed live verification.
-  - Evidence: `lib/release/readiness.ts:1-298`, `scripts/release-readiness.ts:1-14`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/n8n/client.ts:30-139`.
+  - Evidence: `lib/release/readiness.ts:1-312`, `scripts/release-readiness.ts:1-14`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:469-690`, `lib/n8n/client.ts:30-139`.
   - Sources: `docs/archive/specs/07-release-checklist.md`, `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/worker-runtime-readiness.md`, `docs/MASTER_PLAN.md`.
-  - Notes: Needs `npm run release:readiness` with production env plus live service smoke against database, Redis, Clerk, ImageKit, LinkedIn, n8n, billing, worker, and callback URLs.
+  - Notes: Needs `npm run release:readiness` with production env plus live service smoke against database, Redis, Clerk, ImageKit, LinkedIn, X, n8n, billing, worker, and callback URLs.
 
 ## Conflicts & decisions needed
-- Provider status: `docs/archive/next-feature-plans/README.md` describes live provider adapters as scaffold-level except mock, while current code has a live LinkedIn provider in `lib/providers/linkedin.ts:877-883`. Recommend treating LinkedIn as the canonical first live provider and leaving other providers as expansion work.
+- Provider status: `docs/archive/next-feature-plans/README.md` describes live provider adapters as scaffold-level except mock, while current code has live LinkedIn and X providers. Recommend treating LinkedIn as the canonical first live provider and X as the completed v1 expansion provider; Meta, Slack, and Discord remain future expansion work.
 - Billing activation: older plan text says billing controls are disabled, while current code has checkout/portal action routes and gated UI. Recommend marking billing as partial until provider URLs/secrets and live redirects are verified.
 - First real provider selection: `docs/archive/ai-agent-feature-master-update-plan.md` still frames the first provider as an open decision, but implementation selected LinkedIn. Recommend closing the decision and sequencing future work as provider expansion.
 - n8n scope: some docs imply broader automation packs, while current code implements signed events, callbacks, and workflow docs. Recommend keeping signed audit/reminder automation as canonical until importable packs exist.

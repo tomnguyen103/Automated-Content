@@ -11,6 +11,12 @@ import {
   getLinkedInRedirectUri
 } from "@/lib/providers/linkedin";
 import {
+  buildXAuthorizationUrl,
+  createXCodeChallenge,
+  createXCodeVerifier,
+  getXRedirectUri
+} from "@/lib/providers/x";
+import {
   UsageLimitExceededError
 } from "@/lib/billing/usage";
 import { withProviderConnectionCapacity } from "@/lib/providers/connection-capacity";
@@ -32,6 +38,10 @@ function wantsJson(request: NextRequest) {
 
 function oauthStateCookieName(provider: ProviderKey) {
   return `provider_oauth_state_${provider}`;
+}
+
+function oauthCodeVerifierCookieName(provider: ProviderKey) {
+  return `provider_oauth_code_verifier_${provider}`;
 }
 
 function createOauthState() {
@@ -146,7 +156,7 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
       });
     }
 
-    if (provider !== "linkedin") {
+    if (adapter.implementationStatus === "stub") {
       return jsonError(
         "provider_scaffold_only",
         `${adapter.displayName} is scaffold-only. Configure a live adapter before connecting.`,
@@ -160,10 +170,28 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
       isLocalPreview: workspace.isLocalPreview
     }, async (states) => states);
     const state = createOauthState();
-    const authorizationUrl = buildLinkedInAuthorizationUrl({
-      state,
-      redirectUri: getLinkedInRedirectUri()
-    });
+    const codeVerifier = provider === "x" ? createXCodeVerifier() : null;
+    const authorizationUrl =
+      provider === "linkedin"
+        ? buildLinkedInAuthorizationUrl({
+            state,
+            redirectUri: getLinkedInRedirectUri()
+          })
+        : provider === "x"
+          ? buildXAuthorizationUrl({
+              state,
+              codeChallenge: createXCodeChallenge(codeVerifier as string),
+              redirectUri: getXRedirectUri()
+            })
+          : null;
+
+    if (!authorizationUrl) {
+      return jsonError(
+        "provider_connect_unsupported",
+        `${adapter.displayName} does not support OAuth connections yet.`,
+        409
+      );
+    }
 
     if (wantsJson(request)) {
       const states =
@@ -184,6 +212,15 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
         sameSite: "lax",
         secure: process.env.NODE_ENV === "production"
       });
+      if (codeVerifier) {
+        response.cookies.set(oauthCodeVerifierCookieName(provider), codeVerifier, {
+          httpOnly: true,
+          maxAge: 30 * 60,
+          path: "/",
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production"
+        });
+      }
 
       return response;
     }
@@ -196,6 +233,15 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production"
     });
+    if (codeVerifier) {
+      response.cookies.set(oauthCodeVerifierCookieName(provider), codeVerifier, {
+        httpOnly: true,
+        maxAge: 30 * 60,
+        path: "/",
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production"
+      });
+    }
 
     return response;
   } catch (error) {

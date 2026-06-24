@@ -2,17 +2,27 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 async function loadConnectionRoutes() {
-  const [{ GET: connect }, { GET: readHealth, POST: refreshHealth }, { POST: disconnect }, { clearProviderConnectionsForTests }] =
+  const [
+    { GET: connect },
+    { GET: callback },
+    { GET: readHealth, POST: refreshHealth },
+    { POST: disconnect },
+    { clearProviderConnectionsForTests },
+    { clearProviderTokenVaultForTests }
+  ] =
     await Promise.all([
       import("@/app/api/connections/[provider]/connect/route"),
+      import("@/app/api/connections/[provider]/callback/route"),
       import("@/app/api/connections/[provider]/health/route"),
       import("@/app/api/connections/[provider]/disconnect/route"),
-      import("@/lib/providers/connections")
+      import("@/lib/providers/connections"),
+      import("@/lib/providers/token-vault")
     ]);
 
   clearProviderConnectionsForTests();
+  clearProviderTokenVaultForTests();
 
-  return { connect, readHealth, refreshHealth, disconnect };
+  return { connect, callback, readHealth, refreshHealth, disconnect };
 }
 
 describe("connection API routes", () => {
@@ -25,6 +35,12 @@ describe("connection API routes", () => {
     vi.stubEnv("DATABASE_URL", "");
     vi.stubEnv("LINKEDIN_CLIENT_ID", "");
     vi.stubEnv("LINKEDIN_CLIENT_SECRET", "");
+    vi.stubEnv("X_API_BASE_URL", "https://api.x.test");
+    vi.stubEnv("X_CLIENT_ID", "");
+    vi.stubEnv("X_CLIENT_SECRET", "");
+    vi.stubEnv("X_OAUTH_AUTHORIZE_URL", "https://x.test/i/oauth2/authorize");
+    vi.stubEnv("X_REDIRECT_URI", "http://localhost:3000/api/connections/x/callback");
+    vi.stubEnv("X_SCOPES", "tweet.read tweet.write users.read offline.access");
   });
 
   afterEach(() => {
@@ -184,5 +200,103 @@ describe("connection API routes", () => {
 
     expect(disconnectResponse.status).toBe(200);
     expect(disconnectPayload.account.status).toBe("disconnected");
+  });
+
+  it("starts X OAuth with a PKCE verifier stored only in cookies", async () => {
+    vi.stubEnv("X_CLIENT_ID", "x-client-id");
+    const { connect } = await loadConnectionRoutes();
+    const response = await connect(
+      new NextRequest("http://localhost:3000/api/connections/x/connect", {
+        headers: {
+          Accept: "application/json"
+        }
+      }),
+      {
+        params: Promise.resolve({ provider: "x" })
+      }
+    );
+    const payload = await response.json();
+    const authorizationUrl = new URL(payload.authorizationUrl);
+
+    expect(response.status).toBe(200);
+    expect(payload.provider.key).toBe("x");
+    expect(JSON.stringify(payload)).not.toContain("codeVerifier");
+    expect(authorizationUrl.origin).toBe("https://x.test");
+    expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(authorizationUrl.searchParams.get("scope")).toBe("tweet.read tweet.write users.read offline.access");
+    const setCookieHeaders =
+      (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() ??
+      [response.headers.get("set-cookie") ?? ""];
+
+    expect(setCookieHeaders.join("\n")).toContain("provider_oauth_code_verifier_x=");
+  });
+
+  it("completes X OAuth callbacks and persists a safe connection payload", async () => {
+    vi.stubEnv("X_CLIENT_ID", "x-client-id");
+    vi.stubEnv("X_CLIENT_SECRET", "x-client-secret");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            access_token: "x-access-token",
+            expires_in: 3600,
+            refresh_token: "x-refresh-token",
+            scope: "tweet.read tweet.write users.read offline.access"
+          }),
+          {
+            headers: {
+              "Content-Type": "application/json"
+            }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: "user_123",
+              name: "Ada Lovelace",
+              username: "ada"
+            }
+          }),
+          {
+            headers: {
+              "Content-Type": "application/json"
+            }
+          }
+        )
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { callback } = await loadConnectionRoutes();
+    const response = await callback(
+      new NextRequest("http://localhost:3000/api/connections/x/callback?code=auth-code&state=state-123", {
+        headers: {
+          Accept: "application/json",
+          Cookie: "provider_oauth_state_x=state-123; provider_oauth_code_verifier_x=verifier-123"
+        }
+      }),
+      {
+        params: Promise.resolve({ provider: "x" })
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(payload.connection).toMatchObject({
+      provider: "x",
+      providerAccountId: "user_123",
+      displayName: "@ada",
+      status: "connected"
+    });
+    expect(JSON.stringify(payload)).not.toContain("x-access-token");
+    const setCookieHeaders =
+      (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() ??
+      [response.headers.get("set-cookie") ?? ""];
+
+    expect(setCookieHeaders.join("\n")).toContain("provider_oauth_state_x=;");
+    expect(setCookieHeaders.join("\n")).toContain("provider_oauth_code_verifier_x=;");
+    expect(String(fetchMock.mock.calls[0]?.[1]?.body)).toContain("code_verifier=verifier-123");
   });
 });

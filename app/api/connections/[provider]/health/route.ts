@@ -41,6 +41,44 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
   try {
     const workspace = await resolvePersonalWorkspaceForUser(user);
     const accountId = request.nextUrl.searchParams.get("accountId");
+    const states = await getProviderConnectionStates({
+      workspaceId: workspace.id,
+      isLocalPreview: workspace.isLocalPreview
+    });
+    const state = states.find((item) => item.key === rawProvider);
+
+    if (!state || (accountId && state.account?.id !== accountId)) {
+      return jsonError("provider_not_found", "Provider was not found.", 404);
+    }
+
+    return NextResponse.json({
+      health: state.health,
+      account: state.account
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to read provider health.";
+
+    return jsonError("provider_health_failed", message, 502);
+  }
+}
+
+export async function POST(request: NextRequest, context: ConnectionRouteContext) {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    return jsonError("authentication_required", "Authentication is required.", 401);
+  }
+
+  const { provider: rawProvider } = await context.params;
+
+  if (!isProviderKey(rawProvider)) {
+    return jsonError("provider_not_found", "Provider was not found.", 404);
+  }
+
+  try {
+    const workspace = await resolvePersonalWorkspaceForUser(user);
+    const body = await request.json().catch(() => ({}));
+    const accountId = typeof body.accountId === "string" && body.accountId.length > 0 ? body.accountId : null;
     const refreshed = await refreshProviderConnectionHealth({
       workspaceId: workspace.id,
       isLocalPreview: workspace.isLocalPreview,

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { navItems } from "@/lib/design/tokens";
 import { protectedRoutePatterns } from "@/proxy";
 
 describe("proxy route protection", () => {
-  it("protects the autonomous agents control center with the dashboard routes", () => {
-    expect(protectedRoutePatterns).toContain("/agents(.*)");
+  it("protects every dashboard navigation route", () => {
+    for (const item of navItems) {
+      expect(protectedRoutePatterns).toContain(`${item.href}(.*)`);
+    }
   });
 });

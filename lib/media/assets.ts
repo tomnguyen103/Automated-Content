@@ -3,7 +3,12 @@ import "server-only";
 import { desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { mediaAssets, type MediaAssetRow } from "@/db/schema";
-import { isDatabaseConfigured } from "@/lib/env";
+import { env, isDatabaseConfigured } from "@/lib/env";
+import {
+  createImageKitUploadFolder,
+  isImageKitConfigured,
+  sanitizeImageKitPathSegment
+} from "@/lib/media/imagekit";
 import { mockMediaAssets } from "@/lib/media/mock-assets";
 import {
   mediaAssetSchema,
@@ -19,6 +24,100 @@ export class MediaAssetConflictError extends Error {
     super(message);
     this.name = "MediaAssetConflictError";
   }
+}
+
+export class MediaAssetProvenanceError extends Error {
+  constructor(message = "Media asset provenance could not be verified.") {
+    super(message);
+    this.name = "MediaAssetProvenanceError";
+  }
+}
+
+function normalizeUrlPrefix(value: string) {
+  return value.replace(/\/+$/, "");
+}
+
+function isUrlFromEndpoint(value: string, endpoint: string) {
+  const normalizedEndpoint = normalizeUrlPrefix(endpoint);
+  const normalizedValue = normalizeUrlPrefix(value);
+
+  return normalizedValue === normalizedEndpoint || normalizedValue.startsWith(`${normalizedEndpoint}/`);
+}
+
+function assertImageKitAssetProvenance({
+  asset,
+  workspaceId
+}: {
+  asset: MediaAsset;
+  workspaceId: string;
+}) {
+  if (!isImageKitConfigured(env)) {
+    throw new MediaAssetProvenanceError("ImageKit media cannot be saved until ImageKit is configured.");
+  }
+
+  if (!asset.imagekitFileId) {
+    throw new MediaAssetProvenanceError("ImageKit media must include the ImageKit file id.");
+  }
+
+  const expectedFolder = createImageKitUploadFolder(workspaceId);
+  const expectedWorkspaceTag = `workspace:${sanitizeImageKitPathSegment(workspaceId) || "workspace"}`;
+
+  if (asset.folder !== expectedFolder) {
+    throw new MediaAssetProvenanceError("ImageKit media must use the workspace upload folder.");
+  }
+
+  if (!asset.tags.includes("automated-content") || !asset.tags.includes(expectedWorkspaceTag)) {
+    throw new MediaAssetProvenanceError("ImageKit media must include the expected workspace tags.");
+  }
+
+  if (!isUrlFromEndpoint(asset.url, env.IMAGEKIT_URL_ENDPOINT!)) {
+    throw new MediaAssetProvenanceError("ImageKit media URL must come from the configured ImageKit endpoint.");
+  }
+
+  if (asset.thumbnailUrl && !isUrlFromEndpoint(asset.thumbnailUrl, env.IMAGEKIT_URL_ENDPOINT!)) {
+    throw new MediaAssetProvenanceError("ImageKit media thumbnail URL must come from the configured ImageKit endpoint.");
+  }
+}
+
+function assertMockAssetProvenance({
+  allowMemoryFallback,
+  asset
+}: {
+  allowMemoryFallback?: boolean;
+  asset: MediaAsset;
+}) {
+  if (!allowMemoryFallback) {
+    throw new MediaAssetProvenanceError("Mock media uploads are allowed only in local preview.");
+  }
+
+  const urls = [asset.url, asset.thumbnailUrl].filter((url): url is string => Boolean(url));
+
+  if (urls.some((url) => !url.startsWith("data:"))) {
+    throw new MediaAssetProvenanceError("Mock media uploads must use local data URLs.");
+  }
+}
+
+export function assertMediaAssetProvenance({
+  allowMemoryFallback,
+  asset,
+  uploadedByUserId,
+  workspaceId
+}: {
+  workspaceId: string;
+  uploadedByUserId: string;
+  asset: MediaAsset;
+  allowMemoryFallback?: boolean;
+}) {
+  if (asset.workspaceId !== workspaceId || asset.uploadedByUserId !== uploadedByUserId) {
+    throw new MediaAssetProvenanceError("Media asset ownership metadata does not match the current workspace.");
+  }
+
+  if (asset.provider === "imagekit") {
+    assertImageKitAssetProvenance({ asset, workspaceId });
+    return;
+  }
+
+  assertMockAssetProvenance({ allowMemoryFallback, asset });
 }
 
 function uniqueAssets(assets: MediaAsset[]) {
@@ -161,6 +260,10 @@ export async function saveMediaAssetsForWorkspace({
   assets: MediaAsset[];
   allowMemoryFallback?: boolean;
 }) {
+  for (const asset of assets) {
+    assertMediaAssetProvenance({ allowMemoryFallback, asset, uploadedByUserId, workspaceId });
+  }
+
   const normalizedAssets = uniqueAssets(
     assets.map((asset) => normalizeAssetForWorkspace({ asset, uploadedByUserId, workspaceId }))
   );

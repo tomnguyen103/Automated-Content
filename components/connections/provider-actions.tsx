@@ -42,16 +42,15 @@ export function ProviderActions({
   }
 
   async function refreshProviderHealth() {
-    const url = new URL(`/api/connections/${providerKey}/health`, window.location.origin);
-
-    if (accountId) {
-      url.searchParams.set("accountId", accountId);
-    }
-
-    const response = await fetch(url, {
+    const response = await fetch(`/api/connections/${providerKey}/health`, {
+      method: "POST",
       headers: {
+        "Content-Type": "application/json",
         Accept: "application/json"
-      }
+      },
+      body: JSON.stringify({
+        accountId
+      })
     });
     const payload = await response.json();
 

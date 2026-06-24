@@ -74,3 +74,12 @@
 - Removed a duplicate current-user lookup from the approvals API route; the shared orchestration context resolver remains the single auth/workspace source for that request.
 - Extended the non-preview provider snapshot regression to assert the blocked `provider_readiness` policy event is persisted, matching the surrounding orchestration test pattern.
 - Re-ran the full local gate stack after the review fixes: `npm run lint`, `npm run typecheck`, `npm test`, `npm audit --omit=dev --audit-level=high`, `git diff --check`, `npm run build`, `npm run test:e2e`, and the expected-boundary `npm run worker` smoke.
+
+## Whole-Project Review Fixes
+
+- Route protection: `/approvals` and `/brand-memory` are now part of the Clerk proxy protected-route set. The proxy regression now checks every sidebar navigation destination so future dashboard routes cannot drift out of middleware protection silently.
+- Media provenance: `POST /api/media/assets` now verifies submitted asset ownership metadata and provider provenance before saving. Production ImageKit assets must use the configured ImageKit endpoint, expected workspace folder, expected workspace tags, and an ImageKit file id; mock uploads are limited to local preview data URLs.
+- Media billing: upload-auth requests no longer consume media transform quota. Quota is consumed when assets are saved, once per asset id via a `media_asset:<id>` source id so repeated saves are idempotent and abandoned auth requests do not burn usage.
+- Agent mission dispatch: production mission runs now persist queue dispatch state back onto the mission context. Successful enqueues record `context.queue.status = queued`, `queueJobId`, and `queuedAt`; queue configuration failures mark the mission failed with `context.queue.status = failed` and the enqueue error.
+- Provider health: the read-only health endpoint remains `GET`, while live provider validation and connection-status mutation moved to `POST /api/connections/[provider]/health`. The Connections UI now uses POST for the refresh button.
+- Verification: focused regressions passed for proxy, media upload/auth, media asset save, agent mission run, and connection health routes. Full closeout gates passed for lint, typecheck, Vitest, high-severity production dependency audit, whitespace, production build, and Playwright E2E. Worker smoke reached the expected local `REDIS_URL` queue configuration boundary.

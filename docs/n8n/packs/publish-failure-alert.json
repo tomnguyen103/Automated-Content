@@ -1,0 +1,125 @@
+{
+  "name": "Automated Content - Publish Failure Alert",
+  "nodes": [
+    {
+      "id": "receive-app-event",
+      "name": "Receive signed app event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "automated-content/publish-failure-alert",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      }
+    },
+    {
+      "id": "validate-signature",
+      "name": "Validate signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 0],
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst item = $input.first();\nconst headers = item.json.headers || {};\nconst rawBodyBuffer = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst rawBody = rawBodyBuffer.toString('utf8');\nconst body = JSON.parse(rawBody);\nconst timestamp = headers['x-automated-content-timestamp'];\nconst signature = headers['x-automated-content-signature'];\nconst signedPayload = Buffer.concat([Buffer.from(`${timestamp}.`, 'utf8'), rawBodyBuffer]);\nconst expected = 'sha256=' + crypto.createHmac('sha256', $env.AUTOMATED_CONTENT_WEBHOOK_SECRET).update(signedPayload).digest('hex');\nconst validSignature = timestamp && signature && signature.length === expected.length && crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));\nif (!validSignature) {\n  throw new Error('Invalid Automated Content signature');\n}\nreturn [{ json: body }];"
+      }
+    },
+    {
+      "id": "filter-event",
+      "name": "Require publishing.post.failed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [520, 0],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.event}}",
+              "operation": "equals",
+              "value2": "publishing.post.failed"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "notify-ops",
+      "name": "Notify operations channel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, -80],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.OPS_ALERT_WEBHOOK_URL}}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{'Publish failed for provider ' + ($json.data.provider || 'unknown') + ' on job ' + ($json.data.scheduledJobId || 'unknown')}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "callback-complete",
+      "name": "Record completed callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1040, -80],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.AUTOMATED_CONTENT_CALLBACK_URL}}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "id", "value": "={{'callback_' + $json.id}}" },
+            { "name": "workflow", "value": "publish-failure-alert" },
+            { "name": "status", "value": "completed" },
+            { "name": "eventId", "value": "={{$json.id}}" },
+            { "name": "workspaceId", "value": "={{$json.workspaceId}}" },
+            { "name": "message", "value": "Publish failure alert delivered." }
+          ]
+        }
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Respond accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1300, 0],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"accepted\":true,\"workflow\":\"publish-failure-alert\"}"
+      }
+    }
+  ],
+  "connections": {
+    "Receive signed app event": {
+      "main": [[{ "node": "Validate signature", "type": "main", "index": 0 }]]
+    },
+    "Validate signature": {
+      "main": [[{ "node": "Require publishing.post.failed", "type": "main", "index": 0 }]]
+    },
+    "Require publishing.post.failed": {
+      "main": [
+        [{ "node": "Notify operations channel", "type": "main", "index": 0 }],
+        [{ "node": "Respond accepted", "type": "main", "index": 0 }]
+      ]
+    },
+    "Notify operations channel": {
+      "main": [[{ "node": "Record completed callback", "type": "main", "index": 0 }]]
+    },
+    "Record completed callback": {
+      "main": [[{ "node": "Respond accepted", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

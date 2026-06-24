@@ -12,6 +12,7 @@
     "test": "vitest run",
     "build:e2e": "node -e \"process.env.AUTH_LOCAL_PREVIEW='1'; process.env.PLAYWRIGHT_AUTH_LOCAL_PREVIEW='1'; process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=''; process.env.CLERK_SECRET_KEY=''; require('child_process').execSync('next build', { stdio: 'inherit', env: process.env })\"",
     "test:e2e": "npm run build:e2e && playwright test",
+    "release:readiness": "tsx scripts/release-readiness.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"

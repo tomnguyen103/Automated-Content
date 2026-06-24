@@ -11,8 +11,8 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
 - Source documents consolidated: 30.
 - Existing master plans found: 0.
 - Canonical work items after deduplication: 35.
-- Status counts: 27 done, 6 partial, 1 not started, 1 needs verification.
-- Canonical direction: the product is no longer at foundation/planning stage. Most phase docs and several next-feature plans are already implemented in code. Remaining roadmap value is concentrated in provider expansion, production activation, richer agent analytics, richer brand-memory intelligence, and packaged automation workflows.
+- Status counts: 32 done, 2 partial, 0 not started, 1 needs verification.
+- Canonical direction: the product is no longer at foundation/planning stage. Most phase docs and next-feature plans are already implemented in code. Remaining roadmap value is concentrated in production billing activation, provider expansion beyond LinkedIn/mock, and live production smoke verification.
 
 ## Plan
 
@@ -155,17 +155,16 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
     - Tests: `tests/n8n/events.test.ts:29-344`.
     - Sources: `docs/phases/phase-08-analytics-n8n-release.md`, `docs/n8n/workflows.md`.
 
-27. [~] n8n Automation Agent Packs.
-    - Current status: signed events, callbacks, audit logs, and workflow documentation exist; importable curated n8n pack artifacts or in-app pack management were not evidenced.
-    - Evidence: `docs/n8n/workflows.md:84-86` documents publish failure, reply approval reminder, and usage threshold workflows; `lib/n8n/events.ts:9-26` supports publishing, reply, agent, report, and usage event types.
-    - Remaining work: ship importable workflow JSON/templates, configure pack-level secrets and callbacks, add setup verification, and document supported/unsupported automation actions.
-    - Sources: `docs/n8n/workflows.md`, `docs/ai-agent-feature-roadmap-2026.md`.
+27. [x] n8n Automation Agent Packs.
+    - Evidence: `lib/n8n/packs.ts:30-205` defines the three supported automation packs, setup checks, required app env, required n8n variables, supported actions, and unsupported actions; `docs/n8n/automation-packs.md:1-57` documents import/setup; `docs/n8n/packs/publish-failure-alert.json`, `docs/n8n/packs/reply-approval-reminder.json`, and `docs/n8n/packs/usage-threshold-alert.json` provide importable workflow templates.
+    - Tests: `tests/n8n/packs.test.ts:47-150`.
+    - Sources: `docs/archive/n8n/workflows.md`, `docs/archive/ai-agent-feature-roadmap-2026.md`.
 
-28. [~] Observability and release gates.
-    - Current status: release checklist/docs, test scripts, analytics, worker health, n8n logs, and agent policy logs exist; current live CI, production smoke, and provider credential checks were not run during this consolidation.
-    - Evidence: `package.json:6-14` defines local gates; `lib/agents/orchestration/repository.ts:535-584` stores policy events; `lib/n8n/event-log.ts:79-163` stores automation events; `lib/scheduler/worker-health.ts:121-388` exposes runtime readiness.
-    - Remaining work: run and record current lint/typecheck/test/build/e2e gates before release, verify production secrets/providers/Redis/database, and capture release evidence against `docs/specs/07-release-checklist.md`.
-    - Sources: `docs/phases/phase-08-analytics-n8n-release.md`, `docs/specs/07-release-checklist.md`, `docs/worker-runtime-readiness.md`.
+28. [x] Observability and release gates.
+    - Evidence: `package.json:6-15` defines local gates and the release readiness script; `lib/release/readiness.ts:1-298` builds release readiness reports across local gates, production env, billing, provider, n8n, worker, and smoke checks; `scripts/release-readiness.ts:1-14` emits the operator report; existing runtime evidence remains in `lib/agents/orchestration/repository.ts:535-584`, `lib/n8n/event-log.ts:79-163`, and `lib/scheduler/worker-health.ts:121-388`.
+    - Tests: `tests/release/readiness.test.ts:42-124`, plus required local gates before PR.
+    - Note: live production smoke remains separate in item 35 because it requires real production services and credentials.
+    - Sources: `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/specs/07-release-checklist.md`, `docs/archive/worker-runtime-readiness.md`.
 
 ### Agent Control Plane And Autonomous Workflows
 
@@ -200,10 +199,10 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
     - Sources: `docs/ai-agent-feature-roadmap-2026.md`, `docs/ai-agent-feature-goal-prompts-2026.md`, `docs/specs/01-architecture.md`.
 
 35. [?] Production release readiness and live smoke verification.
-    - Current status: docs, scripts, worker readiness code, provider checks, and release checklist exist; this consolidation did not run the full live release gate set or verify external production services.
-    - Evidence available: `docs/specs/07-release-checklist.md`, `package.json:6-14`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/n8n/client.ts:30-139`.
-    - Verification needed: run current lint, typecheck, tests, build, relevant e2e; verify database, Redis, Clerk, ImageKit, LinkedIn, n8n, billing provider URLs, worker process, callback URLs, and production smoke flows.
-    - Sources: `docs/specs/07-release-checklist.md`, `docs/phases/phase-08-analytics-n8n-release.md`, `docs/worker-runtime-readiness.md`.
+    - Current status: release readiness tooling now exists, but external production services still require live verification by an operator with credentials.
+    - Evidence available: `lib/release/readiness.ts:1-298`, `scripts/release-readiness.ts:1-14`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/n8n/client.ts:30-139`.
+    - Verification needed: run `npm run release:readiness` with production env, confirm all manual smoke checks, and verify database, Redis, Clerk, ImageKit, LinkedIn, n8n, billing provider URLs, worker process, callback URLs, and production product flows.
+    - Sources: `docs/archive/specs/07-release-checklist.md`, `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/worker-runtime-readiness.md`.
 
 ## Conflicts & Decisions Needed
 

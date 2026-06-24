@@ -1,0 +1,150 @@
+{
+  "name": "Automated Content - Reply Approval Reminder",
+  "nodes": [
+    {
+      "id": "receive-app-event",
+      "name": "Receive signed app event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "automated-content/reply-approval-reminder",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      }
+    },
+    {
+      "id": "validate-signature",
+      "name": "Validate signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 0],
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst item = $input.first();\nconst headers = item.json.headers || {};\nconst rawBodyBuffer = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst rawBody = rawBodyBuffer.toString('utf8');\nconst body = JSON.parse(rawBody);\nconst timestamp = headers['x-automated-content-timestamp'];\nconst signature = headers['x-automated-content-signature'];\nconst signedPayload = Buffer.concat([Buffer.from(`${timestamp}.`, 'utf8'), rawBodyBuffer]);\nconst expected = 'sha256=' + crypto.createHmac('sha256', $env.AUTOMATED_CONTENT_WEBHOOK_SECRET).update(signedPayload).digest('hex');\nconst validSignature = timestamp && signature && signature.length === expected.length && crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));\nif (!validSignature) {\n  throw new Error('Invalid Automated Content signature');\n}\nreturn [{ json: body }];"
+      }
+    },
+    {
+      "id": "filter-event",
+      "name": "Require reply.approval_requested",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [520, 0],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.event}}",
+              "operation": "equals",
+              "value2": "reply.approval_requested"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "delay",
+      "name": "Wait before reminder",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1040, -80],
+      "parameters": {
+        "amount": 1,
+        "unit": "hours"
+      }
+    },
+    {
+      "id": "notify-reviewers",
+      "name": "Notify review channel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1300, -80],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.REVIEW_ALERT_WEBHOOK_URL}}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{'Reply approval still needs review: ' + ($json.data.replyAttemptId || $json.id)}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "callback-accepted",
+      "name": "Record accepted callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1560, -80],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.AUTOMATED_CONTENT_CALLBACK_URL}}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "id", "value": "={{'callback_' + $json.id}}" },
+            { "name": "workflow", "value": "reply-approval-reminder" },
+            { "name": "status", "value": "accepted" },
+            { "name": "eventId", "value": "={{$json.id}}" },
+            { "name": "workspaceId", "value": "={{$json.workspaceId}}" },
+            { "name": "message", "value": "Reply approval reminder queued." }
+          ]
+        }
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Respond accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [780, -80],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"accepted\":true,\"workflow\":\"reply-approval-reminder\"}"
+      }
+    },
+    {
+      "id": "respond-ignored",
+      "name": "Respond ignored",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [780, 100],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"accepted\":true,\"workflow\":\"reply-approval-reminder\",\"matched\":false}"
+      }
+    }
+  ],
+  "connections": {
+    "Receive signed app event": {
+      "main": [[{ "node": "Validate signature", "type": "main", "index": 0 }]]
+    },
+    "Validate signature": {
+      "main": [[{ "node": "Require reply.approval_requested", "type": "main", "index": 0 }]]
+    },
+    "Require reply.approval_requested": {
+      "main": [
+        [{ "node": "Respond accepted", "type": "main", "index": 0 }],
+        [{ "node": "Respond ignored", "type": "main", "index": 0 }]
+      ]
+    },
+    "Respond accepted": {
+      "main": [[{ "node": "Wait before reminder", "type": "main", "index": 0 }]]
+    },
+    "Wait before reminder": {
+      "main": [[{ "node": "Notify review channel", "type": "main", "index": 0 }]]
+    },
+    "Notify review channel": {
+      "main": [[{ "node": "Record accepted callback", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

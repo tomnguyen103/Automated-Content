@@ -119,19 +119,19 @@ export default async function BrandMemoryPage({ searchParams }: BrandMemoryPageP
     });
   }
 
-  const proposals = filterError
-    ? []
-    : await repository.list({
-        workspaceId: workspace.id,
-        ...filters,
-        limit: 50
-      });
-  const curationProposals = filterError
-    ? []
-    : await repository.list({
-        workspaceId: workspace.id,
-        limit: 100
-      });
+  const [proposals, curationProposals] = filterError
+    ? [[], []]
+    : await Promise.all([
+        repository.list({
+          workspaceId: workspace.id,
+          ...filters,
+          limit: 50
+        }),
+        repository.list({
+          workspaceId: workspace.id,
+          limit: 100
+        })
+      ]);
   const curation = buildBrandMemoryCurationSummary(curationProposals);
 
   return (

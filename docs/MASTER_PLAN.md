@@ -124,8 +124,8 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
     - Sources: `docs/next-feature-plans/05-brand-memory-management-page.md`, `docs/ai-agent-feature-roadmap-2026.md`.
 
 21. [x] Brand Voice Memory Curator 2.0 clustering, merge suggestions, and contradiction/conflict warnings.
-    - Evidence: `lib/brand-memory/curator.ts:30-216` builds curation summaries, clusters related proposals, suggests merge candidates, and flags contradiction warnings; `app/(dashboard)/brand-memory/page.tsx:135-157` passes curation data into the workbench; `components/brand-memory/brand-memory-workbench.tsx:248-313` surfaces Curator 2.0 clusters, merges, and conflicts.
-    - Tests: `tests/brand-memory/proposals.test.ts:280-329`.
+    - Evidence: `lib/brand-memory/curator.ts:30-273` builds curation summaries, clusters related proposals, suggests merge candidates, and flags contradiction warnings; `app/(dashboard)/brand-memory/page.tsx:122-157` passes curation data into the workbench; `components/brand-memory/brand-memory-workbench.tsx:248-313` surfaces Curator 2.0 clusters, merges, and conflicts.
+    - Tests: `tests/brand-memory/proposals.test.ts:280-353`.
     - Sources: `docs/ai-agent-feature-roadmap-2026.md`, `docs/ai-agent-feature-goal-prompts-2026.md`.
 
 22. [x] Unified Approval Command Center across replies, brand memory, content workflows, and agent policies.

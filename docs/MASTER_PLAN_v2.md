@@ -99,7 +99,7 @@ _Last updated: 2026-06-24 (run #2)._
   - Sources: `docs/archive/next-feature-plans/05-brand-memory-management-page.md`, `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/MASTER_PLAN.md`.
 
 - [x] **Brand Voice Memory Curator 2.0 clustering, merge suggestions, and contradiction warnings** - Advanced clustering, merge suggestions, and contradiction warnings are implemented.
-  - Evidence: `lib/brand-memory/curator.ts:30-216`, `app/(dashboard)/brand-memory/page.tsx:135-157`, `components/brand-memory/brand-memory-workbench.tsx:248-313`, `tests/brand-memory/proposals.test.ts:280-329`.
+  - Evidence: `lib/brand-memory/curator.ts:30-273`, `app/(dashboard)/brand-memory/page.tsx:122-157`, `components/brand-memory/brand-memory-workbench.tsx:248-313`, `tests/brand-memory/proposals.test.ts:280-353`.
   - Sources: `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/archive/ai-agent-feature-goal-prompts-2026.md`, `docs/MASTER_PLAN.md`.
 
 - [x] **Unified Approval Command Center across replies, brand memory, content workflows, and agent policies** — Approval items are normalized and filterable through an API and dashboard page.

@@ -136,7 +136,7 @@ function createCluster(id: number, proposals: BrandMemoryProposal[]): BrandMemor
     proposalIds: proposals.map((proposal) => proposal.id),
     averageConfidence: Math.round(proposals.reduce((sum, proposal) => sum + proposal.confidence, 0) / proposals.length),
     statusCounts,
-    signals: [...new Set(proposals.flatMap((proposal) => tokens(proposal.inferredRule)).slice(0, 8))]
+    signals: [...new Set(proposals.flatMap((proposal) => tokens(proposal.inferredRule)))].slice(0, 8)
   };
 }
 
@@ -198,12 +198,19 @@ function buildClusters(proposals: BrandMemoryProposal[]) {
     const group = [proposal];
     unvisited.delete(proposal.id);
 
-    for (const candidateId of [...unvisited]) {
-      const candidate = byId.get(candidateId);
+    let expanded = true;
 
-      if (candidate && group.some((groupProposal) => related(groupProposal, candidate))) {
-        group.push(candidate);
-        unvisited.delete(candidate.id);
+    while (expanded) {
+      expanded = false;
+
+      for (const candidateId of [...unvisited]) {
+        const candidate = byId.get(candidateId);
+
+        if (candidate && group.some((groupProposal) => related(groupProposal, candidate))) {
+          group.push(candidate);
+          unvisited.delete(candidate.id);
+          expanded = true;
+        }
       }
     }
 

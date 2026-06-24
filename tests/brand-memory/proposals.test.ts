@@ -296,6 +296,33 @@ describe("brand memory proposals", () => {
     });
   });
 
+  it("clusters transitively related proposals regardless of input order", () => {
+    const founderLed = createProposal({
+      id: "brand_memory_transitive_first_person",
+      inferredRule: "prefer founder-led voice.",
+      editedText: "We write in a founder-led voice."
+    });
+    const operator = createProposal({
+      id: "brand_memory_transitive_operator",
+      inferredRule: "prefer operator proof.",
+      editedText: "Operator proof should anchor posts."
+    });
+    const bridge = createProposal({
+      id: "brand_memory_transitive_bridge",
+      inferredRule: "prefer founder-led operator proof.",
+      editedText: "We anchor posts in operator proof."
+    });
+
+    const summary = buildBrandMemoryCurationSummary([founderLed, operator, bridge]);
+
+    expect(summary.clusters).toHaveLength(1);
+    expect(summary.clusters[0].proposalIds).toEqual([
+      "brand_memory_transitive_first_person",
+      "brand_memory_transitive_bridge",
+      "brand_memory_transitive_operator"
+    ]);
+  });
+
   it("flags contradictions before conflicting memory can be accepted", () => {
     const concise = createProposal({
       id: "brand_memory_conflict_concise",

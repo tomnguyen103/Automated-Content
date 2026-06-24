@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 async function loadConnectionRoutes() {
-  const [{ GET: connect }, { GET: health }, { POST: disconnect }, { clearProviderConnectionsForTests }] =
+  const [{ GET: connect }, { GET: readHealth, POST: refreshHealth }, { POST: disconnect }, { clearProviderConnectionsForTests }] =
     await Promise.all([
       import("@/app/api/connections/[provider]/connect/route"),
       import("@/app/api/connections/[provider]/health/route"),
@@ -12,7 +12,7 @@ async function loadConnectionRoutes() {
 
   clearProviderConnectionsForTests();
 
-  return { connect, health, disconnect };
+  return { connect, readHealth, refreshHealth, disconnect };
 }
 
 describe("connection API routes", () => {
@@ -54,9 +54,9 @@ describe("connection API routes", () => {
     expect(JSON.stringify(payload)).not.toContain("mock_access_token");
   });
 
-  it("returns provider health with account metadata for configured preview providers", async () => {
-    const { health } = await loadConnectionRoutes();
-    const response = await health(
+  it("reads provider health with account metadata for configured preview providers", async () => {
+    const { readHealth } = await loadConnectionRoutes();
+    const response = await readHealth(
       new NextRequest("http://localhost:3000/api/connections/mock/health", {
         headers: {
           Accept: "application/json"
@@ -79,9 +79,37 @@ describe("connection API routes", () => {
     });
   });
 
+  it("refreshes provider health with a POST mutation", async () => {
+    const { refreshHealth } = await loadConnectionRoutes();
+    const response = await refreshHealth(
+      new NextRequest("http://localhost:3000/api/connections/mock/health", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({})
+      }),
+      {
+        params: Promise.resolve({ provider: "mock" })
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.health).toMatchObject({
+      provider: "mock",
+      status: "ready"
+    });
+    expect(payload.account).toMatchObject({
+      provider: "mock",
+      status: "connected"
+    });
+  });
+
   it("disconnects only owned provider accounts", async () => {
-    const { disconnect, health } = await loadConnectionRoutes();
-    const healthResponse = await health(
+    const { disconnect, readHealth } = await loadConnectionRoutes();
+    const healthResponse = await readHealth(
       new NextRequest("http://localhost:3000/api/connections/mock/health", {
         headers: {
           Accept: "application/json"
@@ -125,8 +153,8 @@ describe("connection API routes", () => {
 
   it("keeps preview mock lifecycle memory-backed when database env exists", async () => {
     vi.stubEnv("DATABASE_URL", "postgres://user:pass@example.test/db");
-    const { disconnect, health } = await loadConnectionRoutes();
-    const healthResponse = await health(
+    const { disconnect, readHealth } = await loadConnectionRoutes();
+    const healthResponse = await readHealth(
       new NextRequest("http://localhost:3000/api/connections/mock/health", {
         headers: {
           Accept: "application/json"

@@ -86,3 +86,23 @@ test("connections control center shows provider readiness and actions", async ({
     fullPage: true
   });
 });
+
+test("approval command center shows filters and source links", async ({ page }, testInfo) => {
+  await page.goto("/approvals");
+
+  await expect(page.getByRole("heading", { name: "Approvals" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Decision queue" })).toBeVisible();
+  await expect(page.getByText("Open decisions")).toBeVisible();
+
+  await page.getByRole("link", { name: "Brand memory", exact: true }).click();
+  await expect(page).toHaveURL(/type=brand_memory/);
+  await expect(page.getByRole("link", { name: "Open source" }).first()).toHaveAttribute(
+    "href",
+    "/brand-memory#proposals"
+  );
+
+  await page.screenshot({
+    path: testInfo.outputPath(`approvals-${testInfo.project.name}.png`),
+    fullPage: true
+  });
+});

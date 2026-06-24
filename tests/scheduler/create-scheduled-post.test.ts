@@ -3,9 +3,11 @@ import type { ScheduledJob } from "@/db/schema";
 import {
   createMemorySchedulerRepository,
   createScheduledPost,
+  ProviderReadinessError,
   type CreateScheduledPostInput,
   type SchedulerRepository
 } from "@/lib/scheduler/create-scheduled-post";
+import type { ProviderHealthResult } from "@/lib/providers/health";
 
 const scheduledFor = new Date("2026-06-21T15:00:00.000Z");
 const baseInput: CreateScheduledPostInput = {
@@ -175,6 +177,31 @@ describe("createScheduledPost", () => {
         }
       })
     ).rejects.toThrow("Usage reservation sourceId must match scheduled post sourceId.");
+
+    expect(repository.createScheduledJob).not.toHaveBeenCalled();
+  });
+
+  it("rejects blocking provider health before writing a schedule row", async () => {
+    const repository = createFakeRepository([]);
+    const providerHealth: ProviderHealthResult = {
+      provider: "linkedin",
+      connectedAccountId: null,
+      configured: false,
+      status: "account_required",
+      requiredScopes: ["publish"],
+      capabilities: {} as ProviderHealthResult["capabilities"],
+      lastChecked: "2026-06-23T12:00:00.000Z",
+      blockingReason: "Connect a LinkedIn account before scheduling or publishing.",
+      warnings: []
+    };
+
+    await expect(
+      createScheduledPost({
+        input: baseInput,
+        providerHealth,
+        repository
+      })
+    ).rejects.toBeInstanceOf(ProviderReadinessError);
 
     expect(repository.createScheduledJob).not.toHaveBeenCalled();
   });

@@ -5,12 +5,14 @@ import { NextResponse } from "next/server";
 export const protectedRoutePatterns = [
   "/dashboard(.*)",
   "/agents(.*)",
+  "/approvals(.*)",
   "/create(.*)",
   "/calendar(.*)",
   "/media(.*)",
   "/connections(.*)",
   "/auto-replies(.*)",
   "/analytics(.*)",
+  "/brand-memory(.*)",
   "/billing(.*)",
   "/settings(.*)"
 ];

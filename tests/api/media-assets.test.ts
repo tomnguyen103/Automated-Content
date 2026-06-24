@@ -6,19 +6,17 @@ const sampleAsset = {
   id: "media_route_asset",
   workspaceId: localPreviewWorkspaceId,
   uploadedByUserId: "local-preview-user",
-  provider: "imagekit",
+  provider: "mock",
   name: "Route asset",
   fileName: "route-asset.png",
-  url: "https://ik.imagekit.io/test/route-asset.png",
-  thumbnailUrl: "https://ik.imagekit.io/test/route-asset-thumb.png",
+  url: "data:image/png;base64,cm91dGUtYXNzZXQ=",
+  thumbnailUrl: "data:image/png;base64,cm91dGUtYXNzZXQtdGh1bWI=",
   mediaType: "image",
   mimeType: "image/png",
   width: 1200,
   height: 900,
   sizeBytes: 24000,
-  imagekitFileId: "media_route_asset",
-  folder: "/automated-content/test",
-  tags: ["campaign"],
+  tags: ["automated-content", "campaign"],
   transformationDefaults: {
     crop: "maintain_ratio",
     focus: "auto",
@@ -49,7 +47,10 @@ describe("media assets API", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.doUnmock("@/lib/auth/current-user");
+    vi.doUnmock("@/lib/billing/usage");
     vi.doUnmock("@/lib/media/assets");
+    vi.doUnmock("@/lib/workspaces/personal-workspace");
     vi.resetModules();
   });
 
@@ -146,6 +147,134 @@ describe("media assets API", () => {
     });
   });
 
+  it("records one media usage event per saved production asset id", async () => {
+    vi.resetModules();
+    vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
+    vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "");
+    vi.stubEnv("IMAGEKIT_PUBLIC_KEY", "public_test_key");
+    vi.stubEnv("IMAGEKIT_PRIVATE_KEY", "private_test_key");
+    vi.stubEnv("IMAGEKIT_URL_ENDPOINT", "https://ik.imagekit.io/test-account");
+
+    const consumeUsageForLimit = vi.fn(async () => null);
+    const productionAsset = {
+      ...sampleAsset,
+      id: "media_usage_asset",
+      workspaceId: "workspace_usage_1",
+      uploadedByUserId: "user_usage_1",
+      provider: "imagekit",
+      url: "https://ik.imagekit.io/test-account/automated-content/workspace_usage_1/media_usage_asset.png",
+      thumbnailUrl: "https://ik.imagekit.io/test-account/automated-content/workspace_usage_1/media_usage_asset_thumb.png",
+      imagekitFileId: "media_usage_asset",
+      folder: "/automated-content/workspace_usage_1",
+      tags: ["automated-content", "workspace:workspace_usage_1"]
+    };
+
+    vi.doMock("@/lib/auth/current-user", () => ({
+      getCurrentUser: vi.fn(async () => ({
+        id: "user_usage_1",
+        email: "user@example.com",
+        name: "User Usage",
+        imageUrl: null,
+        initials: "UU",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/workspaces/personal-workspace", () => ({
+      resolvePersonalWorkspaceForUser: vi.fn(async () => ({
+        id: "workspace_usage_1",
+        role: "owner",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/billing/usage", () => ({
+      UsageLimitExceededError: class UsageLimitExceededError extends Error {},
+      consumeUsageForLimit
+    }));
+
+    const { POST, clearMediaAssetsForTests } = await loadMediaAssetRoute();
+    clearMediaAssetsForTests();
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/media/assets", {
+        method: "POST",
+        body: JSON.stringify({
+          assets: [productionAsset]
+        })
+      })
+    );
+
+    expect(response.status).toBe(201);
+    expect(consumeUsageForLimit).toHaveBeenCalledWith({
+      workspaceId: "workspace_usage_1",
+      key: "mediaTransformsPerMonth",
+      sourceId: "media_asset:media_usage_asset",
+      metadata: {
+        assetId: "media_usage_asset",
+        provider: "imagekit",
+        userId: "user_usage_1"
+      },
+      skip: false
+    });
+  });
+
+  it("rejects external URLs before consuming media usage", async () => {
+    vi.resetModules();
+    vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
+    vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "");
+    vi.stubEnv("IMAGEKIT_PUBLIC_KEY", "public_test_key");
+    vi.stubEnv("IMAGEKIT_PRIVATE_KEY", "private_test_key");
+    vi.stubEnv("IMAGEKIT_URL_ENDPOINT", "https://ik.imagekit.io/test-account");
+
+    const consumeUsageForLimit = vi.fn(async () => null);
+    const externalAsset = {
+      ...sampleAsset,
+      workspaceId: "workspace_usage_1",
+      uploadedByUserId: "user_usage_1",
+      provider: "imagekit",
+      url: "https://example.com/tracker.png",
+      thumbnailUrl: "https://example.com/tracker-thumb.png",
+      imagekitFileId: "media_route_asset",
+      folder: "/automated-content/workspace_usage_1",
+      tags: ["automated-content", "workspace:workspace_usage_1"]
+    };
+
+    vi.doMock("@/lib/auth/current-user", () => ({
+      getCurrentUser: vi.fn(async () => ({
+        id: "user_usage_1",
+        email: "user@example.com",
+        name: "User Usage",
+        imageUrl: null,
+        initials: "UU",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/workspaces/personal-workspace", () => ({
+      resolvePersonalWorkspaceForUser: vi.fn(async () => ({
+        id: "workspace_usage_1",
+        role: "owner",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/billing/usage", () => ({
+      UsageLimitExceededError: class UsageLimitExceededError extends Error {},
+      consumeUsageForLimit
+    }));
+
+    const { POST } = await loadMediaAssetRoute();
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/media/assets", {
+        method: "POST",
+        body: JSON.stringify({
+          assets: [externalAsset]
+        })
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe("ImageKit media URL must come from the configured ImageKit endpoint.");
+    expect(consumeUsageForLimit).not.toHaveBeenCalled();
+  });
+
   it("returns a conflict when an asset id belongs to another workspace", async () => {
     vi.resetModules();
     vi.stubEnv("AUTH_LOCAL_PREVIEW", "1");
@@ -160,7 +289,9 @@ describe("media assets API", () => {
     }
 
     vi.doMock("@/lib/media/assets", () => ({
+      assertMediaAssetProvenance: vi.fn(),
       MediaAssetConflictError,
+      MediaAssetProvenanceError: class MediaAssetProvenanceError extends Error {},
       clearMediaAssetsForTests: vi.fn(),
       listMediaAssetsForWorkspace: vi.fn(),
       saveMediaAssetsForWorkspace: vi.fn(async () => {

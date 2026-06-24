@@ -1,5 +1,8 @@
 import "server-only";
 
+import { and, eq } from "drizzle-orm";
+import { getDb } from "@/db";
+import { connectedAccounts } from "@/db/schema";
 import type { ScheduledJob } from "@/db/schema";
 import { runContentAgent, type ContentAgentResult } from "@/lib/agents/langchain/content-agent";
 import { createAgentStorage } from "@/lib/agents/langchain/storage";
@@ -20,8 +23,19 @@ import {
 import { emitAgentOrchestrationEvent } from "@/lib/agents/orchestration/events";
 import { getWorkspaceAnalyticsSnapshot, type AnalyticsSnapshot } from "@/lib/analytics/metrics";
 import { consumeUsageForLimit } from "@/lib/billing/usage";
+import { isDatabaseConfigured } from "@/lib/env";
+import {
+  evaluateProviderHealth,
+  isProviderHealthBlocking,
+  type ProviderHealthAccount,
+  type ProviderHealthResult
+} from "@/lib/providers/health";
 import { getProviderAdapter } from "@/lib/providers/registry";
-import { defaultProviderByPlatform } from "@/lib/providers/platform-compatibility";
+import {
+  defaultProviderByPlatform,
+  formatProviderPlatformError,
+  isProviderCompatibleWithPlatform
+} from "@/lib/providers/platform-compatibility";
 import { providerKeys, type ProviderKey } from "@/lib/providers/types";
 import { runCommentReplyWorkflow, type CommentReplyWorkflowResult } from "@/lib/agents/graphs/comment-reply-workflow";
 import { createReplyRepository } from "@/lib/replies/repository";
@@ -99,6 +113,54 @@ function readStringMap(record: Record<string, unknown>, key: string) {
       (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0
     )
   );
+}
+
+function readRecordMap(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, Record<string, unknown>] =>
+        Boolean(entry[1]) && typeof entry[1] === "object" && !Array.isArray(entry[1])
+    )
+  );
+}
+
+const providerConnectionStatuses = ["connected", "requires_configuration", "unsupported", "disconnected", "error"] as const;
+
+function readProviderHealthAccount(value: unknown): ProviderHealthAccount | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = readString(record, "id");
+  const status = providerConnectionStatuses.find((candidate) => candidate === record.status);
+
+  if (!id || !status) {
+    return null;
+  }
+
+  const lastValidatedAt =
+    record.lastValidatedAt instanceof Date
+      ? record.lastValidatedAt
+      : typeof record.lastValidatedAt === "string" && record.lastValidatedAt.trim()
+        ? new Date(record.lastValidatedAt)
+        : null;
+
+  return {
+    id,
+    status,
+    scopes: Array.isArray(record.scopes) ? record.scopes.filter((scope): scope is string => typeof scope === "string") : [],
+    capabilities: Array.isArray(record.capabilities)
+      ? record.capabilities.filter((capability): capability is string => typeof capability === "string")
+      : [],
+    lastValidatedAt: lastValidatedAt && !Number.isNaN(lastValidatedAt.getTime()) ? lastValidatedAt : null
+  };
 }
 
 function toProviderKey(value: string | undefined) {
@@ -211,6 +273,95 @@ async function recordExecutorPolicyDecision({
   });
 
   return event;
+}
+
+async function loadConnectedAccountForReadiness({
+  connectedAccountId,
+  provider,
+  workspaceId
+}: {
+  connectedAccountId?: string | null;
+  provider: ProviderKey;
+  workspaceId: string;
+}): Promise<ProviderHealthAccount | null> {
+  if (!connectedAccountId || !isDatabaseConfigured) {
+    return null;
+  }
+
+  const [account] = await getDb()
+    .select({
+      id: connectedAccounts.id,
+      status: connectedAccounts.status,
+      scopes: connectedAccounts.scopes,
+      capabilities: connectedAccounts.capabilities,
+      lastValidatedAt: connectedAccounts.lastValidatedAt
+    })
+    .from(connectedAccounts)
+    .where(
+      and(
+        eq(connectedAccounts.workspaceId, workspaceId),
+        eq(connectedAccounts.id, connectedAccountId),
+        eq(connectedAccounts.provider, provider)
+      )
+    )
+    .limit(1);
+
+  return account ?? null;
+}
+
+async function evaluateScheduleProviderReadiness({
+  allowMemoryFallback,
+  context,
+  scheduledVariant
+}: {
+  allowMemoryFallback: boolean;
+  context: MissionTaskExecutionContext;
+  scheduledVariant: ScheduledVariant;
+}): Promise<ProviderHealthResult> {
+  const accountByProvider = readRecordMap(context.mission.inputs, "connectedAccountsByProvider");
+  const accountByPlatform = readRecordMap(context.mission.inputs, "connectedAccountsByPlatform");
+  const inputAccount = allowMemoryFallback
+    ? readProviderHealthAccount(scheduledVariant.platform ? accountByPlatform[scheduledVariant.platform] : undefined)
+      ?? readProviderHealthAccount(accountByProvider[scheduledVariant.provider])
+      ?? readProviderHealthAccount(context.mission.inputs.connectedAccount)
+    : null;
+  const connectedAccount = inputAccount && (!scheduledVariant.connectedAccountId || inputAccount.id === scheduledVariant.connectedAccountId)
+    ? inputAccount
+    : await loadConnectedAccountForReadiness({
+        connectedAccountId: scheduledVariant.connectedAccountId,
+        provider: scheduledVariant.provider,
+        workspaceId: context.mission.workspaceId
+      });
+
+  return evaluateProviderHealth({
+    adapter: getProviderAdapter(scheduledVariant.provider),
+    allowMock: allowMemoryFallback,
+    connectedAccount,
+    connectedAccountId: connectedAccount?.id ?? scheduledVariant.connectedAccountId ?? null,
+    requiredCapability: "scheduled_publish"
+  });
+}
+
+function createBlockingDecision({
+  decision: baseDecision,
+  details,
+  message,
+  policyKey
+}: {
+  decision: AgentPolicyDecision;
+  details: Record<string, unknown>;
+  message: string;
+  policyKey: string;
+}): AgentPolicyDecision {
+  return {
+    allowed: false,
+    action: "block",
+    severity: "blocked",
+    policyKey,
+    message,
+    details,
+    policy: baseDecision.policy
+  };
 }
 
 function buildResearchOutput(mission: AgentMission) {
@@ -408,6 +559,52 @@ async function scheduleOneVariant({
     return { skipped: decision };
   }
 
+  if (
+    scheduledVariant.platform &&
+    !isProviderCompatibleWithPlatform({
+      allowMock: allowMemoryFallback,
+      platform: scheduledVariant.platform,
+      provider: scheduledVariant.provider
+    })
+  ) {
+    const skipped = createBlockingDecision({
+      decision,
+      policyKey: "provider_platform_compatibility",
+      message: formatProviderPlatformError(scheduledVariant.provider, scheduledVariant.platform),
+      details: {
+        platform: scheduledVariant.platform,
+        provider: scheduledVariant.provider
+      }
+    });
+
+    await recordExecutorPolicyDecision({ context, decision: skipped });
+    return { skipped };
+  }
+
+  const providerHealth = await evaluateScheduleProviderReadiness({
+    allowMemoryFallback,
+    context,
+    scheduledVariant
+  });
+
+  if (isProviderHealthBlocking(providerHealth)) {
+    const skipped = createBlockingDecision({
+      decision,
+      policyKey: "provider_readiness",
+      message: providerHealth.blockingReason ?? `Provider ${scheduledVariant.provider} is not ready for scheduling.`,
+      details: {
+        connectedAccountId: providerHealth.connectedAccountId,
+        provider: providerHealth.provider,
+        providerHealthStatus: providerHealth.status,
+        requiredScopes: providerHealth.requiredScopes,
+        warnings: providerHealth.warnings
+      }
+    });
+
+    await recordExecutorPolicyDecision({ context, decision: skipped });
+    return { skipped };
+  }
+
   await consumeUsageForLimit({
     workspaceId: context.mission.workspaceId,
     key: "scheduledPostsPerDay",
@@ -437,6 +634,7 @@ async function scheduleOneVariant({
         localPreview: allowMemoryFallback
       }
     },
+    providerHealth,
     repository: createSchedulerRepository({ allowMemoryFallback }),
     ...(allowMemoryFallback ? { enqueue: createLocalEnqueue(context.now) } : {})
   });

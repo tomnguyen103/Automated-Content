@@ -21,7 +21,8 @@ import {
   AGENT_TASK_RUN_HISTORY_LIMIT,
   clearAgentOrchestrationRepositoriesForTests,
   createAgentOrchestrationRepositories,
-  createDatabaseAgentPolicyEventRepository
+  createDatabaseAgentPolicyEventRepository,
+  createMemoryAgentOrchestrationRepositories
 } from "@/lib/agents/orchestration/repository";
 import {
   pauseAgentMission,
@@ -951,7 +952,17 @@ describe("agent orchestration foundation", () => {
       priority: 80,
       inputs: {
         topic: "Autonomous content operations",
-        platforms: ["linkedin"]
+        platforms: ["linkedin"],
+        connectedAccountId: "account_linkedin_1",
+        connectedAccountsByProvider: {
+          linkedin: {
+            id: "account_linkedin_1",
+            status: "connected",
+            scopes: ["w_member_social"],
+            capabilities: ["scheduled_publish"],
+            lastValidatedAt: timestamp
+          }
+        }
       },
       context: {},
       policy: agentAutonomyPolicySchema.parse({
@@ -1001,8 +1012,179 @@ describe("agent orchestration foundation", () => {
             agentMissionId: "mission_content_executor_1",
             autonomous: true
           })
+        }),
+        providerHealth: expect.objectContaining({
+          provider: "linkedin",
+          status: "ready"
         })
       })
+    );
+  });
+
+  it("blocks autonomous scheduling before usage or schedule writes when provider readiness fails", async () => {
+    const repositories = createAgentOrchestrationRepositories({ allowMemoryFallback: true });
+    const seeded = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_1",
+      now: new Date(timestamp)
+    });
+    const coordinator = seeded.find((profile) => profile.role === "coordinator")!;
+    const schedulePost = vi.fn();
+    const createdAt = new Date(timestamp).toISOString();
+
+    await repositories.missions.save({
+      id: "mission_provider_block_1",
+      workspaceId,
+      createdByUserId: "user_1",
+      coordinatorProfileId: coordinator.id,
+      missionType: "auto_publish",
+      title: "Unsafe provider schedule",
+      objective: "Attempt to publish without a connected account.",
+      brief: "This should be blocked before a durable schedule row is written.",
+      status: "queued",
+      priority: 80,
+      inputs: {
+        platform: "linkedin",
+        platformVariantIds: ["variant_without_account"],
+        provider: "linkedin",
+        scheduledFor: "2026-06-22T17:00:00.000Z"
+      },
+      context: {},
+      policy: agentAutonomyPolicySchema.parse({
+        autonomy: "full",
+        allowedActions: ["mission.run", "content.publish"],
+        allowedToolScopes: ["mission.plan", "content.publish"],
+        platformScope: ["linkedin"],
+        allowedProviders: ["linkedin"]
+      }),
+      requestedAt: createdAt,
+      createdAt,
+      updatedAt: createdAt
+    });
+
+    const result = await runAgentMission({
+      workspaceId,
+      missionId: "mission_provider_block_1",
+      repositories,
+      executeTask: createAutonomousMissionTaskExecutor({
+        allowMemoryFallback: true,
+        schedulePost
+      }),
+      now: () => new Date(timestamp)
+    });
+    const output = result.tasks[0].output as Record<string, unknown>;
+    const policyEvents = await repositories.policyEvents.listForMission({
+      workspaceId,
+      missionId: "mission_provider_block_1"
+    });
+
+    expect(result.mission.status).toBe("succeeded");
+    expect(schedulePost).not.toHaveBeenCalled();
+    expect(output).toMatchObject({
+      scheduledJobs: [],
+      skipped: [
+        expect.objectContaining({
+          platformVariantId: "variant_without_account",
+          policyKey: "provider_readiness",
+          message: expect.stringContaining("Connect a LinkedIn account")
+        })
+      ]
+    });
+    expect(policyEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          policyKey: "provider_readiness",
+          severity: "blocked"
+        })
+      ])
+    );
+  });
+
+  it("does not trust mission-input account snapshots when memory fallback is disabled", async () => {
+    const repositories = createMemoryAgentOrchestrationRepositories();
+    const seeded = await repositories.profiles.seedRoleTemplates({
+      workspaceId,
+      createdByUserId: "user_1",
+      now: new Date(timestamp)
+    });
+    const coordinator = seeded.find((profile) => profile.role === "coordinator")!;
+    const schedulePost = vi.fn();
+    const createdAt = new Date(timestamp).toISOString();
+
+    await repositories.missions.save({
+      id: "mission_provider_snapshot_bypass_1",
+      workspaceId,
+      createdByUserId: "user_1",
+      coordinatorProfileId: coordinator.id,
+      missionType: "auto_publish",
+      title: "Forged provider snapshot",
+      objective: "Attempt to publish with only mission-input account evidence.",
+      brief: "This should be blocked because non-preview execution must validate provider state from durable account data.",
+      status: "queued",
+      priority: 80,
+      inputs: {
+        platform: "linkedin",
+        platformVariantIds: ["variant_snapshot_only"],
+        provider: "linkedin",
+        scheduledFor: "2026-06-22T17:00:00.000Z",
+        connectedAccountsByProvider: {
+          linkedin: {
+            id: "account_snapshot_only",
+            status: "connected",
+            scopes: ["w_member_social"],
+            capabilities: ["scheduled_publish"],
+            lastValidatedAt: timestamp
+          }
+        }
+      },
+      context: {},
+      policy: agentAutonomyPolicySchema.parse({
+        autonomy: "full",
+        allowedActions: ["mission.run", "content.publish"],
+        allowedToolScopes: ["mission.plan", "content.publish"],
+        platformScope: ["linkedin"],
+        allowedProviders: ["linkedin"]
+      }),
+      requestedAt: createdAt,
+      createdAt,
+      updatedAt: createdAt
+    });
+
+    const result = await runAgentMission({
+      workspaceId,
+      missionId: "mission_provider_snapshot_bypass_1",
+      repositories,
+      executeTask: createAutonomousMissionTaskExecutor({
+        allowMemoryFallback: false,
+        schedulePost
+      }),
+      now: () => new Date(timestamp)
+    });
+    const output = result.tasks[0].output as Record<string, unknown>;
+    const policyEvents = await repositories.policyEvents.listForMission({
+      workspaceId,
+      missionId: "mission_provider_snapshot_bypass_1"
+    });
+
+    expect(schedulePost).not.toHaveBeenCalled();
+    expect(output).toMatchObject({
+      scheduledJobs: [],
+      skipped: [
+        expect.objectContaining({
+          platformVariantId: "variant_snapshot_only",
+          policyKey: "provider_readiness",
+          message: expect.stringContaining("Connect a LinkedIn account")
+        })
+      ]
+    });
+    expect(policyEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "block",
+          policyKey: "provider_readiness",
+          severity: "blocked"
+        })
+      ])
     );
   });
 

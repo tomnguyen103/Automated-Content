@@ -17,7 +17,7 @@ export class ImageKitConfigurationError extends Error {
   }
 }
 
-function sanitizePathSegment(value: string) {
+export function sanitizeImageKitPathSegment(value: string) {
   return value
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
@@ -25,8 +25,8 @@ function sanitizePathSegment(value: string) {
     .slice(0, 80);
 }
 
-function createUploadFolder(workspaceId: string) {
-  return `/automated-content/${sanitizePathSegment(workspaceId) || "workspace"}`;
+export function createImageKitUploadFolder(workspaceId: string) {
+  return `/automated-content/${sanitizeImageKitPathSegment(workspaceId) || "workspace"}`;
 }
 
 function clampExpirySeconds(value: number | undefined) {
@@ -67,7 +67,7 @@ export function createImageKitUploadAuth({
   const urlEndpoint = configured ? config.IMAGEKIT_URL_ENDPOINT! : "https://ik.imagekit.io/local-preview";
   const expire = Math.floor(now().getTime() / 1000) + clampExpirySeconds(expiresInSeconds);
   const signature = crypto.createHmac("sha1", privateKey).update(`${token}${expire}`).digest("hex");
-  const folder = createUploadFolder(workspaceId);
+  const folder = createImageKitUploadFolder(workspaceId);
 
   return imageKitUploadAuthSchema.parse({
     token,
@@ -76,7 +76,7 @@ export function createImageKitUploadAuth({
     publicKey,
     urlEndpoint,
     folder,
-    tags: ["automated-content", `workspace:${sanitizePathSegment(workspaceId) || "workspace"}`],
+    tags: ["automated-content", `workspace:${sanitizeImageKitPathSegment(workspaceId) || "workspace"}`],
     metadata: {
       workspaceId,
       uploadedByUserId: userId,

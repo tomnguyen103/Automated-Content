@@ -24,7 +24,8 @@ import { getProviderAdapter } from "@/lib/providers/registry";
 import { providerKeys, type ProviderKey } from "@/lib/providers/types";
 import {
   createScheduledPost,
-  createSchedulerRepository
+  createSchedulerRepository,
+  ProviderReadinessError
 } from "@/lib/scheduler/create-scheduled-post";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
 
@@ -281,6 +282,7 @@ export async function POST(
           localPreview: workspace.isLocalPreview
         }
       },
+      providerHealth,
       repository: createSchedulerRepository({
         allowMemoryFallback: workspace.isLocalPreview
       }),
@@ -339,6 +341,16 @@ export async function POST(
           requiredPlan: error.requiredPlan
         },
         { status: 402 }
+      );
+    }
+
+    if (error instanceof ProviderReadinessError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          providerHealth: error.providerHealth
+        },
+        { status: 409 }
       );
     }
 

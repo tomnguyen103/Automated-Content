@@ -104,9 +104,76 @@ describe("agent mission run API", () => {
     expect(response.status).toBe(503);
     expect(payload).toMatchObject({
       error: "Agent mission queue is not configured.",
-      code: "agent_mission_queue_unavailable"
+      code: "agent_mission_queue_unavailable",
+      mission: {
+        status: "failed",
+        error: "Agent mission queue is not configured.",
+        context: {
+          queue: {
+            status: "failed",
+            error: "Agent mission queue is not configured."
+          }
+        }
+      }
     });
     expect(routeMocks.runMissionWorkflow).not.toHaveBeenCalled();
+    expect(routeMocks.saveMission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "failed",
+        error: "Agent mission queue is not configured.",
+        context: expect.objectContaining({
+          queue: expect.objectContaining({
+            status: "failed",
+            error: "Agent mission queue is not configured.",
+            failedAt: expect.any(String)
+          })
+        })
+      })
+    );
+  });
+
+  it("persists production queue metadata when mission enqueue succeeds", async () => {
+    routeMocks.enqueueAgentMission.mockResolvedValue({
+      queueJobId: "queue_mission_1",
+      status: "queued"
+    });
+    const { POST } = await import("@/app/api/agents/missions/[id]/run/route");
+
+    const response = await POST(new Request("http://localhost/api/agents/missions/mission_1/run"), {
+      params: Promise.resolve({ id: "mission_1" })
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({
+      execution: "queued",
+      enqueue: {
+        queueJobId: "queue_mission_1",
+        status: "queued"
+      },
+      mission: {
+        status: "queued",
+        context: {
+          queue: {
+            status: "queued",
+            queueJobId: "queue_mission_1"
+          }
+        }
+      }
+    });
+    expect(routeMocks.saveMission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "queued",
+        error: undefined,
+        context: expect.objectContaining({
+          queue: expect.objectContaining({
+            status: "queued",
+            queueJobId: "queue_mission_1",
+            queuedAt: expect.any(String)
+          })
+        })
+      })
+    );
   });
 
   it("runs mission simulations inline without queueing execution work", async () => {

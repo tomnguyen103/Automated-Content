@@ -50,6 +50,7 @@ test("brand memory workbench shows review evidence", async ({ page }, testInfo) 
 
   await expect(page.getByRole("heading", { name: "Brand Memory" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Proposals" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Curator 2.0" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Review detail" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Inferred rule" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Original text" })).toBeVisible();

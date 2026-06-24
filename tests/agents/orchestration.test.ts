@@ -31,6 +31,7 @@ import {
 } from "@/lib/agents/orchestration/runner";
 import { simulateAgentMission } from "@/lib/agents/orchestration/simulation";
 import { createAutonomousMissionTaskExecutor } from "@/lib/agents/orchestration/executors";
+import { buildAgentQualityScorecard } from "@/lib/analytics/scorecards";
 import type { AnalyticsSnapshot } from "@/lib/analytics/metrics";
 
 const workspaceId = "00000000-0000-0000-0000-000000000001";
@@ -563,6 +564,13 @@ describe("agent orchestration foundation", () => {
       allowedActions: ["mission.run", "report.generate"],
       allowedToolScopes: ["mission.plan", "mission.report"]
     });
+    const failedRunScorecard = buildAgentQualityScorecard({
+      id: "run_recent_report_1",
+      status: "failed",
+      toolCallCount: 2,
+      durationMs: 1000,
+      error: "Provider metrics unavailable"
+    });
     const snapshot = {
       generatedAt: timestamp,
       posting: {
@@ -626,9 +634,11 @@ describe("agent orchestration foundation", () => {
             durationMs: 1000,
             startedAt: timestamp,
             completedAt: "2026-06-21T12:00:01.000Z",
-            error: "Provider metrics unavailable"
+            error: "Provider metrics unavailable",
+            scorecard: failedRunScorecard
           }
-        ]
+        ],
+        scorecards: [failedRunScorecard]
       },
       platformBreakdown: [
         {
@@ -639,7 +649,8 @@ describe("agent orchestration foundation", () => {
           replies: 2,
           failures: 1
         }
-      ]
+      ],
+      recommendations: []
     } satisfies AnalyticsSnapshot;
 
     await repositories.missions.save({

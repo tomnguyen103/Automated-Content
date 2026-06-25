@@ -5,7 +5,8 @@ import { env } from "@/lib/env";
 import {
   dispatchTriggerTask,
   isTriggerRuntimeConfigured,
-  type TriggerDispatchClient
+  type TriggerDispatchClient,
+  type TriggerRuntimeEnv
 } from "@/lib/jobs/trigger";
 import { createRedisConnectionOptions } from "@/lib/scheduler/enqueue";
 
@@ -55,7 +56,7 @@ export async function enqueueAgentMission({
   missionId: string;
   queue?: AgentMissionQueueLike;
   client?: TriggerDispatchClient;
-  envMap?: Pick<typeof env, "TRIGGER_SECRET_KEY">;
+  envMap?: TriggerRuntimeEnv;
 }): Promise<EnqueueAgentMissionResult> {
   if (isTriggerRuntimeConfigured(envMap)) {
     const handle = await dispatchTriggerTask({

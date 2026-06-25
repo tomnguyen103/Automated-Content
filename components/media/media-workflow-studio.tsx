@@ -125,6 +125,10 @@ function parseError(payload: unknown, fallback: string) {
   return fallback;
 }
 
+function objectRecord(value: unknown) {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
 function outputText(job: MediaGenerationJobRecord) {
   if (job.error) {
     return job.error;
@@ -134,28 +138,28 @@ function outputText(job: MediaGenerationJobRecord) {
     return "Waiting for task output.";
   }
 
-  if ("transcript" in job.output) {
-    const transcript = job.output.transcript as { text?: unknown };
+  const transcript = objectRecord(job.output.transcript);
+  if (transcript) {
     return typeof transcript.text === "string" ? transcript.text : "Transcript stored.";
   }
 
-  if ("clipCandidates" in job.output) {
+  if (Array.isArray(job.output.clipCandidates)) {
     const clips = job.output.clipCandidates as Array<{ title?: unknown; score?: unknown }>;
     return clips.map((clip) => `${clip.title ?? "Clip"} (${clip.score ?? "n/a"})`).join(" | ");
   }
 
-  if ("renderedClip" in job.output) {
-    const clip = job.output.renderedClip as { url?: unknown };
+  const clip = objectRecord(job.output.renderedClip);
+  if (clip) {
     return typeof clip.url === "string" ? clip.url : "Rendered clip stored.";
   }
 
-  if ("influencerAsset" in job.output) {
-    const asset = job.output.influencerAsset as { personaName?: unknown; url?: unknown };
+  const asset = objectRecord(job.output.influencerAsset);
+  if (asset) {
     return `${asset.personaName ?? "Influencer asset"}: ${asset.url ?? "stored"}`;
   }
 
-  if ("avatarVideo" in job.output) {
-    const video = job.output.avatarVideo as { url?: unknown };
+  const video = objectRecord(job.output.avatarVideo);
+  if (video) {
     return typeof video.url === "string" ? video.url : "Avatar video stored.";
   }
 
@@ -163,8 +167,8 @@ function outputText(job: MediaGenerationJobRecord) {
 }
 
 function renderedDownloadUrl(job: MediaGenerationJobRecord) {
-  const clip = job.output.renderedClip as { downloadUrl?: unknown } | undefined;
-  const avatar = job.output.avatarVideo as { downloadUrl?: unknown } | undefined;
+  const clip = objectRecord(job.output.renderedClip);
+  const avatar = objectRecord(job.output.avatarVideo);
   const downloadUrl = clip?.downloadUrl ?? avatar?.downloadUrl;
 
   return typeof downloadUrl === "string" ? downloadUrl : null;

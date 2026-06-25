@@ -3,6 +3,11 @@ import "server-only";
 import { env } from "@/lib/env";
 import { mediaGenerationTaskIds, type MediaGenerationJobRecord } from "@/lib/jobs/types";
 
+export type TriggerRuntimeEnv = Pick<
+  typeof env,
+  "TRIGGER_PROJECT_REF" | "TRIGGER_SECRET_KEY" | "TRIGGER_VERSION"
+>;
+
 export type TriggerDispatchHandle = {
   mode: "trigger.dev" | "local";
   publicAccessToken?: string;
@@ -30,8 +35,8 @@ export type TriggerDispatchClient = {
   }>;
 };
 
-export function isTriggerRuntimeConfigured(envMap: Pick<typeof env, "TRIGGER_SECRET_KEY"> = env) {
-  return Boolean(envMap.TRIGGER_SECRET_KEY);
+export function isTriggerRuntimeConfigured(envMap: TriggerRuntimeEnv = env) {
+  return Boolean(envMap.TRIGGER_PROJECT_REF && envMap.TRIGGER_SECRET_KEY && envMap.TRIGGER_VERSION);
 }
 
 async function getTriggerTasksClient(): Promise<TriggerDispatchClient> {
@@ -60,7 +65,7 @@ export async function dispatchTriggerTask({
   client?: TriggerDispatchClient;
   concurrencyKey?: string;
   delay?: Date | string;
-  envMap?: Pick<typeof env, "TRIGGER_SECRET_KEY">;
+  envMap?: TriggerRuntimeEnv;
   idempotencyKey?: string;
   localRunId?: string;
   maxAttempts?: number;
@@ -104,7 +109,7 @@ export async function dispatchMediaGenerationJob({
 }: {
   job: MediaGenerationJobRecord;
   client?: TriggerDispatchClient;
-  envMap?: Pick<typeof env, "TRIGGER_SECRET_KEY">;
+  envMap?: TriggerRuntimeEnv;
 }): Promise<TriggerDispatchHandle> {
   const taskId = mediaGenerationTaskIds[job.jobKind];
   const payload = {

@@ -39,7 +39,9 @@ describe("Trigger-backed background jobs", () => {
     const result = await enqueueScheduledPost({
       client: { trigger },
       envMap: {
-        TRIGGER_SECRET_KEY: "tr_prod_123"
+        TRIGGER_PROJECT_REF: "proj_prod_123",
+        TRIGGER_SECRET_KEY: "tr_prod_123",
+        TRIGGER_VERSION: "20260625.1"
       },
       now: new Date("2026-06-25T12:00:00.000Z"),
       scheduledJob
@@ -76,7 +78,9 @@ describe("Trigger-backed background jobs", () => {
     const result = await enqueueAgentMission({
       client: { trigger },
       envMap: {
-        TRIGGER_SECRET_KEY: "tr_prod_123"
+        TRIGGER_PROJECT_REF: "proj_prod_123",
+        TRIGGER_SECRET_KEY: "tr_prod_123",
+        TRIGGER_VERSION: "20260625.1"
       },
       missionId: "mission_1",
       workspaceId: "workspace_background_1"

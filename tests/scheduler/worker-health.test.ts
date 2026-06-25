@@ -35,7 +35,9 @@ describe("worker runtime readiness", () => {
   });
 
   it("reports Trigger-backed production queues as healthy without Redis", async () => {
+    vi.stubEnv("TRIGGER_PROJECT_REF", "proj_prod_123");
     vi.stubEnv("TRIGGER_SECRET_KEY", "tr_prod_123");
+    vi.stubEnv("TRIGGER_VERSION", "20260625.1");
 
     const { getWorkerRuntimeReadiness } = await import("@/lib/scheduler/worker-health");
     const readiness = await getWorkerRuntimeReadiness({

@@ -27,7 +27,9 @@ describe("Trigger.dev media dispatch", () => {
     const handle = await dispatchMediaGenerationJob({
       job: sampleJob,
       envMap: {
-        TRIGGER_SECRET_KEY: undefined
+        TRIGGER_PROJECT_REF: undefined,
+        TRIGGER_SECRET_KEY: undefined,
+        TRIGGER_VERSION: undefined
       }
     });
 
@@ -48,7 +50,9 @@ describe("Trigger.dev media dispatch", () => {
       job: sampleJob,
       client: { trigger },
       envMap: {
-        TRIGGER_SECRET_KEY: "tr_prod_123"
+        TRIGGER_PROJECT_REF: "proj_prod_123",
+        TRIGGER_SECRET_KEY: "tr_prod_123",
+        TRIGGER_VERSION: "20260625.1"
       }
     });
 

@@ -32,7 +32,7 @@ describe("generated media artifacts API", () => {
 
   it("serves deterministic workflow artifact manifests for completed local jobs", async () => {
     const [{ GET }, mediaJobs, { executeMediaGenerationWorkflow }, { localPreviewWorkspaceId }] = await Promise.all([
-      import("@/app/api/media/generated/[workspaceId]/[jobId]/[asset]/route"),
+      import("@/app/api/media/artifacts/[workspaceId]/[jobId]/[asset]/route"),
       import("@/lib/jobs/media"),
       import("@/lib/jobs/media-workflows"),
       import("@/lib/workspaces/personal-workspace")
@@ -59,7 +59,7 @@ describe("generated media artifacts API", () => {
     });
     const renderedClip = result.job.output.renderedClip as { downloadUrl: string; url: string };
 
-    expect(renderedClip.url).toContain(`/api/media/generated/${localPreviewWorkspaceId}/${job.id}/`);
+    expect(renderedClip.url).toContain(`/api/media/artifacts/${localPreviewWorkspaceId}/${job.id}/`);
 
     const response = await GET(
       new NextRequest(`http://localhost:3000${renderedClip.downloadUrl}`),

@@ -243,7 +243,7 @@ function formatSrt(segments: TranscriptSegment[]) {
 }
 
 function artifactUrl(input: WorkflowInput, suffix: string) {
-  const base = stringInput(input.input, "artifactBaseUrl") ?? "/api/media/generated";
+  const base = stringInput(input.input, "artifactBaseUrl") ?? "/api/media/artifacts";
 
   return `${base.replace(/\/+$/, "")}/${encodeURIComponent(input.workspaceId)}/${encodeURIComponent(input.jobId)}/${suffix}`;
 }

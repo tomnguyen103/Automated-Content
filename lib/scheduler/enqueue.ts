@@ -6,7 +6,8 @@ import { env } from "@/lib/env";
 import {
   dispatchTriggerTask,
   isTriggerRuntimeConfigured,
-  type TriggerDispatchClient
+  type TriggerDispatchClient,
+  type TriggerRuntimeEnv
 } from "@/lib/jobs/trigger";
 import type { ProviderKey } from "@/lib/providers/types";
 
@@ -91,7 +92,7 @@ export async function enqueueScheduledPost({
   now?: Date;
   queue?: BullMqQueueLike;
   client?: TriggerDispatchClient;
-  envMap?: Pick<typeof env, "TRIGGER_SECRET_KEY">;
+  envMap?: TriggerRuntimeEnv;
 }): Promise<EnqueueScheduledPostResult> {
   const delayMs = Math.max(0, scheduledJob.scheduledFor.getTime() - now.getTime());
 

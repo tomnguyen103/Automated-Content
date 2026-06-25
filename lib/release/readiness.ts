@@ -1,3 +1,5 @@
+import { isTriggerRuntimeConfigured } from "@/lib/jobs/trigger";
+
 export const requiredReleaseGateCommands = [
   "npm run lint",
   "npm run typecheck",
@@ -620,14 +622,10 @@ function sentryCheck(env: EnvMap): ReleaseReadinessCheck {
 }
 
 function backgroundJobBackendCheck(env: EnvMap): ReleaseReadinessCheck {
-  const hasTriggerBackend =
-    Boolean(requiredValue(env, "TRIGGER_PROJECT_REF")) &&
-    Boolean(requiredValue(env, "TRIGGER_SECRET_KEY")) &&
-    Boolean(requiredValue(env, "TRIGGER_VERSION"));
   const detail =
     "Required so scheduled publishing and agent missions run outside Vercel request handlers.";
 
-  if (hasTriggerBackend) {
+  if (isTriggerRuntimeConfigured(env)) {
     return {
       id: "background-job-backend",
       category: "automation",

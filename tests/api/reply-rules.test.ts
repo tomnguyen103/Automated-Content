@@ -41,10 +41,11 @@ const validRule = {
   enabled: true
 };
 
-function buildContext({ isLocalPreview = false } = {}) {
+function buildContext({ isLocalPreview = false, ruleEnabled = false } = {}) {
   const repository = {
     createRule: vi.fn(async () => ({ id: "rule_1", ...validRule })),
     updateRuleEnabled: vi.fn(async () => ({ id: "rule_1", ...validRule })),
+    listRules: vi.fn(async () => [{ id: "rule_1", ...validRule, enabled: ruleEnabled }]),
     getConsoleState: vi.fn(async () => ({
       rules: [],
       inbox: [],
@@ -206,6 +207,30 @@ describe("reply rule billing gates", () => {
       workspaceId: "workspace_1",
       ruleId: "rule_1",
       enabled: false
+    });
+  });
+
+  it("allows idempotent enabled updates without the paid feature", async () => {
+    const { context, repository } = buildContext({ ruleEnabled: true });
+    routeMocks.resolveReplyServerContext.mockResolvedValue(context);
+    const { PATCH } = await loadUpdateRoute();
+
+    const response = await PATCH(
+      new Request("http://localhost:3000/api/replies/rules/rule_1", {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: true })
+      }),
+      {
+        params: Promise.resolve({ id: "rule_1" })
+      }
+    );
+
+    expect(response.status).toBe(200);
+    expect(routeMocks.ensureFeatureAllowed).not.toHaveBeenCalled();
+    expect(repository.updateRuleEnabled).toHaveBeenCalledWith({
+      workspaceId: "workspace_1",
+      ruleId: "rule_1",
+      enabled: true
     });
   });
 });

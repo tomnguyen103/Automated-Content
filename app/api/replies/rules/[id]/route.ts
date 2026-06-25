@@ -32,8 +32,14 @@ export async function PATCH(request: Request, context: RuleRouteContext) {
   try {
     const { id } = await context.params;
     const input = updateReplyRuleRequestSchema.parse(body);
+    const currentRules = await replyContext.repository.listRules(replyContext.workspace.id);
+    const currentRule = currentRules.find((rule) => rule.id === id);
 
-    if (input.enabled) {
+    if (!currentRule) {
+      return NextResponse.json({ error: "Reply rule not found." }, { status: 404 });
+    }
+
+    if (input.enabled && !currentRule.enabled) {
       await ensureFeatureAllowed({
         workspaceId: replyContext.workspace.id,
         feature: "keywordAutoReplies",
@@ -41,13 +47,13 @@ export async function PATCH(request: Request, context: RuleRouteContext) {
       });
     }
 
-    const rule = await replyContext.repository.updateRuleEnabled({
+    const updatedRule = await replyContext.repository.updateRuleEnabled({
       workspaceId: replyContext.workspace.id,
       ruleId: id,
       enabled: input.enabled
     });
 
-    if (!rule) {
+    if (!updatedRule) {
       return NextResponse.json({ error: "Reply rule not found." }, { status: 404 });
     }
 

@@ -9,28 +9,28 @@ import {
 
 const completeEnv = {
   AI_PROVIDER: "openai",
-  BILLING_CUSTOMER_PORTAL_URL: "https://billing.example.com/portal",
-  BILLING_UPGRADE_URL: "https://billing.example.com/checkout",
-  CLERK_SECRET_KEY: "clerk-secret",
-  CLERK_WEBHOOK_SIGNING_SECRET: "clerk-webhook-secret",
-  DATABASE_URL: "postgres://example",
-  IMAGEKIT_PRIVATE_KEY: "imagekit-private",
-  IMAGEKIT_PUBLIC_KEY: "imagekit-public",
-  IMAGEKIT_URL_ENDPOINT: "https://ik.imagekit.io/example",
-  LANGSMITH_API_KEY: "langsmith-secret",
+  BILLING_CUSTOMER_PORTAL_URL: "https://billing.automatedcontent.dev/portal",
+  BILLING_UPGRADE_URL: "https://billing.automatedcontent.dev/checkout",
+  CLERK_SECRET_KEY: "sk_live_clerk_123",
+  CLERK_WEBHOOK_SIGNING_SECRET: "whsec_prod_123",
+  DATABASE_URL: "postgres://app_user:prod_password@db.automatedcontent.dev:5432/app",
+  IMAGEKIT_PRIVATE_KEY: "private_prod_123",
+  IMAGEKIT_PUBLIC_KEY: "public_prod_123",
+  IMAGEKIT_URL_ENDPOINT: "https://ik.imagekit.io/automatedcontent",
+  LANGSMITH_API_KEY: "lsv2_prod_123",
   LANGSMITH_PROJECT: "automated-content-production",
-  LINKEDIN_CLIENT_ID: "linkedin-client-id",
-  LINKEDIN_CLIENT_SECRET: "linkedin-client-secret",
-  LINKEDIN_REDIRECT_URI: "https://app.example.com/api/connections/linkedin/callback",
-  NEXT_PUBLIC_APP_URL: "https://app.example.com",
-  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "clerk-publishable",
-  N8N_WEBHOOK_SECRET: "n8n-secret",
-  N8N_WEBHOOK_URL: "https://n8n.example.com/webhook",
-  OPENAI_API_KEY: "openai-secret",
-  PROVIDER_TOKEN_ENCRYPTION_KEY: "provider-token-key",
-  REDIS_URL: "rediss://example",
-  X_CLIENT_ID: "x-client-id",
-  X_REDIRECT_URI: "https://app.example.com/api/connections/x/callback"
+  LINKEDIN_CLIENT_ID: "linkedin-prod-client-123",
+  LINKEDIN_CLIENT_SECRET: "linkedin-prod-client-value-123",
+  LINKEDIN_REDIRECT_URI: "https://app.automatedcontent.dev/api/connections/linkedin/callback",
+  NEXT_PUBLIC_APP_URL: "https://app.automatedcontent.dev",
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_live_clerk_123",
+  N8N_WEBHOOK_SECRET: "n8n-prod-webhook-value-123",
+  N8N_WEBHOOK_URL: "https://n8n.automatedcontent.dev/webhook",
+  OPENAI_API_KEY: "sk-prod-123",
+  PROVIDER_TOKEN_ENCRYPTION_KEY: "6e22b57d97484b67920c2f1b83e7db50",
+  REDIS_URL: "rediss://redis.automatedcontent.dev:6379",
+  X_CLIENT_ID: "x-prod-client-123",
+  X_REDIRECT_URI: "https://app.automatedcontent.dev/api/connections/x/callback"
 };
 
 const passingGates: ReleaseGateResult[] = requiredReleaseGateCommands.map((command) => ({
@@ -93,6 +93,86 @@ describe("release readiness", () => {
     expect(report.blockerCount).toBe(0);
     expect(report.manualCount).toBe(0);
     expect(report.passedCount).toBe(report.checks.length);
+  });
+
+  it("blocks placeholder and local production configuration values", () => {
+    const report = buildReleaseReadinessReport({
+      env: {
+        ...completeEnv,
+        BILLING_UPGRADE_URL: "https://billing.example.com/checkout",
+        DATABASE_URL: "postgres://app_user:password@localhost:5432/app",
+        NEXT_PUBLIC_APP_URL: "http://localhost:3000",
+        OPENAI_API_KEY: "sk-local-placeholder",
+        REDIS_URL: "redis://127.0.0.1:6379"
+      },
+      gateResults: passingGates,
+      manualChecks: passedManualChecks,
+      now: new Date("2026-06-24T12:00:00.000Z")
+    });
+
+    expect(report.ready).toBe(false);
+    expect(report.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "app-url",
+          status: "blocked"
+        }),
+        expect.objectContaining({
+          id: "billing-upgrade-url",
+          status: "blocked"
+        }),
+        expect.objectContaining({
+          id: "database-url",
+          status: "blocked"
+        }),
+        expect.objectContaining({
+          id: "redis-url",
+          status: "blocked"
+        }),
+        expect.objectContaining({
+          id: "ai-provider-key",
+          status: "blocked"
+        })
+      ])
+    );
+  });
+
+  it("blocks production URL checks with unsupported schemes", () => {
+    const report = buildReleaseReadinessReport({
+      env: {
+        ...completeEnv,
+        N8N_WEBHOOK_URL: "http://n8n.automatedcontent.dev/webhook"
+      },
+      gateResults: passingGates,
+      manualChecks: passedManualChecks,
+      now: new Date("2026-06-24T12:00:00.000Z")
+    });
+
+    expect(report.ready).toBe(false);
+    expect(report.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "n8n-webhook-url",
+          status: "blocked",
+          detail: expect.stringContaining("N8N_WEBHOOK_URL must use https.")
+        })
+      ])
+    );
+  });
+
+  it("allows placeholder-like words in production URL paths and query strings", () => {
+    const report = buildReleaseReadinessReport({
+      env: {
+        ...completeEnv,
+        N8N_WEBHOOK_URL: "https://n8n.automatedcontent.dev/webhooks/test?mode=local"
+      },
+      gateResults: passingGates,
+      manualChecks: passedManualChecks,
+      now: new Date("2026-06-24T12:00:00.000Z")
+    });
+
+    expect(report.ready).toBe(true);
+    expect(report.blockerCount).toBe(0);
   });
 
   it("accepts explicit CLI confirmations for completed gates and manual smoke checks", () => {
@@ -190,10 +270,10 @@ describe("release readiness", () => {
     expect(report.manualCount).toBeGreaterThan(0);
     expect(markdown).toContain("# Release Readiness Report");
     expect(markdown).toContain("Billing checkout URL");
-    expect(markdown).not.toContain("openai-secret");
-    expect(markdown).not.toContain("provider-token-key");
-    expect(markdown).not.toContain("n8n-secret");
-    expect(markdown).not.toContain("imagekit-private");
-    expect(markdown).not.toContain("langsmith-secret");
+    expect(markdown).not.toContain("sk-prod-123");
+    expect(markdown).not.toContain("6e22b57d97484b67920c2f1b83e7db50");
+    expect(markdown).not.toContain("n8n-prod-webhook-value-123");
+    expect(markdown).not.toContain("private_prod_123");
+    expect(markdown).not.toContain("lsv2_prod_123");
   });
 });

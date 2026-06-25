@@ -100,7 +100,7 @@ The 2026 market direction favors durable, governed, inspectable, tool-using agen
 
 4. Trend sources suggest adopting new durable workflow runtimes, but the repo already has LangGraph, BullMQ, Drizzle persistence, checkpointing, and worker health. Decision: improve inspection/recovery on the current stack before introducing another runtime (`lib/agents/graphs/content-workflow.ts:490-568`, `workers/social-worker.ts:77-156`).
 
-5. Older docs and archived specs conflict with moved paths and current implementation. Decision: treat live code, current master plan, and archived specs as evidence with caveats; source-code citations should outrank stale docs (`docs/README.md:7-36`, `docs/MASTER_PLAN_v2.md:170-185`).
+5. Older docs and archived specs conflict with moved paths and current implementation. Decision: treat live code, current master plan, and archived specs as evidence with caveats; source-code citations should outrank stale docs (`docs/README.md:7-36`, `docs/MASTER_PLAN.md:170-185`).
 
 ## Ranked Recommendations
 

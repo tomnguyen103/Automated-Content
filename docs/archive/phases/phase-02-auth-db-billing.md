@@ -1,4 +1,4 @@
-﻿> Archived 2026-06-24. Superseded by docs/MASTER_PLAN_v2.md.
+> Archived 2026-06-24. Superseded by docs/MASTER_PLAN.md.
 
 # Phase 2: Auth, Database, and Billing Base
 

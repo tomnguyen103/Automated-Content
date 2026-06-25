@@ -4,44 +4,24 @@ This folder is the public implementation planning system for the app. The privat
 
 ## Document Map
 
-Specs:
-- `specs/00-product-prd.md` - product goals, users, scope, and acceptance criteria.
-- `specs/01-architecture.md` - technical architecture and subsystem boundaries.
-- `specs/02-ui-design-system.md` - theme, navigation, page organization, and UI rules.
-- `specs/03-data-model.md` - database entities and relationships.
-- `specs/04-langchain-agent-system.md` - LangChain agents, tools, schemas, prompts, and model routing.
-- `specs/05-langgraph-workflows.md` - durable workflows, checkpoints, and human approval.
-- `specs/06-provider-integrations.md` - social, messaging, and publishing adapters.
-- `specs/07-billing-usage.md` - Clerk Billing, entitlements, usage, and limits.
-- `worker-runtime-readiness.md` - worker queue setup, health states, and retry playbook.
-- `ai-agent-feature-roadmap-2026.md` - durable 2026 AI-agent feature roadmap synthesized from repo intelligence, trend research, feature ideation, and feasibility capsules.
-- `ai-agent-feature-goal-prompts-2026.md` - copy-pasteable `/goal` prompt batches for implementing the 2026 roadmap with CI, CodeRabbit, and merge closeout.
+Current canonical docs:
+- `MASTER_PLAN.md` - the single consolidated implementation plan and current completion status.
+- `ai-agent-feature-roadmap.md` - current post-master feature roadmap and source-backed product analysis.
+- `research/` - repo intelligence and external trend research used to shape the roadmap.
 
-Phase plans:
-- `phases/phase-01-foundation.md`
-- `phases/phase-02-auth-db-billing.md`
-- `phases/phase-03-langchain-content-agent.md`
-- `phases/phase-04-langgraph-content-workflow.md`
-- `phases/phase-05-media-platform-variants.md`
-- `phases/phase-06-provider-publishing.md`
-- `phases/phase-07-comment-reply-agent.md`
-- `phases/phase-08-analytics-n8n-release.md`
-
-Next feature plans:
-- `next-feature-plans/README.md` - ranked post-master roadmap and master `/goal` prompt.
-- `next-feature-plans/01-linkedin-provider-productionization.md`
-- `next-feature-plans/02-connections-control-center.md`
-- `next-feature-plans/03-worker-runtime-readiness.md`
-- `next-feature-plans/04-billing-activation-path.md`
-- `next-feature-plans/05-brand-memory-management-page.md`
+Archived source docs:
+- `archive/specs/` - original PRD, architecture, design, data, workflow, provider, billing, and release specs.
+- `archive/phases/` - original phase implementation plans.
+- `archive/next-feature-plans/` - superseded next-feature plan bundle.
+- `archive/n8n/` and `archive/worker-runtime-readiness.md` - superseded automation and worker readiness docs.
 
 ## Execution Rules
 
-- Start each phase by rereading the matching spec and phase document.
+- Start implementation planning from `MASTER_PLAN.md`, then open archived source docs only when deeper historical context is needed.
 - Run Codegraph before editing source once application code exists.
 - Keep task packets small enough for one focused implementation session.
 - Run verification before claiming completion.
-- Update the phase document if scope or decisions change.
+- Update `MASTER_PLAN.md` if scope or completion decisions change.
 - Do not commit secrets or `.env` files.
 
 ## Initial Tooling Step

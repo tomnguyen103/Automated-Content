@@ -1,4 +1,4 @@
-﻿> Archived 2026-06-24. Superseded by docs/MASTER_PLAN_v2.md.
+> Archived 2026-06-24. Superseded by docs/MASTER_PLAN.md.
 
 # Phase 8: Analytics, n8n, Observability, and Release
 

@@ -84,7 +84,7 @@ Scope: current AI-agent trends from primary or high-signal engineering sources, 
 
 - Source: Vercel, "`AGENTS.md` outperforms skills in our agent evals", 2026-01-27, https://vercel.com/blog/agents-md-outperforms-skills-in-our-agent-evals
 - Signal: Vercel reports an embedded project docs index in `AGENTS.md` produced a 100 percent pass rate in its Next.js evals, outperforming skills that agents had to decide to load.
-- Why it matters here: This repo already relies on explicit operating instructions and a large planning corpus, but current docs have archive moves and stale README references (`docs/README.md:7-36`, `docs/MASTER_PLAN_v2.md:170-185`). A product analogue is to feed agents concise, versioned, workspace-specific instruction packets rather than asking users to prompt every constraint repeatedly.
+- Why it matters here: This repo already relies on explicit operating instructions and a large planning corpus, now anchored by one canonical master plan plus an archive map (`docs/README.md:7-18`, `docs/MASTER_PLAN.md:170-185`). A product analogue is to feed agents concise, versioned, workspace-specific instruction packets rather than asking users to prompt every constraint repeatedly.
 
 ### 14. Agent Protocols Are Expanding Beyond Tools Into UI And Transactions
 

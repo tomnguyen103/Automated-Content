@@ -41,153 +41,185 @@ const productionEnvChecks: Array<{
   key: string;
   label: string;
   detail: string;
+  valueKind: "string" | "url";
+  allowedSchemes?: string[];
 }> = [
   {
     id: "app-url",
     category: "environment",
     key: "NEXT_PUBLIC_APP_URL",
     label: "Production app URL",
-    detail: "Required for redirects, OAuth callbacks, and n8n callbacks."
+    detail: "Required for redirects, OAuth callbacks, and n8n callbacks.",
+    valueKind: "url",
+    allowedSchemes: ["https"]
   },
   {
     id: "clerk-client",
     category: "environment",
     key: "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
     label: "Clerk publishable key",
-    detail: "Required for production sign-in and sign-up flows."
+    detail: "Required for production sign-in and sign-up flows.",
+    valueKind: "string"
   },
   {
     id: "clerk-secret",
     category: "environment",
     key: "CLERK_SECRET_KEY",
     label: "Clerk secret key",
-    detail: "Required for server-side auth and workspace resolution."
+    detail: "Required for server-side auth and workspace resolution.",
+    valueKind: "string"
   },
   {
     id: "clerk-webhook",
     category: "environment",
     key: "CLERK_WEBHOOK_SIGNING_SECRET",
     label: "Clerk webhook signing secret",
-    detail: "Required for user and workspace sync."
+    detail: "Required for user and workspace sync.",
+    valueKind: "string"
   },
   {
     id: "database-url",
     category: "environment",
     key: "DATABASE_URL",
     label: "Database URL",
-    detail: "Required for production persistence."
+    detail: "Required for production persistence.",
+    valueKind: "url",
+    allowedSchemes: ["postgres", "postgresql"]
   },
   {
     id: "langsmith-api-key",
     category: "environment",
     key: "LANGSMITH_API_KEY",
     label: "LangSmith API key",
-    detail: "Required for production agent tracing and release observability."
+    detail: "Required for production agent tracing and release observability.",
+    valueKind: "string"
   },
   {
     id: "langsmith-project",
     category: "environment",
     key: "LANGSMITH_PROJECT",
     label: "LangSmith project",
-    detail: "Required to route production traces into the expected LangSmith project."
+    detail: "Required to route production traces into the expected LangSmith project.",
+    valueKind: "string"
   },
   {
     id: "imagekit-public-key",
     category: "environment",
     key: "IMAGEKIT_PUBLIC_KEY",
     label: "ImageKit public key",
-    detail: "Required for production media upload authentication."
+    detail: "Required for production media upload authentication.",
+    valueKind: "string"
   },
   {
     id: "imagekit-private-key",
     category: "environment",
     key: "IMAGEKIT_PRIVATE_KEY",
     label: "ImageKit private key",
-    detail: "Required for production media upload signatures."
+    detail: "Required for production media upload signatures.",
+    valueKind: "string"
   },
   {
     id: "imagekit-url-endpoint",
     category: "environment",
     key: "IMAGEKIT_URL_ENDPOINT",
     label: "ImageKit URL endpoint",
-    detail: "Required to verify production media asset provenance."
+    detail: "Required to verify production media asset provenance.",
+    valueKind: "url",
+    allowedSchemes: ["https"]
   },
   {
     id: "provider-token-key",
     category: "provider",
     key: "PROVIDER_TOKEN_ENCRYPTION_KEY",
     label: "Provider token encryption key",
-    detail: "Required before storing live provider OAuth tokens."
+    detail: "Required before storing live provider OAuth tokens.",
+    valueKind: "string"
   },
   {
     id: "redis-url",
     category: "environment",
     key: "REDIS_URL",
     label: "Redis URL",
-    detail: "Required for BullMQ publishing and agent mission workers."
+    detail: "Required for BullMQ publishing and agent mission workers.",
+    valueKind: "url",
+    allowedSchemes: ["redis", "rediss"]
   },
   {
     id: "n8n-webhook-url",
     category: "automation",
     key: "N8N_WEBHOOK_URL",
     label: "n8n event webhook URL",
-    detail: "Required before outbound automation events can dispatch."
+    detail: "Required before outbound automation events can dispatch.",
+    valueKind: "url",
+    allowedSchemes: ["https"]
   },
   {
     id: "n8n-webhook-secret",
     category: "automation",
     key: "N8N_WEBHOOK_SECRET",
     label: "n8n webhook signing secret",
-    detail: "Required for signed outbound events and callbacks."
+    detail: "Required for signed outbound events and callbacks.",
+    valueKind: "string"
   },
   {
     id: "billing-upgrade-url",
     category: "billing",
     key: "BILLING_UPGRADE_URL",
     label: "Billing checkout URL",
-    detail: "Required for live upgrade redirects."
+    detail: "Required for live upgrade redirects.",
+    valueKind: "url",
+    allowedSchemes: ["https"]
   },
   {
     id: "billing-portal-url",
     category: "billing",
     key: "BILLING_CUSTOMER_PORTAL_URL",
     label: "Billing customer portal URL",
-    detail: "Required for live customer portal redirects."
+    detail: "Required for live customer portal redirects.",
+    valueKind: "url",
+    allowedSchemes: ["https"]
   },
   {
     id: "linkedin-client-id",
     category: "provider",
     key: "LINKEDIN_CLIENT_ID",
     label: "LinkedIn client id",
-    detail: "Required for LinkedIn OAuth."
+    detail: "Required for LinkedIn OAuth.",
+    valueKind: "string"
   },
   {
     id: "linkedin-client-secret",
     category: "provider",
     key: "LINKEDIN_CLIENT_SECRET",
     label: "LinkedIn client secret",
-    detail: "Required for LinkedIn OAuth exchange."
+    detail: "Required for LinkedIn OAuth exchange.",
+    valueKind: "string"
   },
   {
     id: "linkedin-redirect-uri",
     category: "provider",
     key: "LINKEDIN_REDIRECT_URI",
     label: "LinkedIn redirect URI",
-    detail: "Required for OAuth callback validation."
+    detail: "Required for OAuth callback validation.",
+    valueKind: "url",
+    allowedSchemes: ["https"]
   },
   {
     id: "x-client-id",
     category: "provider",
     key: "X_CLIENT_ID",
     label: "X client id",
-    detail: "Required for X OAuth 2.0 PKCE."
+    detail: "Required for X OAuth 2.0 PKCE.",
+    valueKind: "string"
   },
   {
     id: "x-redirect-uri",
     category: "provider",
     key: "X_REDIRECT_URI",
     label: "X redirect URI",
-    detail: "Required for X OAuth callback validation."
+    detail: "Required for X OAuth callback validation.",
+    valueKind: "url",
+    allowedSchemes: ["https"]
   }
 ];
 
@@ -240,9 +272,118 @@ export const releaseReadinessEnvFlags = {
   confirmManualSmokePassed: "RELEASE_CONFIRM_MANUAL_SMOKE_PASSED"
 } as const;
 
-function hasValue(env: EnvMap, key: string) {
+const placeholderTokens = [
+  "placeholder",
+  "change-me",
+  "changeme",
+  "todo",
+  "dummy",
+  "fake",
+  "example",
+  "localhost",
+  "local",
+  "test"
+];
+
+function requiredValue(env: EnvMap, key: string) {
   const value = env[key];
-  return typeof value === "string" && value.trim().length > 0;
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function isPlaceholderValue(value: string) {
+  const normalized = value.trim().toLowerCase();
+  const parts = normalized.split(/[^a-z0-9]+/).filter(Boolean);
+
+  return placeholderTokens.some((token) => normalized === token || parts.includes(token));
+}
+
+function isReservedHostname(hostname: string) {
+  const normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+
+  return (
+    normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
+    normalized === "0.0.0.0" ||
+    normalized === "::1" ||
+    normalized.endsWith(".localhost") ||
+    normalized === "example.com" ||
+    normalized.endsWith(".example.com") ||
+    normalized === "example.net" ||
+    normalized.endsWith(".example.net") ||
+    normalized === "example.org" ||
+    normalized.endsWith(".example.org") ||
+    normalized.endsWith(".example") ||
+    normalized.endsWith(".invalid") ||
+    normalized.endsWith(".local") ||
+    normalized.endsWith(".test")
+  );
+}
+
+function blockedEnvCheck(
+  check: (typeof productionEnvChecks)[number],
+  reason: string
+): ReleaseReadinessCheck {
+  return {
+    id: check.id,
+    category: check.category,
+    label: check.label,
+    status: "blocked",
+    detail: `${check.detail} ${reason}`
+  };
+}
+
+function productionEnvCheckResult(
+  env: EnvMap,
+  check: (typeof productionEnvChecks)[number]
+): ReleaseReadinessCheck {
+  const value = requiredValue(env, check.key);
+
+  if (!value) {
+    return blockedEnvCheck(check, `${check.key} is missing.`);
+  }
+
+  if (isPlaceholderValue(value)) {
+    return blockedEnvCheck(check, `${check.key} must be replaced with a production value.`);
+  }
+
+  if (check.valueKind === "url") {
+    let url: URL;
+
+    try {
+      url = new URL(value);
+    } catch {
+      return blockedEnvCheck(check, `${check.key} must be a valid URL.`);
+    }
+
+    const scheme = url.protocol.replace(":", "");
+    if (check.allowedSchemes && !check.allowedSchemes.includes(scheme)) {
+      return blockedEnvCheck(
+        check,
+        `${check.key} must use ${check.allowedSchemes.join(" or ")}.`
+      );
+    }
+
+    if (isReservedHostname(url.hostname)) {
+      return blockedEnvCheck(
+        check,
+        `${check.key} must not point at localhost or reserved placeholder domains.`
+      );
+    }
+  }
+
+  return {
+    id: check.id,
+    category: check.category,
+    label: check.label,
+    status: "pass",
+    detail: check.detail
+  };
 }
 
 function hasConfirmation(value: string | undefined) {
@@ -301,13 +442,17 @@ function aiProviderCheck(env: EnvMap): ReleaseReadinessCheck {
   }
 
   const key = provider === "gemini" ? "GEMINI_API_KEY" : "OPENAI_API_KEY";
+  const value = requiredValue(env, key);
 
   return {
     id: "ai-provider-key",
     category: "environment",
     label: `${provider} API key`,
-    status: hasValue(env, key) ? "pass" : "blocked",
-    detail: `${key} is required for the selected AI provider.`
+    status: value && !isPlaceholderValue(value) ? "pass" : "blocked",
+    detail:
+      value && !isPlaceholderValue(value)
+        ? `${key} is required for the selected AI provider.`
+        : `${key} is required for the selected AI provider. ${key} must be set to a production value.`
   };
 }
 
@@ -350,13 +495,7 @@ export function buildReleaseReadinessReport({
 }): ReleaseReadinessReport {
   const checks: ReleaseReadinessCheck[] = [
     ...gateChecks(gateResults),
-    ...productionEnvChecks.map((check): ReleaseReadinessCheck => ({
-      id: check.id,
-      category: check.category,
-      label: check.label,
-      status: hasValue(env, check.key) ? "pass" : "blocked",
-      detail: check.detail
-    })),
+    ...productionEnvChecks.map((check) => productionEnvCheckResult(env, check)),
     aiProviderCheck(env),
     ...manualSmokeChecks.map((check): ReleaseReadinessCheck => {
       const status = manualChecks[check.id] ?? "manual";

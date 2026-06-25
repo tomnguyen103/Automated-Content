@@ -78,6 +78,41 @@ const productionEnvChecks: Array<{
     detail: "Required for production persistence."
   },
   {
+    id: "langsmith-api-key",
+    category: "environment",
+    key: "LANGSMITH_API_KEY",
+    label: "LangSmith API key",
+    detail: "Required for production agent tracing and release observability."
+  },
+  {
+    id: "langsmith-project",
+    category: "environment",
+    key: "LANGSMITH_PROJECT",
+    label: "LangSmith project",
+    detail: "Required to route production traces into the expected LangSmith project."
+  },
+  {
+    id: "imagekit-public-key",
+    category: "environment",
+    key: "IMAGEKIT_PUBLIC_KEY",
+    label: "ImageKit public key",
+    detail: "Required for production media upload authentication."
+  },
+  {
+    id: "imagekit-private-key",
+    category: "environment",
+    key: "IMAGEKIT_PRIVATE_KEY",
+    label: "ImageKit private key",
+    detail: "Required for production media upload signatures."
+  },
+  {
+    id: "imagekit-url-endpoint",
+    category: "environment",
+    key: "IMAGEKIT_URL_ENDPOINT",
+    label: "ImageKit URL endpoint",
+    detail: "Required to verify production media asset provenance."
+  },
+  {
     id: "provider-token-key",
     category: "provider",
     key: "PROVIDER_TOKEN_ENCRYPTION_KEY",

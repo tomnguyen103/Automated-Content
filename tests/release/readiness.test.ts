@@ -14,6 +14,11 @@ const completeEnv = {
   CLERK_SECRET_KEY: "clerk-secret",
   CLERK_WEBHOOK_SIGNING_SECRET: "clerk-webhook-secret",
   DATABASE_URL: "postgres://example",
+  IMAGEKIT_PRIVATE_KEY: "imagekit-private",
+  IMAGEKIT_PUBLIC_KEY: "imagekit-public",
+  IMAGEKIT_URL_ENDPOINT: "https://ik.imagekit.io/example",
+  LANGSMITH_API_KEY: "langsmith-secret",
+  LANGSMITH_PROJECT: "automated-content-production",
   LINKEDIN_CLIENT_ID: "linkedin-client-id",
   LINKEDIN_CLIENT_SECRET: "linkedin-client-secret",
   LINKEDIN_REDIRECT_URI: "https://app.example.com/api/connections/linkedin/callback",
@@ -62,6 +67,14 @@ describe("release readiness", () => {
         }),
         expect.objectContaining({
           id: "ai-provider-key",
+          status: "blocked"
+        }),
+        expect.objectContaining({
+          id: "imagekit-private-key",
+          status: "blocked"
+        }),
+        expect.objectContaining({
+          id: "langsmith-api-key",
           status: "blocked"
         })
       ])
@@ -180,5 +193,7 @@ describe("release readiness", () => {
     expect(markdown).not.toContain("openai-secret");
     expect(markdown).not.toContain("provider-token-key");
     expect(markdown).not.toContain("n8n-secret");
+    expect(markdown).not.toContain("imagekit-private");
+    expect(markdown).not.toContain("langsmith-secret");
   });
 });

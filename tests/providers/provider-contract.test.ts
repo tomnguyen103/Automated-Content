@@ -96,6 +96,7 @@ describe("provider adapter contract", () => {
       code: "provider_configuration_required"
     });
 
+    expect(xProvider.implementationStatus).toBe("live");
     expect(xProvider.capabilities.comment_reply.supported).toBe(false);
     expect(xProvider.capabilities.comment_reply.reason).toContain("comment-agent phase");
     await expect(
@@ -140,7 +141,7 @@ describe("provider adapter contract", () => {
     });
     expect(metaHealth.blockingReason).toContain("scaffold-only");
     expect(xReplyHealth).toMatchObject({
-      configured: false,
+      configured: true,
       status: "capability_unsupported"
     });
 

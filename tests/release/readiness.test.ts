@@ -22,7 +22,9 @@ const completeEnv = {
   N8N_WEBHOOK_URL: "https://n8n.example.com/webhook",
   OPENAI_API_KEY: "openai-secret",
   PROVIDER_TOKEN_ENCRYPTION_KEY: "provider-token-key",
-  REDIS_URL: "rediss://example"
+  REDIS_URL: "rediss://example",
+  X_CLIENT_ID: "x-client-id",
+  X_REDIRECT_URI: "https://app.example.com/api/connections/x/callback"
 };
 
 const passingGates: ReleaseGateResult[] = requiredReleaseGateCommands.map((command) => ({
@@ -33,7 +35,7 @@ const passingGates: ReleaseGateResult[] = requiredReleaseGateCommands.map((comma
 const passedManualChecks = {
   "billing-redirects": "pass",
   "drizzle-migrations": "pass",
-  "linkedin-live-publish": "pass",
+  "live-provider-publish": "pass",
   "n8n-callback": "pass",
   "product-smoke": "pass",
   "worker-process": "pass"

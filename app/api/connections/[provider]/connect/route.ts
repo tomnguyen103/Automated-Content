@@ -11,11 +11,21 @@ import {
   getLinkedInRedirectUri
 } from "@/lib/providers/linkedin";
 import {
+  buildXAuthorizationUrl,
+  createXCodeChallenge,
+  createXCodeVerifier,
+  getXRedirectUri
+} from "@/lib/providers/x";
+import {
   UsageLimitExceededError
 } from "@/lib/billing/usage";
 import { withProviderConnectionCapacity } from "@/lib/providers/connection-capacity";
+import {
+  providerOauthCodeVerifierCookieName,
+  providerOauthStateCookieName
+} from "@/lib/providers/oauth-cookies";
 import { getProviderAdapter, isProviderKey } from "@/lib/providers/registry";
-import type { ProviderKey, ProviderConnectionResult } from "@/lib/providers/types";
+import type { ProviderConnectionResult } from "@/lib/providers/types";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
 
 export const runtime = "nodejs";
@@ -28,10 +38,6 @@ type ConnectionRouteContext = {
 
 function wantsJson(request: NextRequest) {
   return request.headers.get("accept")?.includes("application/json") ?? false;
-}
-
-function oauthStateCookieName(provider: ProviderKey) {
-  return `provider_oauth_state_${provider}`;
 }
 
 function createOauthState() {
@@ -146,7 +152,7 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
       });
     }
 
-    if (provider !== "linkedin") {
+    if (adapter.implementationStatus === "stub") {
       return jsonError(
         "provider_scaffold_only",
         `${adapter.displayName} is scaffold-only. Configure a live adapter before connecting.`,
@@ -160,10 +166,28 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
       isLocalPreview: workspace.isLocalPreview
     }, async (states) => states);
     const state = createOauthState();
-    const authorizationUrl = buildLinkedInAuthorizationUrl({
-      state,
-      redirectUri: getLinkedInRedirectUri()
-    });
+    const codeVerifier = provider === "x" ? createXCodeVerifier() : null;
+    const authorizationUrl =
+      provider === "linkedin"
+        ? buildLinkedInAuthorizationUrl({
+            state,
+            redirectUri: getLinkedInRedirectUri()
+          })
+        : provider === "x"
+          ? buildXAuthorizationUrl({
+              state,
+              codeChallenge: createXCodeChallenge(codeVerifier as string),
+              redirectUri: getXRedirectUri()
+            })
+          : null;
+
+    if (!authorizationUrl) {
+      return jsonError(
+        "provider_connect_unsupported",
+        `${adapter.displayName} does not support OAuth connections yet.`,
+        409
+      );
+    }
 
     if (wantsJson(request)) {
       const states =
@@ -177,25 +201,43 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
         authorizationUrl: authorizationUrl.toString(),
         provider: states.find((stateItem) => stateItem.key === provider)
       });
-      response.cookies.set(oauthStateCookieName(provider), state, {
+      response.cookies.set(providerOauthStateCookieName(provider), state, {
         httpOnly: true,
         maxAge: 30 * 60,
         path: "/",
         sameSite: "lax",
         secure: process.env.NODE_ENV === "production"
       });
+      if (codeVerifier) {
+        response.cookies.set(providerOauthCodeVerifierCookieName(provider), codeVerifier, {
+          httpOnly: true,
+          maxAge: 30 * 60,
+          path: "/",
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production"
+        });
+      }
 
       return response;
     }
 
     const response = NextResponse.redirect(authorizationUrl);
-    response.cookies.set(oauthStateCookieName(provider), state, {
+    response.cookies.set(providerOauthStateCookieName(provider), state, {
       httpOnly: true,
       maxAge: 30 * 60,
       path: "/",
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production"
     });
+    if (codeVerifier) {
+      response.cookies.set(providerOauthCodeVerifierCookieName(provider), codeVerifier, {
+        httpOnly: true,
+        maxAge: 30 * 60,
+        path: "/",
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production"
+      });
+    }
 
     return response;
   } catch (error) {

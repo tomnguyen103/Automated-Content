@@ -11,15 +11,15 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
 - Source documents consolidated: 30.
 - Existing master plans found: 0.
 - Canonical work items after deduplication: 35.
-- Status counts: 32 done, 2 partial, 0 not started, 1 needs verification.
-- Canonical direction: the product is no longer at foundation/planning stage. Most phase docs and next-feature plans are already implemented in code. Remaining roadmap value is concentrated in production billing activation, provider expansion beyond LinkedIn/mock, and live production smoke verification.
+- Status counts: 33 done, 1 partial, 0 not started, 1 needs verification.
+- Canonical direction: the product is no longer at foundation/planning stage. Most phase docs and next-feature plans are already implemented in code. Remaining roadmap value is concentrated in production billing activation and live production smoke verification.
 
 ## Plan
 
 ### Foundation, Product Shell, And Release Surface
 
 1. [x] Repository foundation, scripts, environment contract, and app configuration.
-   - Evidence: `package.json:6-14` defines dev/build/worker/lint/typecheck/test/e2e scripts; `.env.example:21` and `.env.example:36-50` document database, LinkedIn, Redis, and n8n settings; `lib/env.ts:16-47` validates env shape and `lib/env.ts:94-107` exposes database readiness helpers.
+   - Evidence: `package.json:6-14` defines dev/build/worker/lint/typecheck/test/e2e scripts; `.env.example:21-56` documents database, LinkedIn, X, Redis, and n8n settings; `lib/env.ts:16-53` validates env shape and `lib/env.ts:100-113` exposes database readiness helpers.
    - Sources: `docs/phases/phase-01-foundation.md`, `docs/specs/01-architecture.md`, `docs/specs/02-ui-design-system.md`, `docs/README.md`.
 
 2. [x] Premium dashboard shell, navigation, marketing entry, and route structure.
@@ -86,14 +86,14 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
     - Sources: `docs/next-feature-plans/01-linkedin-provider-productionization.md`, `docs/ai-agent-feature-roadmap-2026.md`.
 
 14. [x] Connections control center with connect, callback, health refresh, disconnect, and structured provider errors.
-    - Evidence: `app/(dashboard)/connections/page.tsx:59-122` renders provider readiness; `app/api/connections/[provider]/connect/route.ts:82-229`, `app/api/connections/[provider]/callback/route.ts:80-190`, `app/api/connections/[provider]/health/route.ts:35-122`, and `app/api/connections/[provider]/disconnect/route.ts:31-82` implement lifecycle routes.
-    - Tests: `tests/api/connections.test.ts:35-186`, `e2e/phase-09.spec.ts:74-85`.
+    - Evidence: `app/(dashboard)/connections/page.tsx:59-122` renders provider readiness; `app/api/connections/[provider]/connect/route.ts:81-274`, `app/api/connections/[provider]/callback/route.ts:78-226`, `app/api/connections/[provider]/health/route.ts:35-122`, and `app/api/connections/[provider]/disconnect/route.ts:31-82` implement lifecycle routes.
+    - Tests: `tests/api/connections.test.ts:35-337`, `e2e/phase-09.spec.ts:74-85`.
     - Sources: `docs/next-feature-plans/02-connections-control-center.md`.
 
-15. [~] Provider expansion beyond mock and LinkedIn.
-    - Current status: provider abstractions and scaffold errors are complete; LinkedIn is live; other channels remain placeholders/stubs unless separately implemented.
-    - Evidence: `lib/providers/skeleton.ts:37-87` returns explicit not-configured or unsupported behavior; `lib/providers/platform-compatibility.ts:22-26` centralizes compatibility; LinkedIn is the only live non-mock provider evidenced by `lib/providers/linkedin.ts:877-883`.
-    - Remaining work: choose and productionize the next provider adapters, including OAuth, publish, media, metrics/comment capability boundaries, tests, health UI, and docs.
+15. [x] Provider expansion beyond mock and LinkedIn.
+    - Evidence: `lib/providers/x.ts:28-44` declares X text-publishing capabilities and explicit media/reply/metrics boundaries; `lib/providers/x.ts:93-149` implements OAuth 2.0 PKCE URL construction; `lib/providers/x.ts:512-594` connects and stores X user tokens without exposing raw secrets; `lib/providers/x.ts:661-731` publishes text posts through X; `lib/providers/oauth-cookies.ts:1-8` centralizes OAuth cookie names; `app/api/connections/[provider]/connect/route.ts:169-240` stores the X PKCE verifier in HTTP-only cookies; `app/api/connections/[provider]/callback/route.ts:101-180` completes X callbacks.
+    - Tests: `tests/providers/x-provider.test.ts:45-355`, `tests/api/connections.test.ts:232-337`, `tests/providers/provider-contract.test.ts:71-92`.
+    - Note: Meta, Slack, and Discord remain explicit future stubs, but Master Plan v1's next live-provider expansion beyond LinkedIn is now satisfied by X.
     - Sources: `docs/phases/phase-06-provider-publishing.md`, `docs/ai-agent-feature-master-update-plan.md`, `docs/ai-agent-feature-roadmap-2026.md`.
 
 16. [x] Durable scheduling, BullMQ enqueue, social worker, and publish attempt tracking.
@@ -161,8 +161,8 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
     - Sources: `docs/archive/n8n/workflows.md`, `docs/archive/ai-agent-feature-roadmap-2026.md`.
 
 28. [x] Observability and release gates.
-    - Evidence: `package.json:6-15` defines local gates and the release readiness script; `lib/release/readiness.ts:1-298` builds release readiness reports across local gates, production env, billing, provider, n8n, worker, and smoke checks; `scripts/release-readiness.ts:1-14` emits the operator report; existing runtime evidence remains in `lib/agents/orchestration/repository.ts:535-584`, `lib/n8n/event-log.ts:79-163`, and `lib/scheduler/worker-health.ts:121-388`.
-    - Tests: `tests/release/readiness.test.ts:42-124`, plus required local gates before PR.
+    - Evidence: `package.json:6-15` defines local gates and the release readiness script; `lib/release/readiness.ts:1-312` builds release readiness reports across local gates, production env, billing, provider, n8n, worker, and smoke checks; `scripts/release-readiness.ts:1-14` emits the operator report; existing runtime evidence remains in `lib/agents/orchestration/repository.ts:535-584`, `lib/n8n/event-log.ts:79-163`, and `lib/scheduler/worker-health.ts:121-388`.
+    - Tests: `tests/release/readiness.test.ts:42-126`, plus required local gates before PR.
     - Note: live production smoke remains separate in item 35 because it requires real production services and credentials.
     - Sources: `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/specs/07-release-checklist.md`, `docs/archive/worker-runtime-readiness.md`.
 
@@ -200,8 +200,8 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
 
 35. [?] Production release readiness and live smoke verification.
     - Current status: release readiness tooling now exists, but external production services still require live verification by an operator with credentials.
-    - Evidence available: `lib/release/readiness.ts:1-298`, `scripts/release-readiness.ts:1-14`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/n8n/client.ts:30-139`.
-    - Verification needed: run `npm run release:readiness` with production env, confirm all manual smoke checks, and verify database, Redis, Clerk, ImageKit, LinkedIn, n8n, billing provider URLs, worker process, callback URLs, and production product flows.
+    - Evidence available: `lib/release/readiness.ts:1-312`, `scripts/release-readiness.ts:1-14`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:512-731`, `lib/n8n/client.ts:30-139`.
+    - Verification needed: run `npm run release:readiness` with production env, confirm all manual smoke checks, and verify database, Redis, Clerk, ImageKit, LinkedIn, X, n8n, billing provider URLs, worker process, callback URLs, and production product flows.
     - Sources: `docs/archive/specs/07-release-checklist.md`, `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/worker-runtime-readiness.md`.
 
 ## Conflicts & Decisions Needed

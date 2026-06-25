@@ -42,6 +42,12 @@ const envSchema = z.object({
   LINKEDIN_API_VERSION: optionalString,
   LINKEDIN_API_BASE_URL: optionalUrl,
   LINKEDIN_OAUTH_BASE_URL: optionalUrl,
+  X_API_BASE_URL: optionalUrl,
+  X_CLIENT_ID: optionalString,
+  X_CLIENT_SECRET: optionalString,
+  X_OAUTH_AUTHORIZE_URL: optionalUrl,
+  X_REDIRECT_URI: optionalUrl,
+  X_SCOPES: optionalString,
   REDIS_URL: optionalUrl,
   N8N_WEBHOOK_URL: optionalUrl,
   N8N_WEBHOOK_SECRET: optionalString

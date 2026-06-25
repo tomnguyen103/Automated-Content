@@ -139,6 +139,20 @@ const productionEnvChecks: Array<{
     key: "LINKEDIN_REDIRECT_URI",
     label: "LinkedIn redirect URI",
     detail: "Required for OAuth callback validation."
+  },
+  {
+    id: "x-client-id",
+    category: "provider",
+    key: "X_CLIENT_ID",
+    label: "X client id",
+    detail: "Required for X OAuth 2.0 PKCE."
+  },
+  {
+    id: "x-redirect-uri",
+    category: "provider",
+    key: "X_REDIRECT_URI",
+    label: "X redirect URI",
+    detail: "Required for X OAuth callback validation."
   }
 ];
 
@@ -162,10 +176,10 @@ const manualSmokeChecks: Array<Omit<ReleaseReadinessCheck, "status">> = [
     detail: "Open live checkout and portal actions with a real authenticated account."
   },
   {
-    id: "linkedin-live-publish",
+    id: "live-provider-publish",
     category: "provider",
-    label: "LinkedIn live publish smoke",
-    detail: "Connect LinkedIn, schedule a safe test post, and confirm provider response/audit rows."
+    label: "LinkedIn and X live publish smoke",
+    detail: "Connect LinkedIn and X, schedule safe test posts, and confirm provider response/audit rows."
   },
   {
     id: "n8n-callback",

@@ -11,8 +11,16 @@ import {
   getLinkedInRedirectUri,
   linkedinProvider
 } from "@/lib/providers/linkedin";
-import { isProviderKey } from "@/lib/providers/registry";
+import {
+  providerOauthCodeVerifierCookieName,
+  providerOauthStateCookieName
+} from "@/lib/providers/oauth-cookies";
+import { getProviderAdapter, isProviderKey } from "@/lib/providers/registry";
 import type { ProviderKey, ProviderConnectionResult } from "@/lib/providers/types";
+import {
+  getXRedirectUri,
+  xProvider
+} from "@/lib/providers/x";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
 
 export const runtime = "nodejs";
@@ -25,10 +33,6 @@ type ConnectionRouteContext = {
 
 function wantsJson(request: NextRequest) {
   return request.headers.get("accept")?.includes("application/json") ?? false;
-}
-
-function oauthStateCookieName(provider: ProviderKey) {
-  return `provider_oauth_state_${provider}`;
 }
 
 function jsonError(code: string, message: string, status: number) {
@@ -66,7 +70,8 @@ function redirectToConnections(request: NextRequest, params: Record<string, stri
 }
 
 function clearOauthStateCookie(response: NextResponse, provider: ProviderKey) {
-  response.cookies.delete(oauthStateCookieName(provider));
+  response.cookies.delete(providerOauthStateCookieName(provider));
+  response.cookies.delete(providerOauthCodeVerifierCookieName(provider));
   return response;
 }
 
@@ -83,15 +88,22 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
     return jsonError("provider_not_found", "Provider was not found.", 404);
   }
 
-  if (rawProvider !== "linkedin") {
-    return jsonError("provider_callback_unsupported", "This provider does not support OAuth callbacks.", 409);
+  const adapter = getProviderAdapter(rawProvider);
+
+  if (rawProvider !== "linkedin" && rawProvider !== "x") {
+    return jsonError(
+      "provider_callback_unsupported",
+      `${adapter.displayName} does not support OAuth callbacks.`,
+      409
+    );
   }
 
   const code = request.nextUrl.searchParams.get("code");
   const returnedState = request.nextUrl.searchParams.get("state");
   const providerError = request.nextUrl.searchParams.get("error");
   const providerErrorDescription = request.nextUrl.searchParams.get("error_description");
-  const expectedState = request.cookies.get(oauthStateCookieName(rawProvider))?.value;
+  const expectedState = request.cookies.get(providerOauthStateCookieName(rawProvider))?.value;
+  const codeVerifier = request.cookies.get(providerOauthCodeVerifierCookieName(rawProvider))?.value;
 
   if (providerError) {
     const message = providerErrorDescription ?? providerError;
@@ -108,7 +120,7 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
 
   if (!code) {
     const response = wantsJson(request)
-      ? jsonError("authorization_code_missing", "LinkedIn authorization code is missing.", 400)
+      ? jsonError("authorization_code_missing", `${adapter.displayName} authorization code is missing.`, 400)
       : redirectToConnections(request, {
           error: "authorization_code_missing",
           provider: rawProvider
@@ -119,7 +131,7 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
 
   if (!returnedState || !expectedState || returnedState !== expectedState) {
     const response = wantsJson(request)
-      ? jsonError("oauth_state_mismatch", "LinkedIn OAuth state did not match.", 401)
+      ? jsonError("oauth_state_mismatch", `${adapter.displayName} OAuth state did not match.`, 401)
       : redirectToConnections(request, {
           error: "oauth_state_mismatch",
           provider: rawProvider
@@ -128,13 +140,34 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
     return clearOauthStateCookie(response, rawProvider);
   }
 
+  if (rawProvider === "x" && !codeVerifier) {
+    const response = wantsJson(request)
+      ? jsonError("oauth_code_verifier_missing", "X OAuth code verifier is missing. Restart the connection flow.", 401)
+      : redirectToConnections(request, {
+          error: "oauth_code_verifier_missing",
+          provider: rawProvider
+        });
+
+    return clearOauthStateCookie(response, rawProvider);
+  }
+
   try {
     const workspace = await resolvePersonalWorkspaceForUser(user);
-    const result = await linkedinProvider.connect({
-      workspaceId: workspace.id,
-      authorizationCode: code,
-      redirectUri: getLinkedInRedirectUri()
-    });
+    const result =
+      rawProvider === "linkedin"
+        ? await linkedinProvider.connect({
+            workspaceId: workspace.id,
+            authorizationCode: code,
+            redirectUri: getLinkedInRedirectUri()
+          })
+        : await xProvider.connect({
+            workspaceId: workspace.id,
+            authorizationCode: code,
+            redirectUri: getXRedirectUri(),
+            metadata: {
+              codeVerifier
+            }
+          });
     await withProviderConnectionCapacity({
       provider: rawProvider,
       workspaceId: workspace.id,
@@ -153,15 +186,13 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
         },
         { status: 201 }
       );
-      response.cookies.delete(oauthStateCookieName(rawProvider));
-      return response;
+      return clearOauthStateCookie(response, rawProvider);
     }
 
     const response = redirectToConnections(request, {
       connected: rawProvider
     });
-    response.cookies.delete(oauthStateCookieName(rawProvider));
-    return response;
+    return clearOauthStateCookie(response, rawProvider);
   } catch (error) {
     if (error instanceof UsageLimitExceededError) {
       const response = wantsJson(request)

@@ -17,6 +17,7 @@ import type {
   ProviderConnectionResult,
   ProviderKey
 } from "@/lib/providers/types";
+import { isXConfigured } from "@/lib/providers/x";
 
 type ConnectionRow = Pick<
   ConnectedAccount,
@@ -134,7 +135,9 @@ function sanitizeMetadata(metadata: Record<string, unknown> | null | undefined) 
     "locale",
     "mode",
     "picture",
+    "profileImageUrl",
     "tokenExpiresAt",
+    "username",
     "missingScopes"
   ];
   const safe: ProviderConnectionAccountView["metadata"] = {};
@@ -275,6 +278,10 @@ function isProviderConfigured(provider: ProviderKey) {
     return isLinkedInConfigured();
   }
 
+  if (provider === "x") {
+    return isXConfigured();
+  }
+
   return true;
 }
 
@@ -289,6 +296,8 @@ function getActionState({
   const configurationReason =
     provider.key === "linkedin" && !isLinkedInConfigured()
       ? "Set LinkedIn OAuth credentials before connecting."
+      : provider.key === "x" && !isXConfigured()
+        ? "Set X OAuth client credentials before connecting."
       : undefined;
   const canConnect = provider.implementationStatus !== "stub" && !configurationReason;
 
@@ -368,6 +377,13 @@ export async function getProviderConnectionStates({
               status: "configuration_required",
               blockingReason: "Set LinkedIn OAuth credentials before connecting a live account."
             }
+          : provider.key === "x" && !isXConfigured() && !account
+            ? {
+                ...health,
+                configured: false,
+                status: "configuration_required",
+                blockingReason: "Set X OAuth client credentials before connecting a live account."
+              }
           : health,
       capabilities,
       actions: getActionState({ account, provider })

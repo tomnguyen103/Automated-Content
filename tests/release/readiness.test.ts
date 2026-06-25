@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildReleaseReadinessReport,
   formatReleaseReadinessMarkdown,
+  getReleaseReadinessInputsFromCli,
   requiredReleaseGateCommands,
   type ReleaseGateResult
 } from "@/lib/release/readiness";
@@ -79,6 +80,42 @@ describe("release readiness", () => {
     expect(report.blockerCount).toBe(0);
     expect(report.manualCount).toBe(0);
     expect(report.passedCount).toBe(report.checks.length);
+  });
+
+  it("accepts explicit CLI confirmations for completed gates and manual smoke checks", () => {
+    const cliInputs = getReleaseReadinessInputsFromCli({
+      args: ["--confirm-gates-passed", "--confirm-manual-smoke-passed"],
+      env: {}
+    });
+    const report = buildReleaseReadinessReport({
+      env: completeEnv,
+      ...cliInputs,
+      now: new Date("2026-06-24T12:00:00.000Z")
+    });
+
+    expect(report.ready).toBe(true);
+    expect(report.blockerCount).toBe(0);
+    expect(report.manualCount).toBe(0);
+    expect(report.passedCount).toBe(report.checks.length);
+  });
+
+  it("accepts env confirmations for completed gates and manual smoke checks", () => {
+    const cliInputs = getReleaseReadinessInputsFromCli({
+      args: [],
+      env: {
+        RELEASE_CONFIRM_GATES_PASSED: "1",
+        RELEASE_CONFIRM_MANUAL_SMOKE_PASSED: " true "
+      }
+    });
+    const report = buildReleaseReadinessReport({
+      env: completeEnv,
+      ...cliInputs,
+      now: new Date("2026-06-24T12:00:00.000Z")
+    });
+
+    expect(report.ready).toBe(true);
+    expect(report.blockerCount).toBe(0);
+    expect(report.manualCount).toBe(0);
   });
 
   it("blocks unsupported AI provider values instead of falling back to OpenAI", () => {

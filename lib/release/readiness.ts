@@ -195,9 +195,58 @@ const manualSmokeChecks: Array<Omit<ReleaseReadinessCheck, "status">> = [
   }
 ];
 
+export const releaseReadinessCliFlags = {
+  confirmGatesPassed: "--confirm-gates-passed",
+  confirmManualSmokePassed: "--confirm-manual-smoke-passed"
+} as const;
+
+export const releaseReadinessEnvFlags = {
+  confirmGatesPassed: "RELEASE_CONFIRM_GATES_PASSED",
+  confirmManualSmokePassed: "RELEASE_CONFIRM_MANUAL_SMOKE_PASSED"
+} as const;
+
 function hasValue(env: EnvMap, key: string) {
   const value = env[key];
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function hasConfirmation(value: string | undefined) {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "1" || normalized === "true";
+}
+
+export function buildPassingReleaseGateResults(): ReleaseGateResult[] {
+  return requiredReleaseGateCommands.map((command) => ({
+    command,
+    status: "pass"
+  }));
+}
+
+export function buildPassingManualSmokeChecks(): Partial<Record<string, ReleaseCheckStatus>> {
+  return Object.fromEntries(manualSmokeChecks.map((check) => [check.id, "pass"]));
+}
+
+export function getReleaseReadinessInputsFromCli({
+  args,
+  env
+}: {
+  args: string[];
+  env: Record<string, string | undefined>;
+}) {
+  const flags = new Set(args);
+
+  return {
+    gateResults:
+      flags.has(releaseReadinessCliFlags.confirmGatesPassed) ||
+      hasConfirmation(env[releaseReadinessEnvFlags.confirmGatesPassed])
+        ? buildPassingReleaseGateResults()
+        : [],
+    manualChecks:
+      flags.has(releaseReadinessCliFlags.confirmManualSmokePassed) ||
+      hasConfirmation(env[releaseReadinessEnvFlags.confirmManualSmokePassed])
+        ? buildPassingManualSmokeChecks()
+        : {}
+  };
 }
 
 function aiProviderCheck(env: EnvMap): ReleaseReadinessCheck {

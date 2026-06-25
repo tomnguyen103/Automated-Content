@@ -195,9 +195,61 @@ const manualSmokeChecks: Array<Omit<ReleaseReadinessCheck, "status">> = [
   }
 ];
 
+export const releaseReadinessCliFlags = {
+  confirmGatesPassed: "--confirm-gates-passed",
+  confirmManualSmokePassed: "--confirm-manual-smoke-passed"
+} as const;
+
+export const releaseReadinessEnvFlags = {
+  confirmGatesPassed: "RELEASE_CONFIRM_GATES_PASSED",
+  confirmManualSmokePassed: "RELEASE_CONFIRM_MANUAL_SMOKE_PASSED"
+} as const;
+
 function hasValue(env: EnvMap, key: string) {
   const value = env[key];
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function hasConfirmation(value: string | undefined) {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "1" || normalized === "true";
+}
+
+export function buildPassingReleaseGateResults(): ReleaseGateResult[] {
+  return requiredReleaseGateCommands.map((command) => ({
+    command,
+    status: "pass",
+    detail: "Gate marked passed via operator confirmation."
+  }));
+}
+
+export function buildPassingManualSmokeChecks(): Partial<Record<string, ReleaseCheckStatus>> {
+  return Object.fromEntries(manualSmokeChecks.map((check) => [check.id, "pass"]));
+}
+
+export function getReleaseReadinessInputsFromCli({
+  args,
+  env
+}: {
+  args: string[];
+  env: Record<string, string | undefined>;
+}) {
+  const flags = new Set(args);
+  const confirmedGates =
+    flags.has(releaseReadinessCliFlags.confirmGatesPassed) ||
+    hasConfirmation(env[releaseReadinessEnvFlags.confirmGatesPassed]);
+  const confirmedManualSmoke =
+    flags.has(releaseReadinessCliFlags.confirmManualSmokePassed) ||
+    hasConfirmation(env[releaseReadinessEnvFlags.confirmManualSmokePassed]);
+
+  return {
+    gateResults: confirmedGates ? buildPassingReleaseGateResults() : [],
+    manualChecks: confirmedManualSmoke ? buildPassingManualSmokeChecks() : {},
+    confirmationMessages: [
+      confirmedGates ? "Local gates marked passed via operator confirmation." : null,
+      confirmedManualSmoke ? "Manual smoke checks marked passed via operator confirmation." : null
+    ].filter((message): message is string => Boolean(message))
+  };
 }
 
 function aiProviderCheck(env: EnvMap): ReleaseReadinessCheck {
@@ -271,10 +323,18 @@ export function buildReleaseReadinessReport({
       detail: check.detail
     })),
     aiProviderCheck(env),
-    ...manualSmokeChecks.map((check): ReleaseReadinessCheck => ({
-      ...check,
-      status: manualChecks[check.id] ?? "manual"
-    }))
+    ...manualSmokeChecks.map((check): ReleaseReadinessCheck => {
+      const status = manualChecks[check.id] ?? "manual";
+
+      return {
+        ...check,
+        status,
+        detail:
+          status === "pass" && manualChecks[check.id] === "pass"
+            ? `${check.detail} Operator confirmed this manual smoke check passed.`
+            : check.detail
+      };
+    })
   ];
   const passedCount = checks.filter((check) => check.status === "pass").length;
   const warningCount = checks.filter((check) => check.status === "warn").length;

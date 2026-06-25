@@ -158,9 +158,9 @@ _Last updated: 2026-06-24 (run #2)._
   - Sources: `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/archive/ai-agent-feature-goal-prompts-2026.md`, `docs/MASTER_PLAN.md`.
 
 - [?] **Production release readiness and live smoke verification** - Release readiness tooling exists, but external services still need credentialed live verification.
-  - Evidence: `lib/release/readiness.ts:1-312`, `scripts/release-readiness.ts:1-14`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:512-731`, `lib/n8n/client.ts:30-139`.
+  - Evidence: `lib/release/readiness.ts:1-343`, `scripts/release-readiness.ts:1-21`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:512-731`, `lib/n8n/client.ts:30-139`.
   - Sources: `docs/archive/specs/07-release-checklist.md`, `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/worker-runtime-readiness.md`, `docs/MASTER_PLAN.md`.
-  - Notes: Needs `npm run release:readiness` with production env plus live service smoke against database, Redis, Clerk, ImageKit, LinkedIn, X, n8n, billing, worker, and callback URLs.
+  - Notes: Needs `npm run release:readiness -- --confirm-gates-passed --confirm-manual-smoke-passed` with production env after local gates and live service smoke pass against database, Redis, Clerk, ImageKit, LinkedIn, X, n8n, billing, worker, callback URLs, and the manual product smoke flow across Dashboard, Create, Calendar, Media, Auto Replies, Billing, and Analytics.
 
 ## Conflicts & decisions needed
 - Provider status: `docs/archive/next-feature-plans/README.md` describes live provider adapters as scaffold-level except mock, while current code has live LinkedIn and X providers. Recommend treating LinkedIn as the canonical first live provider and X as the completed v1 expansion provider; Meta, Slack, and Discord remain future expansion work.

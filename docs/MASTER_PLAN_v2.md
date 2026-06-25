@@ -128,7 +128,7 @@ _Last updated: 2026-06-24 (run #2)._
   - Sources: `docs/archive/n8n/workflows.md`, `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/MASTER_PLAN.md`.
 
 - [x] **Observability and release gates** - Local gates, runtime logs, worker readiness, and a release readiness report are implemented.
-  - Evidence: `package.json:6-15`, `lib/release/readiness.ts:1-407`, `scripts/release-readiness.ts:1-26`, `tests/release/readiness.test.ts:42-203`, `lib/agents/orchestration/repository.ts:535-584`, `lib/n8n/event-log.ts:79-163`, `lib/scheduler/worker-health.ts:121-388`.
+  - Evidence: `package.json:6-15`, `lib/release/readiness.ts:1-407`, `scripts/release-readiness.ts:1-26`, `tests/release/readiness.test.ts:42-199`, `lib/agents/orchestration/repository.ts:535-584`, `lib/n8n/event-log.ts:79-163`, `lib/scheduler/worker-health.ts:121-388`.
   - Note: live production smoke remains separate in the production readiness item.
   - Sources: `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/specs/07-release-checklist.md`, `docs/archive/worker-runtime-readiness.md`, `docs/MASTER_PLAN.md`.
 

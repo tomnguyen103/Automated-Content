@@ -163,7 +163,7 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
 
 28. [x] Observability and release gates.
     - Evidence: `package.json:6-15` defines local gates and the release readiness script; `lib/release/readiness.ts:1-407` builds release readiness reports across local gates, production env, billing, provider, n8n, worker, and smoke checks; `scripts/release-readiness.ts:1-26` emits the operator report; existing runtime evidence remains in `lib/agents/orchestration/repository.ts:535-584`, `lib/n8n/event-log.ts:79-163`, and `lib/scheduler/worker-health.ts:121-388`.
-    - Tests: `tests/release/readiness.test.ts:42-204`, plus required local gates before PR.
+    - Tests: `tests/release/readiness.test.ts:42-199`, plus required local gates before PR.
     - Note: live production smoke remains separate in item 35 because it requires real production services and credentials.
     - Sources: `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/specs/07-release-checklist.md`, `docs/archive/worker-runtime-readiness.md`.
 

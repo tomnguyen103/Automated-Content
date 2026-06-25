@@ -7,6 +7,7 @@ import {
   setMediaLibraryAssets,
   useMediaLibraryAssets
 } from "@/components/media/media-library-store";
+import { MediaWorkflowStudio } from "@/components/media/media-workflow-studio";
 import { TransformPanel } from "@/components/media/transform-panel";
 import { UploadDropzone } from "@/components/media/upload-dropzone";
 import { imageKitUploadAuthSchema } from "@/lib/media/upload-auth";
@@ -140,6 +141,7 @@ export function MediaLibrary() {
       <div id="uploads" className="scroll-mt-20">
         <UploadDropzone uploading={uploading} error={error} onUpload={uploadFiles} />
       </div>
+      <MediaWorkflowStudio />
       <div className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
         <div id="library" className="scroll-mt-20">
           <MediaGrid assets={assets} selectedId={displayedSelectedId} onSelect={(asset) => setSelectedId(asset.id)} />

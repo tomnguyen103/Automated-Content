@@ -258,15 +258,6 @@ const productionEnvChecks: Array<{
     valueKind: "string"
   },
   {
-    id: "redis-url",
-    category: "environment",
-    key: "REDIS_URL",
-    label: "Redis URL",
-    detail: "Required for BullMQ publishing and agent mission workers.",
-    valueKind: "url",
-    allowedSchemes: ["redis", "rediss"]
-  },
-  {
     id: "n8n-webhook-url",
     category: "automation",
     key: "N8N_WEBHOOK_URL",
@@ -355,8 +346,9 @@ const manualSmokeChecks: Array<Omit<ReleaseReadinessCheck, "status">> = [
   {
     id: "worker-process",
     category: "smoke",
-    label: "Worker process is running",
-    detail: "Confirm npm run worker uses the same DATABASE_URL and REDIS_URL as the web app."
+    label: "Background jobs smoke",
+    detail:
+      "Confirm Trigger.dev runs social.publish-scheduled-post and agents.run-mission, or confirm the transition BullMQ worker uses the same DATABASE_URL and REDIS_URL as the web app."
   },
   {
     id: "billing-redirects",
@@ -627,6 +619,72 @@ function sentryCheck(env: EnvMap): ReleaseReadinessCheck {
   };
 }
 
+function backgroundJobBackendCheck(env: EnvMap): ReleaseReadinessCheck {
+  const hasTriggerBackend =
+    Boolean(requiredValue(env, "TRIGGER_PROJECT_REF")) &&
+    Boolean(requiredValue(env, "TRIGGER_SECRET_KEY")) &&
+    Boolean(requiredValue(env, "TRIGGER_VERSION"));
+  const detail =
+    "Required so scheduled publishing and agent missions run outside Vercel request handlers.";
+
+  if (hasTriggerBackend) {
+    return {
+      id: "background-job-backend",
+      category: "automation",
+      label: "Background job backend",
+      status: "pass",
+      detail: `${detail} Trigger.dev is configured as the production backend; REDIS_URL is transition-only.`
+    };
+  }
+
+  const redisValue = requiredValue(env, "REDIS_URL");
+
+  if (!redisValue) {
+    return {
+      id: "redis-url",
+      category: "environment",
+      label: "Redis URL",
+      status: "blocked",
+      detail: `${detail} REDIS_URL is missing and Trigger.dev is not fully configured.`
+    };
+  }
+
+  try {
+    const url = new URL(redisValue);
+    const scheme = url.protocol.replace(":", "");
+
+    if (scheme !== "redis" && scheme !== "rediss") {
+      throw new Error("unsupported scheme");
+    }
+
+    if (isReservedHostname(url.hostname)) {
+      return {
+        id: "redis-url",
+        category: "environment",
+        label: "Redis URL",
+        status: "blocked",
+        detail: `${detail} REDIS_URL must not point at localhost or reserved placeholder domains.`
+      };
+    }
+  } catch {
+    return {
+      id: "redis-url",
+      category: "environment",
+      label: "Redis URL",
+      status: "blocked",
+      detail: `${detail} REDIS_URL must be a valid redis or rediss URL.`
+    };
+  }
+
+  return {
+    id: "redis-url",
+    category: "environment",
+    label: "Redis URL",
+    status: "pass",
+    detail: `${detail} BullMQ transition backend is configured.`
+  };
+}
+
 export function buildPassingReleaseGateResults(): ReleaseGateResult[] {
   return requiredReleaseGateCommands.map((command) => ({
     command,
@@ -735,6 +793,7 @@ export function buildReleaseReadinessReport({
     signedUploadLimitCheck(env),
     aiProviderCheck(env),
     sentryCheck(env),
+    backgroundJobBackendCheck(env),
     ...manualSmokeChecks.map((check): ReleaseReadinessCheck => {
       const status = manualChecks[check.id] ?? "manual";
 

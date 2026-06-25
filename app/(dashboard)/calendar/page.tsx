@@ -109,7 +109,7 @@ export default async function CalendarPage() {
             icon={<CheckCircle2 size={18} aria-hidden="true" />}
             label="Queued"
             value={String(queueStats.queued)}
-            detail="BullMQ accepted"
+            detail="Backend accepted"
             tone="success"
           />
           <StatusCard

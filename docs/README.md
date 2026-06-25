@@ -7,6 +7,7 @@ This folder is the public implementation planning system for the app. The privat
 Current canonical docs:
 - `MASTER_PLAN.md` - the single consolidated implementation plan and current completion status.
 - `MASTER_PLAN_V2_DEPLOYMENT_READY.md` - recommended deployment-ready v2 expansion plan for video/AI media workflows.
+- `master-plan-v2-implementation-audit.md` - implementation evidence and external blockers for the deployment-ready v2 roadmap.
 - `ai-agent-feature-roadmap.md` - current post-master feature roadmap and source-backed product analysis.
 - `research/` - repo intelligence and external trend research used to shape the roadmap.
 

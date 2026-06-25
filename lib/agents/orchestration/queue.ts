@@ -2,6 +2,11 @@ import "server-only";
 
 import { Queue, type JobsOptions } from "bullmq";
 import { env } from "@/lib/env";
+import {
+  dispatchTriggerTask,
+  isTriggerRuntimeConfigured,
+  type TriggerDispatchClient
+} from "@/lib/jobs/trigger";
 import { createRedisConnectionOptions } from "@/lib/scheduler/enqueue";
 
 export const AGENT_MISSION_QUEUE_NAME = "agent-missions";
@@ -13,6 +18,7 @@ export type RunAgentMissionJobData = {
 };
 
 export type EnqueueAgentMissionResult = {
+  backend?: "bullmq" | "trigger.dev";
   queueJobId: string;
   status: "queued";
 };
@@ -39,15 +45,47 @@ export function getAgentMissionQueue() {
 }
 
 export async function enqueueAgentMission({
+  client,
+  envMap = env,
   missionId,
-  queue = getAgentMissionQueue(),
+  queue,
   workspaceId
 }: {
   workspaceId: string;
   missionId: string;
   queue?: AgentMissionQueueLike;
+  client?: TriggerDispatchClient;
+  envMap?: Pick<typeof env, "TRIGGER_SECRET_KEY">;
 }): Promise<EnqueueAgentMissionResult> {
-  const job = await queue.add(
+  if (isTriggerRuntimeConfigured(envMap)) {
+    const handle = await dispatchTriggerTask({
+      client,
+      concurrencyKey: workspaceId,
+      envMap,
+      idempotencyKey: missionId,
+      maxAttempts: 2,
+      metadata: {
+        missionId,
+        workspaceId
+      },
+      payload: {
+        missionId,
+        workspaceId
+      },
+      queue: AGENT_MISSION_QUEUE_NAME,
+      tags: [`workspace:${workspaceId}`, "job:agent-mission"],
+      taskId: "agents.run-mission"
+    });
+
+    return {
+      backend: "trigger.dev",
+      queueJobId: handle.runId,
+      status: "queued"
+    };
+  }
+
+  const missionQueue = queue ?? getAgentMissionQueue();
+  const job = await missionQueue.add(
     RUN_AGENT_MISSION_JOB_NAME,
     {
       missionId,
@@ -72,6 +110,7 @@ export async function enqueueAgentMission({
   );
 
   return {
+    backend: "bullmq",
     queueJobId: String(job.id ?? missionId),
     status: "queued"
   };

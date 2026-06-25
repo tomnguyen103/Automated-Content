@@ -189,7 +189,7 @@ export default async function DashboardPage() {
             <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] p-5">
               <div>
                 <h2 className="text-base font-semibold">Scheduled queue</h2>
-                <p className="mt-1 text-sm text-[var(--color-text-muted)]">Next posts waiting for worker execution.</p>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">Next posts waiting for background execution.</p>
               </div>
               {getQueueBadge({
                 isLocalPreview: Boolean(workspace?.isLocalPreview),
@@ -214,7 +214,7 @@ export default async function DashboardPage() {
                 ))
               ) : (
                 <div className="p-5 text-sm text-[var(--color-text-muted)]">
-                  No scheduled posts are waiting for worker execution.
+                  No scheduled posts are waiting for background execution.
                 </div>
               )}
             </div>

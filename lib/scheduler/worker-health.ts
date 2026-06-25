@@ -5,6 +5,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { agentMissions, publishAttempts } from "@/db/schema";
 import { env, isDatabaseConfigured } from "@/lib/env";
+import { isTriggerRuntimeConfigured } from "@/lib/jobs/trigger";
 import {
   AGENT_MISSION_QUEUE_NAME,
   RUN_AGENT_MISSION_JOB_NAME,
@@ -328,6 +329,23 @@ function createPreviewQueueHealth(kind: WorkerQueueKind, queueName: string, jobN
   };
 }
 
+function createTriggerQueueHealth(kind: WorkerQueueKind, queueName: string, jobName: string): WorkerQueueHealth {
+  return {
+    kind,
+    queueName,
+    jobName,
+    configured: true,
+    redisReachable: false,
+    workerExpected: false,
+    workerRunning: null,
+    status: "healthy",
+    counts: emptyCounts,
+    lastSuccessfulJobAt: null,
+    lastFailedJobAt: null,
+    recommendedAction: "Trigger.dev handles this job path. A Redis worker is not required for production."
+  };
+}
+
 export async function getWorkerRuntimeReadiness({
   isLocalPreview = false,
   workspaceId
@@ -349,6 +367,24 @@ export async function getWorkerRuntimeReadiness({
       summary: {
         configured: 0,
         healthy: 0,
+        blocked: 0,
+        retryableFailures: 0
+      }
+    };
+  }
+
+  if (isTriggerRuntimeConfigured()) {
+    const queues = [
+      createTriggerQueueHealth("publishing", PUBLISH_QUEUE_NAME, PUBLISH_POST_JOB_NAME),
+      createTriggerQueueHealth("agent_missions", AGENT_MISSION_QUEUE_NAME, RUN_AGENT_MISSION_JOB_NAME)
+    ];
+
+    return {
+      generatedAt,
+      queues,
+      summary: {
+        configured: queues.length,
+        healthy: queues.length,
         blocked: 0,
         retryableFailures: 0
       }

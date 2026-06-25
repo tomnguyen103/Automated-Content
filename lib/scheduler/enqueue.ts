@@ -3,6 +3,11 @@ import "server-only";
 import { Queue, type JobsOptions } from "bullmq";
 import type { ScheduledJob } from "@/db/schema";
 import { env } from "@/lib/env";
+import {
+  dispatchTriggerTask,
+  isTriggerRuntimeConfigured,
+  type TriggerDispatchClient
+} from "@/lib/jobs/trigger";
 import type { ProviderKey } from "@/lib/providers/types";
 
 export const PUBLISH_QUEUE_NAME = "social-publishing";
@@ -15,6 +20,7 @@ export type PublishPostJobData = {
 };
 
 export type EnqueueScheduledPostResult = {
+  backend?: "bullmq" | "trigger.dev";
   queueJobId: string;
   delayMs: number;
 };
@@ -75,16 +81,53 @@ export function getPublishQueue() {
 }
 
 export async function enqueueScheduledPost({
+  client,
+  envMap = env,
   scheduledJob,
   now = new Date(),
-  queue = getPublishQueue()
+  queue
 }: {
   scheduledJob: ScheduledJob;
   now?: Date;
   queue?: BullMqQueueLike;
+  client?: TriggerDispatchClient;
+  envMap?: Pick<typeof env, "TRIGGER_SECRET_KEY">;
 }): Promise<EnqueueScheduledPostResult> {
   const delayMs = Math.max(0, scheduledJob.scheduledFor.getTime() - now.getTime());
-  const job = await queue.add(
+
+  if (isTriggerRuntimeConfigured(envMap)) {
+    const handle = await dispatchTriggerTask({
+      client,
+      concurrencyKey: scheduledJob.workspaceId,
+      delay: delayMs > 0 ? scheduledJob.scheduledFor : undefined,
+      envMap,
+      idempotencyKey: scheduledJob.id,
+      maxAttempts: 3,
+      metadata: {
+        provider: scheduledJob.provider,
+        scheduledFor: scheduledJob.scheduledFor.toISOString(),
+        scheduledJobId: scheduledJob.id,
+        workspaceId: scheduledJob.workspaceId
+      },
+      payload: {
+        provider: scheduledJob.provider,
+        scheduledJobId: scheduledJob.id,
+        workspaceId: scheduledJob.workspaceId
+      },
+      queue: PUBLISH_QUEUE_NAME,
+      tags: [`workspace:${scheduledJob.workspaceId}`, "job:social-publish"],
+      taskId: "social.publish-scheduled-post"
+    });
+
+    return {
+      backend: "trigger.dev",
+      queueJobId: handle.runId,
+      delayMs
+    };
+  }
+
+  const publishQueue = queue ?? getPublishQueue();
+  const job = await publishQueue.add(
     PUBLISH_POST_JOB_NAME,
     {
       scheduledJobId: scheduledJob.id,
@@ -108,6 +151,7 @@ export async function enqueueScheduledPost({
   );
 
   return {
+    backend: "bullmq",
     queueJobId: String(job.id ?? scheduledJob.id),
     delayMs
   };

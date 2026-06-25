@@ -16,7 +16,13 @@ export type TriggerDispatchClient = {
     payload: Record<string, unknown>,
     options: {
       concurrencyKey?: string;
+      delay?: Date | string;
       idempotencyKey?: string;
+      maxAttempts?: number;
+      metadata?: Record<string, unknown>;
+      queue?: string;
+      tags?: string[];
+      ttl?: number | string;
     }
   ) => Promise<{
     id: string;
@@ -32,6 +38,63 @@ async function getTriggerTasksClient(): Promise<TriggerDispatchClient> {
   const { tasks } = await import("@trigger.dev/sdk");
 
   return tasks as TriggerDispatchClient;
+}
+
+export async function dispatchTriggerTask({
+  client,
+  concurrencyKey,
+  delay,
+  envMap = env,
+  idempotencyKey,
+  localRunId,
+  maxAttempts,
+  metadata,
+  payload,
+  queue,
+  tags,
+  taskId,
+  ttl
+}: {
+  taskId: string;
+  payload: Record<string, unknown>;
+  client?: TriggerDispatchClient;
+  concurrencyKey?: string;
+  delay?: Date | string;
+  envMap?: Pick<typeof env, "TRIGGER_SECRET_KEY">;
+  idempotencyKey?: string;
+  localRunId?: string;
+  maxAttempts?: number;
+  metadata?: Record<string, unknown>;
+  queue?: string;
+  tags?: string[];
+  ttl?: number | string;
+}): Promise<TriggerDispatchHandle> {
+  if (!isTriggerRuntimeConfigured(envMap)) {
+    return {
+      mode: "local",
+      runId: localRunId ?? `local-trigger-${taskId}-${idempotencyKey ?? "run"}`,
+      taskId
+    };
+  }
+
+  const triggerClient = client ?? (await getTriggerTasksClient());
+  const handle = await triggerClient.trigger(taskId, payload, {
+    concurrencyKey,
+    delay,
+    idempotencyKey,
+    maxAttempts,
+    metadata,
+    queue,
+    tags,
+    ttl
+  });
+
+  return {
+    mode: "trigger.dev",
+    publicAccessToken: handle.publicAccessToken,
+    runId: handle.id,
+    taskId
+  };
 }
 
 export async function dispatchMediaGenerationJob({
@@ -52,24 +115,13 @@ export async function dispatchMediaGenerationJob({
     workspaceId: job.workspaceId
   };
 
-  if (!isTriggerRuntimeConfigured(envMap)) {
-    return {
-      mode: "local",
-      runId: `local-trigger-${job.id}`,
-      taskId
-    };
-  }
-
-  const triggerClient = client ?? (await getTriggerTasksClient());
-  const handle = await triggerClient.trigger(taskId, payload, {
+  return dispatchTriggerTask({
+    client,
     concurrencyKey: job.workspaceId,
-    idempotencyKey: job.idempotencyKey ?? job.id
-  });
-
-  return {
-    mode: "trigger.dev",
-    publicAccessToken: handle.publicAccessToken,
-    runId: handle.id,
+    envMap,
+    idempotencyKey: job.idempotencyKey ?? job.id,
+    localRunId: `local-trigger-${job.id}`,
+    payload,
     taskId
-  };
+  });
 }

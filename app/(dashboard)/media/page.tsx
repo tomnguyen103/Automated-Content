@@ -9,6 +9,7 @@ export default function MediaPage() {
         items={[
           { label: "Library", href: "#library", active: true },
           { label: "Uploads", href: "#uploads" },
+          { label: "AI Studio", href: "#studio" },
           { label: "AI Transforms", href: "#transforms" },
           { label: "Platform Crops", href: "#crops" }
         ]}

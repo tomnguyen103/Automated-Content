@@ -15,11 +15,11 @@ import {
   getRemainingUsage,
   getUsageLimit,
   hasFeature,
-  normalizeBillingPlan,
   type BillingPlan,
   type FeatureKey,
   type UsageLimitKey
 } from "@/lib/billing/entitlements";
+import { resolveEntitledBillingPlan } from "@/lib/billing/subscription-state";
 import { isDatabaseConfigured } from "@/lib/env";
 
 export type UsageEventType = (typeof usageEventTypeEnum.enumValues)[number];
@@ -188,12 +188,15 @@ export async function withUsageLimitLock<T>({
 
 export async function getWorkspaceBillingPlan(workspaceId: string): Promise<BillingPlan> {
   const [subscription] = await getDb()
-    .select({ plan: subscriptions.plan })
+    .select({
+      plan: subscriptions.plan,
+      status: subscriptions.status
+    })
     .from(subscriptions)
     .where(eq(subscriptions.workspaceId, workspaceId))
     .limit(1);
 
-  return normalizeBillingPlan(subscription?.plan);
+  return resolveEntitledBillingPlan(subscription ?? { plan: null, status: null });
 }
 
 export async function ensureFeatureAllowed({
@@ -312,11 +315,14 @@ export async function consumeUsageForLimitInTransaction({
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${workspaceId}), hashtext(${key}))`);
 
   const [subscription] = await tx
-    .select({ plan: subscriptions.plan })
+    .select({
+      plan: subscriptions.plan,
+      status: subscriptions.status
+    })
     .from(subscriptions)
     .where(eq(subscriptions.workspaceId, workspaceId))
     .limit(1);
-  const activePlan = normalizeBillingPlan(subscription?.plan);
+  const activePlan = resolveEntitledBillingPlan(subscription ?? { plan: null, status: null });
   const conditions = [eq(usageLedger.workspaceId, workspaceId), eq(usageLedger.type, type)];
   const since = getUsageWindowStart(key, now);
 
@@ -385,11 +391,14 @@ export async function getWorkspaceBillingState({
 }) {
   const db = getDb();
   const [subscription] = await db
-    .select({ plan: subscriptions.plan })
+    .select({
+      plan: subscriptions.plan,
+      status: subscriptions.status
+    })
     .from(subscriptions)
     .where(eq(subscriptions.workspaceId, workspaceId))
     .limit(1);
-  const activePlan = normalizeBillingPlan(subscription?.plan);
+  const activePlan = resolveEntitledBillingPlan(subscription ?? { plan: null, status: null });
   const used: Partial<Record<UsageLimitKey, number>> = {};
 
   await Promise.all(

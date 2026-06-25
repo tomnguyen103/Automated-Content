@@ -42,9 +42,10 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
    - Sources: `docs/phases/phase-02-auth-db-billing.md`, `docs/next-feature-plans/04-billing-activation-path.md`.
 
 6. [~] Billing checkout and customer portal production activation.
-   - Current status: routes and UI are present, but activation is environment/provider dependent and local preview is intentionally disabled.
-   - Evidence: `lib/billing/actions.ts:5-60` builds checkout/portal actions; `lib/billing/action-route.ts:23-30` gates billing action redirects; `app/api/billing/checkout/route.ts:6-7` and `app/api/billing/portal/route.ts:6-7` expose routes; `app/(dashboard)/billing/page.tsx:35-43` defines local-preview disabled messaging.
-   - Remaining work: verify production billing provider URLs, real checkout/portal redirects, webhook coverage, and plan changes in a live environment.
+   - Current status: routes, UI, subscription webhook syncing, and active-status entitlement reads are present, but activation is environment/provider dependent and local preview is intentionally disabled.
+   - Evidence: `lib/billing/actions.ts:5-68` builds checkout/portal actions; `lib/billing/action-route.ts:23-70` gates billing action redirects; `app/api/billing/checkout/route.ts:6-7` and `app/api/billing/portal/route.ts:6-7` expose routes; `app/(dashboard)/billing/page.tsx:35-43` defines local-preview disabled messaging; `lib/billing/subscription-state.ts:1-51`, `lib/billing/clerk-sync.ts:48-219`, and `lib/billing/usage.ts:189-401` ensure only active billing status grants paid entitlements.
+   - Tests: `tests/api/billing-actions.test.ts:71-146`, `tests/billing/subscription-state.test.ts:8-24`, `tests/billing/clerk-sync.test.ts:22-151`.
+   - Remaining work: verify production billing provider URLs/secrets and real checkout/portal redirects in a live environment.
    - Sources: `docs/next-feature-plans/04-billing-activation-path.md`, `docs/specs/07-release-checklist.md`.
 
 ### Content Generation And Approval Workflow

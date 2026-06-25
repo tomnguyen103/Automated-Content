@@ -10,6 +10,11 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { subscriptions, users } from "@/db/schema";
 import type { BillingPlan } from "@/lib/billing/entitlements";
+import {
+  isBillingStatusEntitled,
+  normalizeBillingSubscriptionStatus,
+  type BillingSubscriptionStatus
+} from "@/lib/billing/subscription-state";
 import { ensurePersonalWorkspace } from "@/lib/workspaces/personal-workspace";
 
 type ClerkUserData = Extract<UserWebhookEvent, { type: "user.created" | "user.updated" }>["data"];
@@ -40,7 +45,14 @@ function getUserName(
   return [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || email || "Workspace owner";
 }
 
-function inferPlan(item: BillingItem | null | undefined): BillingPlan {
+function inferPlan(
+  item: BillingItem | null | undefined,
+  status: BillingSubscriptionStatus
+): BillingPlan {
+  if (!isBillingStatusEntitled(status) || !isBillingStatusEntitled(item?.status)) {
+    return "free";
+  }
+
   const plan = item?.plan;
   const planName = `${plan?.slug ?? ""} ${plan?.name ?? ""}`.toLowerCase();
 
@@ -110,7 +122,8 @@ export async function syncClerkSubscription(subscription: BillingSubscriptionDat
     imageUrl: subscription.payer.image_url ?? null
   });
   const item = pickBillingItem(subscription.items);
-  const plan = inferPlan(item);
+  const status = normalizeBillingSubscriptionStatus(subscription.status);
+  const plan = inferPlan(item, status);
   const now = new Date();
 
   await getDb()
@@ -123,7 +136,7 @@ export async function syncClerkSubscription(subscription: BillingSubscriptionDat
       plan,
       planName: item?.plan?.name ?? (plan === "premium" ? "Premium" : "Free"),
       planSlug: item?.plan?.slug ?? plan,
-      status: subscription.status,
+      status,
       currentPeriodStart: toDate(item?.period_start),
       currentPeriodEnd: toDate(item?.period_end),
       updatedAt: now
@@ -137,7 +150,7 @@ export async function syncClerkSubscription(subscription: BillingSubscriptionDat
         plan,
         planName: item?.plan?.name ?? (plan === "premium" ? "Premium" : "Free"),
         planSlug: item?.plan?.slug ?? plan,
-        status: subscription.status,
+        status,
         currentPeriodStart: toDate(item?.period_start),
         currentPeriodEnd: toDate(item?.period_end),
         updatedAt: now
@@ -169,7 +182,8 @@ export async function syncClerkSubscriptionItem(item: BillingSubscriptionItemDat
     email: payer.email,
     imageUrl: payer.image_url ?? null
   });
-  const plan = inferPlan(item);
+  const status = normalizeBillingSubscriptionStatus(item.status);
+  const plan = inferPlan(item, status);
   const clerkPayerId = payer.user_id ?? payer.organization_id ?? null;
   const now = new Date();
 
@@ -182,7 +196,7 @@ export async function syncClerkSubscriptionItem(item: BillingSubscriptionItemDat
       plan,
       planName: item.plan?.name ?? (plan === "premium" ? "Premium" : "Free"),
       planSlug: item.plan?.slug ?? plan,
-      status: item.status === "past_due" ? "past_due" : item.status,
+      status,
       currentPeriodStart: toDate(item.period_start),
       currentPeriodEnd: toDate(item.period_end),
       updatedAt: now
@@ -195,7 +209,7 @@ export async function syncClerkSubscriptionItem(item: BillingSubscriptionItemDat
         plan,
         planName: item.plan?.name ?? (plan === "premium" ? "Premium" : "Free"),
         planSlug: item.plan?.slug ?? plan,
-        status: item.status === "past_due" ? "past_due" : item.status,
+        status,
         currentPeriodStart: toDate(item.period_start),
         currentPeriodEnd: toDate(item.period_end),
         updatedAt: now

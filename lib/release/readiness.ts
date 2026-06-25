@@ -218,7 +218,8 @@ function hasConfirmation(value: string | undefined) {
 export function buildPassingReleaseGateResults(): ReleaseGateResult[] {
   return requiredReleaseGateCommands.map((command) => ({
     command,
-    status: "pass"
+    status: "pass",
+    detail: "Gate marked passed via operator confirmation."
   }));
 }
 
@@ -234,18 +235,20 @@ export function getReleaseReadinessInputsFromCli({
   env: Record<string, string | undefined>;
 }) {
   const flags = new Set(args);
+  const confirmedGates =
+    flags.has(releaseReadinessCliFlags.confirmGatesPassed) ||
+    hasConfirmation(env[releaseReadinessEnvFlags.confirmGatesPassed]);
+  const confirmedManualSmoke =
+    flags.has(releaseReadinessCliFlags.confirmManualSmokePassed) ||
+    hasConfirmation(env[releaseReadinessEnvFlags.confirmManualSmokePassed]);
 
   return {
-    gateResults:
-      flags.has(releaseReadinessCliFlags.confirmGatesPassed) ||
-      hasConfirmation(env[releaseReadinessEnvFlags.confirmGatesPassed])
-        ? buildPassingReleaseGateResults()
-        : [],
-    manualChecks:
-      flags.has(releaseReadinessCliFlags.confirmManualSmokePassed) ||
-      hasConfirmation(env[releaseReadinessEnvFlags.confirmManualSmokePassed])
-        ? buildPassingManualSmokeChecks()
-        : {}
+    gateResults: confirmedGates ? buildPassingReleaseGateResults() : [],
+    manualChecks: confirmedManualSmoke ? buildPassingManualSmokeChecks() : {},
+    confirmationMessages: [
+      confirmedGates ? "Local gates marked passed via operator confirmation." : null,
+      confirmedManualSmoke ? "Manual smoke checks marked passed via operator confirmation." : null
+    ].filter((message): message is string => Boolean(message))
   };
 }
 
@@ -320,10 +323,18 @@ export function buildReleaseReadinessReport({
       detail: check.detail
     })),
     aiProviderCheck(env),
-    ...manualSmokeChecks.map((check): ReleaseReadinessCheck => ({
-      ...check,
-      status: manualChecks[check.id] ?? "manual"
-    }))
+    ...manualSmokeChecks.map((check): ReleaseReadinessCheck => {
+      const status = manualChecks[check.id] ?? "manual";
+
+      return {
+        ...check,
+        status,
+        detail:
+          status === "pass" && manualChecks[check.id] === "pass"
+            ? `${check.detail} Operator confirmed this manual smoke check passed.`
+            : check.detail
+      };
+    })
   ];
   const passedCount = checks.filter((check) => check.status === "pass").length;
   const warningCount = checks.filter((check) => check.status === "warn").length;

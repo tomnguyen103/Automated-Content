@@ -201,8 +201,8 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
 
 35. [?] Production release readiness and live smoke verification.
     - Current status: release readiness tooling now exists, but external production services still require live verification by an operator with credentials.
-    - Evidence available: `lib/release/readiness.ts:1-333`, `scripts/release-readiness.ts:1-18`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:512-731`, `lib/n8n/client.ts:30-139`.
-    - Verification needed: run `npm run release:readiness -- --confirm-gates-passed --confirm-manual-smoke-passed` with production env after the local gates and manual smoke checks have actually passed; verify database, Redis, Clerk, ImageKit, LinkedIn, X, n8n, billing provider URLs, worker process, callback URLs, and production product flows.
+    - Evidence available: `lib/release/readiness.ts:1-343`, `scripts/release-readiness.ts:1-21`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:512-731`, `lib/n8n/client.ts:30-139`.
+    - Verification needed: run `npm run release:readiness -- --confirm-gates-passed --confirm-manual-smoke-passed` with production env after the local gates and manual smoke checks have actually passed; verify database, Redis, Clerk, ImageKit, LinkedIn, X, n8n, billing provider URLs, worker process, callback URLs, and product smoke across Dashboard, Create, Calendar, Media, Auto Replies, Billing, and Analytics.
     - Sources: `docs/archive/specs/07-release-checklist.md`, `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/worker-runtime-readiness.md`.
 
 ## Conflicts & Decisions Needed

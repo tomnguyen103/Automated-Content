@@ -9,6 +9,10 @@ const cliInputs = getReleaseReadinessInputsFromCli({
   env: process.env
 });
 
+for (const message of cliInputs.confirmationMessages) {
+  console.warn(`[release-readiness] ${message}`);
+}
+
 const report = buildReleaseReadinessReport({
   env: process.env,
   gateResults: cliInputs.gateResults,

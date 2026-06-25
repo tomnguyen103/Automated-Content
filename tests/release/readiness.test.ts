@@ -93,6 +93,23 @@ describe("release readiness", () => {
       now: new Date("2026-06-24T12:00:00.000Z")
     });
 
+    expect(cliInputs.confirmationMessages).toEqual([
+      "Local gates marked passed via operator confirmation.",
+      "Manual smoke checks marked passed via operator confirmation."
+    ]);
+    expect(report.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "npm run lint",
+          detail: "Gate marked passed via operator confirmation."
+        }),
+        expect.objectContaining({
+          label: "Production product smoke",
+          detail:
+            "Open Dashboard, Create, Calendar, Media, Auto Replies, Billing, and Analytics without console errors. Operator confirmed this manual smoke check passed."
+        })
+      ])
+    );
     expect(report.ready).toBe(true);
     expect(report.blockerCount).toBe(0);
     expect(report.manualCount).toBe(0);
@@ -113,6 +130,10 @@ describe("release readiness", () => {
       now: new Date("2026-06-24T12:00:00.000Z")
     });
 
+    expect(cliInputs.confirmationMessages).toEqual([
+      "Local gates marked passed via operator confirmation.",
+      "Manual smoke checks marked passed via operator confirmation."
+    ]);
     expect(report.ready).toBe(true);
     expect(report.blockerCount).toBe(0);
     expect(report.manualCount).toBe(0);

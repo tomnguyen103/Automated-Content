@@ -44,6 +44,8 @@ describe("connection API routes", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.resetModules();
   });
@@ -93,6 +95,31 @@ describe("connection API routes", () => {
       provider: "mock",
       status: "connected"
     });
+  });
+
+  it("marks X as configuration-required without a redirect URI", async () => {
+    vi.stubEnv("X_CLIENT_ID", "x-client-id");
+    vi.stubEnv("X_REDIRECT_URI", "");
+    const { readHealth } = await loadConnectionRoutes();
+    const response = await readHealth(
+      new NextRequest("http://localhost:3000/api/connections/x/health", {
+        headers: {
+          Accept: "application/json"
+        }
+      }),
+      {
+        params: Promise.resolve({ provider: "x" })
+      }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.health).toMatchObject({
+      provider: "x",
+      configured: false,
+      status: "configuration_required"
+    });
+    expect(payload.account).toBeNull();
   });
 
   it("refreshes provider health with a POST mutation", async () => {
@@ -227,8 +254,13 @@ describe("connection API routes", () => {
     const setCookieHeaders =
       (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() ??
       [response.headers.get("set-cookie") ?? ""];
+    const verifierCookie =
+      setCookieHeaders.find((header) => header.startsWith("provider_oauth_code_verifier_x=")) ?? "";
 
-    expect(setCookieHeaders.join("\n")).toContain("provider_oauth_code_verifier_x=");
+    expect(verifierCookie).toContain("provider_oauth_code_verifier_x=");
+    expect(verifierCookie).toContain("HttpOnly");
+    expect(verifierCookie).toContain("SameSite=lax");
+    expect(verifierCookie).toContain("Max-Age=1800");
   });
 
   it("completes X OAuth callbacks and persists a safe connection payload", async () => {
@@ -290,7 +322,10 @@ describe("connection API routes", () => {
       displayName: "@ada",
       status: "connected"
     });
-    expect(JSON.stringify(payload)).not.toContain("x-access-token");
+    const serializedPayload = JSON.stringify(payload);
+    expect(serializedPayload).not.toContain("x-access-token");
+    expect(serializedPayload).not.toContain("x-refresh-token");
+    expect(serializedPayload).not.toContain("tokenRef");
     const setCookieHeaders =
       (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() ??
       [response.headers.get("set-cookie") ?? ""];

@@ -11,6 +11,10 @@ import {
   getLinkedInRedirectUri,
   linkedinProvider
 } from "@/lib/providers/linkedin";
+import {
+  providerOauthCodeVerifierCookieName,
+  providerOauthStateCookieName
+} from "@/lib/providers/oauth-cookies";
 import { getProviderAdapter, isProviderKey } from "@/lib/providers/registry";
 import type { ProviderKey, ProviderConnectionResult } from "@/lib/providers/types";
 import {
@@ -29,14 +33,6 @@ type ConnectionRouteContext = {
 
 function wantsJson(request: NextRequest) {
   return request.headers.get("accept")?.includes("application/json") ?? false;
-}
-
-function oauthStateCookieName(provider: ProviderKey) {
-  return `provider_oauth_state_${provider}`;
-}
-
-function oauthCodeVerifierCookieName(provider: ProviderKey) {
-  return `provider_oauth_code_verifier_${provider}`;
 }
 
 function jsonError(code: string, message: string, status: number) {
@@ -74,8 +70,8 @@ function redirectToConnections(request: NextRequest, params: Record<string, stri
 }
 
 function clearOauthStateCookie(response: NextResponse, provider: ProviderKey) {
-  response.cookies.delete(oauthStateCookieName(provider));
-  response.cookies.delete(oauthCodeVerifierCookieName(provider));
+  response.cookies.delete(providerOauthStateCookieName(provider));
+  response.cookies.delete(providerOauthCodeVerifierCookieName(provider));
   return response;
 }
 
@@ -106,8 +102,8 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
   const returnedState = request.nextUrl.searchParams.get("state");
   const providerError = request.nextUrl.searchParams.get("error");
   const providerErrorDescription = request.nextUrl.searchParams.get("error_description");
-  const expectedState = request.cookies.get(oauthStateCookieName(rawProvider))?.value;
-  const codeVerifier = request.cookies.get(oauthCodeVerifierCookieName(rawProvider))?.value;
+  const expectedState = request.cookies.get(providerOauthStateCookieName(rawProvider))?.value;
+  const codeVerifier = request.cookies.get(providerOauthCodeVerifierCookieName(rawProvider))?.value;
 
   if (providerError) {
     const message = providerErrorDescription ?? providerError;

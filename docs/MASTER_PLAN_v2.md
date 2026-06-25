@@ -69,11 +69,11 @@ _Last updated: 2026-06-24 (run #2)._
   - Sources: `docs/archive/next-feature-plans/01-linkedin-provider-productionization.md`, `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/MASTER_PLAN.md`.
 
 - [x] **Connections control center with lifecycle routes and provider health** — Connect, callback, health refresh, disconnect, and structured provider errors are implemented.
-  - Evidence: `app/(dashboard)/connections/page.tsx:59-122`, `app/api/connections/[provider]/connect/route.ts:82-278`, `app/api/connections/[provider]/callback/route.ts:80-232`, `app/api/connections/[provider]/health/route.ts:35-122`, `app/api/connections/[provider]/disconnect/route.ts:31-82`, `tests/api/connections.test.ts:35-302`.
+  - Evidence: `app/(dashboard)/connections/page.tsx:59-122`, `app/api/connections/[provider]/connect/route.ts:81-274`, `app/api/connections/[provider]/callback/route.ts:78-226`, `app/api/connections/[provider]/health/route.ts:35-122`, `app/api/connections/[provider]/disconnect/route.ts:31-82`, `tests/api/connections.test.ts:35-337`.
   - Sources: `docs/archive/next-feature-plans/02-connections-control-center.md`, `docs/MASTER_PLAN.md`.
 
 - [x] **Provider expansion beyond mock and LinkedIn** - X is now the second live non-mock provider, with OAuth 2.0 PKCE, token refresh, profile lookup, text-post publishing, explicit capability boundaries, route support, and tests.
-  - Evidence: `lib/providers/x.ts:28-42`, `lib/providers/x.ts:94-144`, `lib/providers/x.ts:469-566`, `lib/providers/x.ts:626-690`, `app/api/connections/[provider]/connect/route.ts:173-239`, `app/api/connections/[provider]/callback/route.ts:97-174`, `tests/providers/x-provider.test.ts:45-304`, `tests/api/connections.test.ts:205-302`.
+  - Evidence: `lib/providers/x.ts:28-44`, `lib/providers/x.ts:93-149`, `lib/providers/x.ts:512-594`, `lib/providers/x.ts:661-731`, `lib/providers/oauth-cookies.ts:1-8`, `app/api/connections/[provider]/connect/route.ts:169-240`, `app/api/connections/[provider]/callback/route.ts:101-180`, `tests/providers/x-provider.test.ts:45-355`, `tests/api/connections.test.ts:232-337`.
   - Notes: Meta, Slack, and Discord remain future stubs.
   - Sources: `docs/archive/phases/phase-06-provider-publishing.md`, `docs/archive/specs/06-provider-integrations.md`, `docs/archive/ai-agent-feature-master-update-plan.md`, `docs/MASTER_PLAN.md`.
 
@@ -158,7 +158,7 @@ _Last updated: 2026-06-24 (run #2)._
   - Sources: `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/archive/ai-agent-feature-goal-prompts-2026.md`, `docs/MASTER_PLAN.md`.
 
 - [?] **Production release readiness and live smoke verification** - Release readiness tooling exists, but external services still need credentialed live verification.
-  - Evidence: `lib/release/readiness.ts:1-312`, `scripts/release-readiness.ts:1-14`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:469-690`, `lib/n8n/client.ts:30-139`.
+  - Evidence: `lib/release/readiness.ts:1-312`, `scripts/release-readiness.ts:1-14`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:512-731`, `lib/n8n/client.ts:30-139`.
   - Sources: `docs/archive/specs/07-release-checklist.md`, `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/worker-runtime-readiness.md`, `docs/MASTER_PLAN.md`.
   - Notes: Needs `npm run release:readiness` with production env plus live service smoke against database, Redis, Clerk, ImageKit, LinkedIn, X, n8n, billing, worker, and callback URLs.
 

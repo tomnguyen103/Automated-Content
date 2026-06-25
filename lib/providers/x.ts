@@ -95,7 +95,7 @@ export function getXRedirectUri() {
 }
 
 export function isXConfigured() {
-  return Boolean(env.X_CLIENT_ID);
+  return Boolean(env.X_CLIENT_ID && env.X_REDIRECT_URI);
 }
 
 function getXConfig(): XConfig {
@@ -103,12 +103,16 @@ function getXConfig(): XConfig {
     throw new ProviderConfigurationError("x", "X OAuth client id is not configured. Set X_CLIENT_ID.");
   }
 
+  if (!env.X_REDIRECT_URI) {
+    throw new ProviderConfigurationError("x", "X OAuth redirect URI is not configured. Set X_REDIRECT_URI.");
+  }
+
   return {
     apiBaseUrl: env.X_API_BASE_URL ?? "https://api.x.com",
     authorizationUrl: env.X_OAUTH_AUTHORIZE_URL ?? "https://x.com/i/oauth2/authorize",
     clientId: env.X_CLIENT_ID,
     clientSecret: env.X_CLIENT_SECRET,
-    redirectUri: getXRedirectUri(),
+    redirectUri: env.X_REDIRECT_URI,
     scopes: splitScopes(env.X_SCOPES)
   };
 }
@@ -377,11 +381,12 @@ async function refreshXToken(tokens: ProviderTokenSet) {
     });
   }
 
-  const refreshed = toTokenSet(payload, tokens.scopes ?? [...defaultXScopes]);
+  const refreshed = toTokenSet(payload, tokens.scopes ?? []);
 
   return {
     ...refreshed,
-    refreshToken: refreshed.refreshToken ?? tokens.refreshToken
+    refreshToken: refreshed.refreshToken ?? tokens.refreshToken,
+    raw: tokens.raw
   };
 }
 
@@ -426,6 +431,36 @@ function formatPostText(content: ProviderPublishContent) {
     .join("\n\n");
 }
 
+function providerAccountIdFromTokens(tokens: ProviderTokenSet) {
+  const profile = tokens.raw?.profile;
+
+  if (profile && typeof profile === "object") {
+    const id = (profile as Record<string, unknown>).id;
+
+    return typeof id === "string" && id.length > 0 ? id : undefined;
+  }
+
+  return undefined;
+}
+
+function requireXProviderAccountId(
+  context: { providerAccountId?: string | null },
+  tokens: ProviderTokenSet
+) {
+  const providerAccountId = context.providerAccountId ?? providerAccountIdFromTokens(tokens);
+
+  if (!providerAccountId) {
+    throw new ProviderError({
+      code: "provider_account_missing",
+      message: "X provider account id is required before refreshing stored tokens.",
+      provider: "x",
+      retryable: false
+    });
+  }
+
+  return providerAccountId;
+}
+
 async function getFreshTokens(context: ProviderPublishInput) {
   if (!context.tokenRef) {
     throw new ProviderError({
@@ -451,12 +486,13 @@ async function getFreshTokens(context: ProviderPublishInput) {
   }
 
   if (tokens.expiresAt && tokens.expiresAt.getTime() - Date.now() <= refreshSkewMs) {
+    const providerAccountId = requireXProviderAccountId(context, tokens);
     const refreshed = await refreshXToken(tokens);
     await updateProviderTokens({
       tokenRef: context.tokenRef,
       workspaceId: context.workspaceId,
       provider: "x",
-      providerAccountId: context.providerAccountId ?? "x-account",
+      providerAccountId,
       tokens: refreshed
     });
 
@@ -519,7 +555,7 @@ export const xProvider: ProviderAdapter = {
       });
     }
 
-    const scopes = input.scopes ?? tokens.scopes ?? splitScopes(undefined);
+    const scopes = input.scopes ?? tokens.scopes ?? [];
     const capabilities = capabilitiesForScopes(scopes);
     const tokenResult = await storeProviderTokens({
       workspaceId: input.workspaceId,
@@ -581,12 +617,13 @@ export const xProvider: ProviderAdapter = {
       });
     }
 
+    const providerAccountId = requireXProviderAccountId(context, tokens);
     const refreshed = await refreshXToken(tokens);
     const tokenResult = await updateProviderTokens({
       tokenRef: context.tokenRef,
       workspaceId: context.workspaceId,
       provider: "x",
-      providerAccountId: context.providerAccountId ?? "x-account",
+      providerAccountId,
       tokens: refreshed
     });
     const scopes = refreshed.scopes ?? tokens.scopes ?? [];
@@ -594,7 +631,7 @@ export const xProvider: ProviderAdapter = {
 
     return {
       provider: "x",
-      providerAccountId: context.providerAccountId ?? "x-account",
+      providerAccountId,
       displayName: "X account",
       status: hasRequiredConnectionScopes(scopes) ? "connected" : "requires_configuration",
       tokenRef: tokenResult.tokenRef,

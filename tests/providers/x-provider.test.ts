@@ -37,6 +37,7 @@ describe("X provider", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.resetModules();
   });
@@ -150,6 +151,29 @@ describe("X provider", () => {
     expect(result.metadata?.missingScopes).toEqual(["tweet.write"]);
   });
 
+  it("does not infer publish scopes for pre-supplied tokens", async () => {
+    const xProvider = await loadXProvider();
+    const result = await xProvider.connect({
+      workspaceId,
+      providerAccountId: "user_123",
+      tokens: {
+        accessToken: "x-access-token"
+      },
+      metadata: {
+        profile: {
+          id: "user_123",
+          name: "Ada Lovelace",
+          username: "ada"
+        }
+      }
+    });
+
+    expect(result.status).toBe("requires_configuration");
+    expect(result.scopes).toEqual([]);
+    expect(result.capabilities.scheduled_publish.supported).toBe(false);
+    expect(result.metadata?.missingScopes).toEqual(["tweet.read", "tweet.write", "users.read"]);
+  });
+
   it("refreshes expired tokens before publishing a text post", async () => {
     const fetchMock = vi
       .fn()
@@ -227,6 +251,33 @@ describe("X provider", () => {
         })
       })
     );
+  });
+
+  it("does not refresh stored tokens under a synthetic account id", async () => {
+    const [{ storeProviderTokens }, xProvider] = await Promise.all([
+      import("@/lib/providers/token-vault"),
+      loadXProvider()
+    ]);
+    const tokenResult = await storeProviderTokens({
+      workspaceId,
+      provider: "x",
+      providerAccountId: "user_123",
+      tokens: {
+        accessToken: "expired-x-access-token",
+        refreshToken: "refresh-token",
+        expiresAt: new Date(Date.now() - 60_000),
+        scopes: ["tweet.read", "tweet.write", "users.read"]
+      }
+    });
+
+    await expect(
+      xProvider.refreshToken({
+        workspaceId,
+        tokenRef: tokenResult.tokenRef
+      })
+    ).rejects.toMatchObject({
+      code: "provider_account_missing"
+    });
   });
 
   it("keeps media, replies, metrics, and too-long text blocked explicitly", async () => {

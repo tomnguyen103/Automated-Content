@@ -20,8 +20,12 @@ import {
   UsageLimitExceededError
 } from "@/lib/billing/usage";
 import { withProviderConnectionCapacity } from "@/lib/providers/connection-capacity";
+import {
+  providerOauthCodeVerifierCookieName,
+  providerOauthStateCookieName
+} from "@/lib/providers/oauth-cookies";
 import { getProviderAdapter, isProviderKey } from "@/lib/providers/registry";
-import type { ProviderKey, ProviderConnectionResult } from "@/lib/providers/types";
+import type { ProviderConnectionResult } from "@/lib/providers/types";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
 
 export const runtime = "nodejs";
@@ -34,14 +38,6 @@ type ConnectionRouteContext = {
 
 function wantsJson(request: NextRequest) {
   return request.headers.get("accept")?.includes("application/json") ?? false;
-}
-
-function oauthStateCookieName(provider: ProviderKey) {
-  return `provider_oauth_state_${provider}`;
-}
-
-function oauthCodeVerifierCookieName(provider: ProviderKey) {
-  return `provider_oauth_code_verifier_${provider}`;
 }
 
 function createOauthState() {
@@ -205,7 +201,7 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
         authorizationUrl: authorizationUrl.toString(),
         provider: states.find((stateItem) => stateItem.key === provider)
       });
-      response.cookies.set(oauthStateCookieName(provider), state, {
+      response.cookies.set(providerOauthStateCookieName(provider), state, {
         httpOnly: true,
         maxAge: 30 * 60,
         path: "/",
@@ -213,7 +209,7 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
         secure: process.env.NODE_ENV === "production"
       });
       if (codeVerifier) {
-        response.cookies.set(oauthCodeVerifierCookieName(provider), codeVerifier, {
+        response.cookies.set(providerOauthCodeVerifierCookieName(provider), codeVerifier, {
           httpOnly: true,
           maxAge: 30 * 60,
           path: "/",
@@ -226,7 +222,7 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
     }
 
     const response = NextResponse.redirect(authorizationUrl);
-    response.cookies.set(oauthStateCookieName(provider), state, {
+    response.cookies.set(providerOauthStateCookieName(provider), state, {
       httpOnly: true,
       maxAge: 30 * 60,
       path: "/",
@@ -234,7 +230,7 @@ export async function GET(request: NextRequest, context: ConnectionRouteContext)
       secure: process.env.NODE_ENV === "production"
     });
     if (codeVerifier) {
-      response.cookies.set(oauthCodeVerifierCookieName(provider), codeVerifier, {
+      response.cookies.set(providerOauthCodeVerifierCookieName(provider), codeVerifier, {
         httpOnly: true,
         maxAge: 30 * 60,
         path: "/",

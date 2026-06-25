@@ -86,13 +86,13 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
     - Sources: `docs/next-feature-plans/01-linkedin-provider-productionization.md`, `docs/ai-agent-feature-roadmap-2026.md`.
 
 14. [x] Connections control center with connect, callback, health refresh, disconnect, and structured provider errors.
-    - Evidence: `app/(dashboard)/connections/page.tsx:59-122` renders provider readiness; `app/api/connections/[provider]/connect/route.ts:82-278`, `app/api/connections/[provider]/callback/route.ts:80-232`, `app/api/connections/[provider]/health/route.ts:35-122`, and `app/api/connections/[provider]/disconnect/route.ts:31-82` implement lifecycle routes.
-    - Tests: `tests/api/connections.test.ts:35-302`, `e2e/phase-09.spec.ts:74-85`.
+    - Evidence: `app/(dashboard)/connections/page.tsx:59-122` renders provider readiness; `app/api/connections/[provider]/connect/route.ts:81-274`, `app/api/connections/[provider]/callback/route.ts:78-226`, `app/api/connections/[provider]/health/route.ts:35-122`, and `app/api/connections/[provider]/disconnect/route.ts:31-82` implement lifecycle routes.
+    - Tests: `tests/api/connections.test.ts:35-337`, `e2e/phase-09.spec.ts:74-85`.
     - Sources: `docs/next-feature-plans/02-connections-control-center.md`.
 
 15. [x] Provider expansion beyond mock and LinkedIn.
-    - Evidence: `lib/providers/x.ts:28-42` declares X text-publishing capabilities and explicit media/reply/metrics boundaries; `lib/providers/x.ts:94-144` implements OAuth 2.0 PKCE URL construction; `lib/providers/x.ts:469-566` connects and stores X user tokens without exposing raw secrets; `lib/providers/x.ts:626-690` publishes text posts through X; `app/api/connections/[provider]/connect/route.ts:173-239` stores the X PKCE verifier in HTTP-only cookies; `app/api/connections/[provider]/callback/route.ts:97-174` completes X callbacks.
-    - Tests: `tests/providers/x-provider.test.ts:45-304`, `tests/api/connections.test.ts:205-302`, `tests/providers/provider-contract.test.ts:71-92`.
+    - Evidence: `lib/providers/x.ts:28-44` declares X text-publishing capabilities and explicit media/reply/metrics boundaries; `lib/providers/x.ts:93-149` implements OAuth 2.0 PKCE URL construction; `lib/providers/x.ts:512-594` connects and stores X user tokens without exposing raw secrets; `lib/providers/x.ts:661-731` publishes text posts through X; `lib/providers/oauth-cookies.ts:1-8` centralizes OAuth cookie names; `app/api/connections/[provider]/connect/route.ts:169-240` stores the X PKCE verifier in HTTP-only cookies; `app/api/connections/[provider]/callback/route.ts:101-180` completes X callbacks.
+    - Tests: `tests/providers/x-provider.test.ts:45-355`, `tests/api/connections.test.ts:232-337`, `tests/providers/provider-contract.test.ts:71-92`.
     - Note: Meta, Slack, and Discord remain explicit future stubs, but Master Plan v1's next live-provider expansion beyond LinkedIn is now satisfied by X.
     - Sources: `docs/phases/phase-06-provider-publishing.md`, `docs/ai-agent-feature-master-update-plan.md`, `docs/ai-agent-feature-roadmap-2026.md`.
 
@@ -200,7 +200,7 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
 
 35. [?] Production release readiness and live smoke verification.
     - Current status: release readiness tooling now exists, but external production services still require live verification by an operator with credentials.
-    - Evidence available: `lib/release/readiness.ts:1-312`, `scripts/release-readiness.ts:1-14`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:469-690`, `lib/n8n/client.ts:30-139`.
+    - Evidence available: `lib/release/readiness.ts:1-312`, `scripts/release-readiness.ts:1-14`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:512-731`, `lib/n8n/client.ts:30-139`.
     - Verification needed: run `npm run release:readiness` with production env, confirm all manual smoke checks, and verify database, Redis, Clerk, ImageKit, LinkedIn, X, n8n, billing provider URLs, worker process, callback URLs, and production product flows.
     - Sources: `docs/archive/specs/07-release-checklist.md`, `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/worker-runtime-readiness.md`.
 

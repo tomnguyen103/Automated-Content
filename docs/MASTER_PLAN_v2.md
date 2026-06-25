@@ -158,7 +158,7 @@ _Last updated: 2026-06-24 (run #2)._
   - Sources: `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/archive/ai-agent-feature-goal-prompts-2026.md`, `docs/MASTER_PLAN.md`.
 
 - [?] **Production release readiness and live smoke verification** - Release readiness tooling exists, but external services still need credentialed live verification.
-  - Evidence: `lib/release/readiness.ts:41-390`, `lib/release/readiness.ts:489-531`, `tests/release/readiness.test.ts:1-279`, `scripts/release-readiness.ts:1-26`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:512-731`, `lib/n8n/client.ts:30-139`.
+  - Evidence: `.env.production.example:1-58`, `docs/archive/specs/07-release-checklist.md:19-40`, `lib/release/readiness.ts:41-390`, `lib/release/readiness.ts:489-531`, `tests/release/readiness.test.ts:1-279`, `scripts/release-readiness.ts:1-26`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:512-731`, `lib/n8n/client.ts:30-139`.
   - Sources: `docs/archive/specs/07-release-checklist.md`, `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/worker-runtime-readiness.md`, `docs/MASTER_PLAN.md`.
   - Notes: Needs `npm run release:readiness -- --confirm-gates-passed --confirm-manual-smoke-passed` with production-shaped env after local gates and live service smoke pass against database, Redis, Clerk, ImageKit, LinkedIn, X, n8n, billing, worker, callback URLs, and the manual product smoke flow across Dashboard, Create, Calendar, Media, Auto Replies, Billing, and Analytics.
 

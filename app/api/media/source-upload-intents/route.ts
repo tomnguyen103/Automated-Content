@@ -8,6 +8,7 @@ import {
 } from "@/lib/billing/usage";
 import {
   createSignedSourceVideoUploadIntent,
+  getObjectStorageConfig,
   ObjectStorageConfigurationError,
   ObjectStorageUploadIntentError
 } from "@/lib/media/object-storage";
@@ -39,6 +40,11 @@ export async function POST(request: NextRequest) {
     const input = sourceUploadIntentSchema.parse(body);
     const workspace = await resolvePersonalWorkspaceForUser(user);
     const id = `source_${randomUUID()}`;
+    const storageConfig = getObjectStorageConfig();
+
+    if (input.sizeBytes > storageConfig.maxUploadBytes) {
+      throw new ObjectStorageUploadIntentError("Source video exceeds the configured upload size limit.");
+    }
 
     await consumeUsageForLimit({
       workspaceId: workspace.id,
@@ -59,7 +65,8 @@ export async function POST(request: NextRequest) {
       fileName: input.fileName,
       contentType: input.contentType,
       sizeBytes: input.sizeBytes,
-      id
+      id,
+      config: storageConfig
     });
 
     return NextResponse.json({ intent }, { status: 201 });

@@ -79,6 +79,11 @@ function setMemoryJob(job: MediaGenerationJobRecord) {
   return job;
 }
 
+function normalizeIdempotencyKey(idempotencyKey: string | undefined) {
+  const normalized = idempotencyKey?.trim();
+  return normalized ? normalized : undefined;
+}
+
 function createMemoryJob({
   allowMemoryFallback,
   createdByUserId,
@@ -102,8 +107,10 @@ function createMemoryJob({
     throw new Error("Memory media generation jobs are only available without a configured database.");
   }
 
-  if (idempotencyKey) {
-    const existing = getMemoryJobs(workspaceId).find((job) => job.idempotencyKey === idempotencyKey);
+  const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+
+  if (normalizedIdempotencyKey) {
+    const existing = getMemoryJobs(workspaceId).find((job) => job.idempotencyKey === normalizedIdempotencyKey);
 
     if (existing) {
       return {
@@ -121,7 +128,7 @@ function createMemoryJob({
       createdByUserId,
       jobKind,
       status: "queued",
-      idempotencyKey,
+      idempotencyKey: normalizedIdempotencyKey,
       sourceAssetId,
       progress: 0,
       input,
@@ -169,20 +176,21 @@ export async function createMediaGenerationJobForWorkspace({
   }
 
   const db = getDb();
+  const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
 
   const values = {
     id: `media_job_${randomUUID()}`,
     workspaceId,
     createdByUserId,
     jobKind,
-    idempotencyKey,
+    idempotencyKey: normalizedIdempotencyKey,
     sourceAssetId,
     input,
     queuedAt: now,
     updatedAt: now
   };
 
-  if (!idempotencyKey) {
+  if (!normalizedIdempotencyKey) {
     const [row] = await db.insert(mediaGenerationJobs).values(values).returning();
 
     return {
@@ -211,7 +219,10 @@ export async function createMediaGenerationJobForWorkspace({
     .select()
     .from(mediaGenerationJobs)
     .where(
-      and(eq(mediaGenerationJobs.workspaceId, workspaceId), eq(mediaGenerationJobs.idempotencyKey, idempotencyKey))
+      and(
+        eq(mediaGenerationJobs.workspaceId, workspaceId),
+        eq(mediaGenerationJobs.idempotencyKey, normalizedIdempotencyKey)
+      )
     )
     .limit(1);
 

@@ -348,10 +348,6 @@ function productionEnvCheckResult(
     return blockedEnvCheck(check, `${check.key} is missing.`);
   }
 
-  if (isPlaceholderValue(value)) {
-    return blockedEnvCheck(check, `${check.key} must be replaced with a production value.`);
-  }
-
   if (check.valueKind === "url") {
     let url: URL;
 
@@ -369,12 +365,20 @@ function productionEnvCheckResult(
       );
     }
 
+    if (isPlaceholderValue(url.hostname)) {
+      return blockedEnvCheck(check, `${check.key} must be replaced with a production value.`);
+    }
+
     if (isReservedHostname(url.hostname)) {
       return blockedEnvCheck(
         check,
         `${check.key} must not point at localhost or reserved placeholder domains.`
       );
     }
+  }
+
+  if (check.valueKind === "string" && isPlaceholderValue(value)) {
+    return blockedEnvCheck(check, `${check.key} must be replaced with a production value.`);
   }
 
   return {

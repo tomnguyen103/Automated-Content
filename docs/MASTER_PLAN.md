@@ -162,8 +162,8 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
     - Sources: `docs/archive/n8n/workflows.md`, `docs/archive/ai-agent-feature-roadmap-2026.md`.
 
 28. [x] Observability and release gates.
-    - Evidence: `package.json:6-15` defines local gates and the release readiness script; `lib/release/readiness.ts:1-407` builds release readiness reports across local gates, production env, billing, provider, n8n, worker, and smoke checks; `scripts/release-readiness.ts:1-26` emits the operator report; existing runtime evidence remains in `lib/agents/orchestration/repository.ts:535-584`, `lib/n8n/event-log.ts:79-163`, and `lib/scheduler/worker-health.ts:121-388`.
-    - Tests: `tests/release/readiness.test.ts:42-199`, plus required local gates before PR.
+    - Evidence: `package.json:6-15` defines local gates and the release readiness script; `lib/release/readiness.ts:41-390` defines production env readiness checks and validators; `lib/release/readiness.ts:489-531` builds release readiness reports across local gates, production env, billing, provider, n8n, worker, and smoke checks; `scripts/release-readiness.ts:1-26` emits the operator report; existing runtime evidence remains in `lib/agents/orchestration/repository.ts:535-584`, `lib/n8n/event-log.ts:79-163`, and `lib/scheduler/worker-health.ts:121-388`.
+    - Tests: `tests/release/readiness.test.ts:1-279`, plus required local gates before PR.
     - Note: live production smoke remains separate in item 35 because it requires real production services and credentials.
     - Sources: `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/specs/07-release-checklist.md`, `docs/archive/worker-runtime-readiness.md`.
 
@@ -201,7 +201,7 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
 
 35. [?] Production release readiness and live smoke verification.
     - Current status: release readiness tooling now exists, but external production services still require live verification by an operator with credentials.
-    - Evidence available: `lib/release/readiness.ts:1-546` blocks missing, local, placeholder, reserved-domain, and wrong-scheme production config; `tests/release/readiness.test.ts:1-264` covers ready, missing, placeholder/local, and wrong-scheme readiness states; `scripts/release-readiness.ts:1-26`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:512-731`, `lib/n8n/client.ts:30-139`.
+    - Evidence available: `lib/release/readiness.ts:41-390` blocks missing, local, placeholder-host, reserved-domain, and wrong-scheme production config; `lib/release/readiness.ts:489-531` assembles the readiness report; `tests/release/readiness.test.ts:1-279` covers ready, missing, placeholder/local, wrong-scheme, and URL path/query-token readiness states; `scripts/release-readiness.ts:1-26`, `docs/archive/specs/07-release-checklist.md`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:512-731`, `lib/n8n/client.ts:30-139`.
     - Verification needed: run `npm run release:readiness -- --confirm-gates-passed --confirm-manual-smoke-passed` with production-shaped env after the local gates and manual smoke checks have actually passed; verify database, Redis, Clerk, ImageKit, LinkedIn, X, n8n, billing provider URLs, worker process, callback URLs, and product smoke across Dashboard, Create, Calendar, Media, Auto Replies, Billing, and Analytics.
     - Sources: `docs/archive/specs/07-release-checklist.md`, `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/worker-runtime-readiness.md`.
 

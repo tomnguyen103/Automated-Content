@@ -160,6 +160,21 @@ describe("release readiness", () => {
     );
   });
 
+  it("allows placeholder-like words in production URL paths and query strings", () => {
+    const report = buildReleaseReadinessReport({
+      env: {
+        ...completeEnv,
+        N8N_WEBHOOK_URL: "https://n8n.automatedcontent.dev/webhooks/test?mode=local"
+      },
+      gateResults: passingGates,
+      manualChecks: passedManualChecks,
+      now: new Date("2026-06-24T12:00:00.000Z")
+    });
+
+    expect(report.ready).toBe(true);
+    expect(report.blockerCount).toBe(0);
+  });
+
   it("accepts explicit CLI confirmations for completed gates and manual smoke checks", () => {
     const cliInputs = getReleaseReadinessInputsFromCli({
       args: ["--confirm-gates-passed", "--confirm-manual-smoke-passed"],

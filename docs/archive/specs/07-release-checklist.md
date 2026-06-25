@@ -16,11 +16,15 @@ All checks must pass locally before opening a pull request.
 
 ## Runtime Configuration
 
-Verify production values are set:
+Start from `.env.production.example`; store secrets in the production secret
+manager and non-secret runtime config in the production env store, then verify
+production values are set:
 
 - `NEXT_PUBLIC_APP_URL`
 - Clerk publishable and secret keys
 - `CLERK_WEBHOOK_SIGNING_SECRET`
+- `BILLING_UPGRADE_URL`
+- `BILLING_CUSTOMER_PORTAL_URL`
 - `DATABASE_URL`
 - AI provider key for the selected `AI_PROVIDER`
 - `LANGSMITH_API_KEY`
@@ -30,6 +34,10 @@ Verify production values are set:
 - `REDIS_URL`
 - `N8N_WEBHOOK_URL`
 - `N8N_WEBHOOK_SECRET`
+
+`npm run release:readiness -- --confirm-gates-passed --confirm-manual-smoke-passed`
+blocks blank, localhost, local, test, example, invalid, and wrong-scheme values.
+Production URL values must use the schemes expected by the release checker.
 
 ## Database and Queues
 

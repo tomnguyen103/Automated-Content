@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import {
+  ensureFeatureAllowed,
+  FeatureAccessError
+} from "@/lib/billing/usage";
 import { updateReplyRuleRequestSchema } from "@/lib/replies/console";
 import { resolveReplyServerContext } from "@/lib/replies/server";
 
@@ -28,6 +32,15 @@ export async function PATCH(request: Request, context: RuleRouteContext) {
   try {
     const { id } = await context.params;
     const input = updateReplyRuleRequestSchema.parse(body);
+
+    if (input.enabled) {
+      await ensureFeatureAllowed({
+        workspaceId: replyContext.workspace.id,
+        feature: "keywordAutoReplies",
+        skip: replyContext.workspace.isLocalPreview
+      });
+    }
+
     const rule = await replyContext.repository.updateRuleEnabled({
       workspaceId: replyContext.workspace.id,
       ruleId: id,
@@ -47,6 +60,18 @@ export async function PATCH(request: Request, context: RuleRouteContext) {
           issues: error.issues
         },
         { status: 400 }
+      );
+    }
+
+    if (error instanceof FeatureAccessError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: "upgrade_required",
+          feature: error.feature,
+          requiredPlan: error.requiredPlan
+        },
+        { status: 402 }
       );
     }
 

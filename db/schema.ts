@@ -328,6 +328,56 @@ export const mediaAssets = pgTable(
   ]
 );
 
+export const mediaGenerationJobs = pgTable(
+  "media_generation_jobs",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    createdByUserId: text("created_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    jobKind: text("job_kind").notNull(),
+    status: text("status").default("queued").notNull(),
+    idempotencyKey: text("idempotency_key"),
+    sourceAssetId: text("source_asset_id").references(() => mediaAssets.id, { onDelete: "set null" }),
+    triggerTaskId: text("trigger_task_id"),
+    triggerRunId: text("trigger_run_id"),
+    providerTaskId: text("provider_task_id"),
+    progress: integer("progress").default(0).notNull(),
+    input: jsonb("input").$type<Record<string, unknown>>().default({}).notNull(),
+    output: jsonb("output").$type<Record<string, unknown>>().default({}).notNull(),
+    cost: jsonb("cost").$type<Record<string, unknown>>().default({}).notNull(),
+    audit: jsonb("audit").$type<Record<string, unknown>>().default({}).notNull(),
+    error: text("error"),
+    queuedAt: timestamp("queued_at", { withTimezone: true }).defaultNow().notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    canceledAt: timestamp("canceled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex("media_generation_jobs_workspace_id_id_idx").on(table.workspaceId, table.id),
+    uniqueIndex("media_generation_jobs_workspace_idempotency_idx")
+      .on(table.workspaceId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
+    index("media_generation_jobs_workspace_status_idx").on(table.workspaceId, table.status),
+    index("media_generation_jobs_trigger_run_idx").on(table.triggerRunId),
+    index("media_generation_jobs_created_by_user_idx").on(table.createdByUserId),
+    check(
+      "media_generation_jobs_kind_check",
+      sql`${table.jobKind} in ('media.transcribe-video', 'media.detect-short-clips', 'media.render-short-clip', 'media.generate-influencer-asset', 'media.generate-avatar-video')`
+    ),
+    check(
+      "media_generation_jobs_status_check",
+      sql`${table.status} in ('queued', 'running', 'succeeded', 'failed', 'canceled')`
+    ),
+    check("media_generation_jobs_progress_check", sql`${table.progress} >= 0 and ${table.progress} <= 100`)
+  ]
+);
+
 export const agentRuns = pgTable(
   "agent_runs",
   {
@@ -973,6 +1023,7 @@ export type Subscription = typeof subscriptions.$inferSelect;
 export type UsageLedgerEntry = typeof usageLedger.$inferSelect;
 export type ContentTopic = typeof contentTopics.$inferSelect;
 export type MediaAssetRow = typeof mediaAssets.$inferSelect;
+export type MediaGenerationJobRow = typeof mediaGenerationJobs.$inferSelect;
 export type AgentRunRow = typeof agentRuns.$inferSelect;
 export type ContentDraft = typeof contentDrafts.$inferSelect;
 export type PlatformVariantRow = typeof platformVariants.$inferSelect;

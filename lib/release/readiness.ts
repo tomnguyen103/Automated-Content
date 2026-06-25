@@ -17,7 +17,16 @@ export type ReleaseGateResult = {
 
 export type ReleaseReadinessCheck = {
   id: string;
-  category: "local_gate" | "environment" | "automation" | "billing" | "provider" | "smoke";
+  category:
+    | "local_gate"
+    | "environment"
+    | "automation"
+    | "billing"
+    | "provider"
+    | "storage"
+    | "observability"
+    | "security"
+    | "smoke";
   label: string;
   status: ReleaseCheckStatus;
   detail: string;
@@ -126,6 +135,119 @@ const productionEnvChecks: Array<{
     detail: "Required to verify production media asset provenance.",
     valueKind: "url",
     allowedSchemes: ["https"]
+  },
+  {
+    id: "trigger-project-ref",
+    category: "automation",
+    key: "TRIGGER_PROJECT_REF",
+    label: "Trigger.dev project ref",
+    detail: "Required by trigger.config.ts before deploying v2 background tasks.",
+    valueKind: "string"
+  },
+  {
+    id: "trigger-secret-key",
+    category: "automation",
+    key: "TRIGGER_SECRET_KEY",
+    label: "Trigger.dev secret key",
+    detail: "Required for Vercel route handlers to enqueue deployed Trigger.dev tasks.",
+    valueKind: "string"
+  },
+  {
+    id: "trigger-version",
+    category: "automation",
+    key: "TRIGGER_VERSION",
+    label: "Trigger.dev task version",
+    detail: "Required to pin Vercel deploys to the intended Trigger.dev task version.",
+    valueKind: "string"
+  },
+  {
+    id: "object-storage-provider",
+    category: "storage",
+    key: "OBJECT_STORAGE_PROVIDER",
+    label: "Object storage provider",
+    detail: "Required for raw source videos, intermediate files, captions, and render artifacts.",
+    valueKind: "string"
+  },
+  {
+    id: "object-storage-bucket",
+    category: "storage",
+    key: "OBJECT_STORAGE_BUCKET",
+    label: "Object storage bucket",
+    detail: "Required for v2 source video and render artifact storage.",
+    valueKind: "string"
+  },
+  {
+    id: "object-storage-region",
+    category: "storage",
+    key: "OBJECT_STORAGE_REGION",
+    label: "Object storage region",
+    detail: "Required for S3-compatible client configuration and signed uploads.",
+    valueKind: "string"
+  },
+  {
+    id: "object-storage-public-base-url",
+    category: "storage",
+    key: "OBJECT_STORAGE_PUBLIC_BASE_URL",
+    label: "Object storage public base URL",
+    detail: "Required to fetch generated video artifacts after render completion.",
+    valueKind: "url",
+    allowedSchemes: ["https"]
+  },
+  {
+    id: "object-storage-access-key-id",
+    category: "storage",
+    key: "OBJECT_STORAGE_ACCESS_KEY_ID",
+    label: "Object storage access key id",
+    detail: "Required to create signed upload and artifact access operations.",
+    valueKind: "string"
+  },
+  {
+    id: "object-storage-secret-access-key",
+    category: "storage",
+    key: "OBJECT_STORAGE_SECRET_ACCESS_KEY",
+    label: "Object storage secret access key",
+    detail: "Required to create signed upload and artifact access operations.",
+    valueKind: "string"
+  },
+  {
+    id: "deepgram-api-key",
+    category: "provider",
+    key: "DEEPGRAM_API_KEY",
+    label: "Deepgram API key",
+    detail: "Required before enabling v2 transcription and caption generation tasks.",
+    valueKind: "string"
+  },
+  {
+    id: "luma-api-key",
+    category: "provider",
+    key: "LUMA_API_KEY",
+    label: "Luma API key",
+    detail: "Required before enabling synthetic influencer asset generation tasks.",
+    valueKind: "string"
+  },
+  {
+    id: "remotion-renderer-mode",
+    category: "provider",
+    key: "REMOTION_RENDERER_MODE",
+    label: "Remotion renderer mode",
+    detail: "Required to declare whether render jobs use Lambda, a dedicated renderer, or another production-safe runtime.",
+    valueKind: "string"
+  },
+  {
+    id: "arcjet-key",
+    category: "security",
+    key: "ARCJET_KEY",
+    label: "Arcjet key",
+    detail: "Required before exposing expensive upload, transcription, render, avatar, and voice endpoints.",
+    valueKind: "string"
+  },
+  {
+    id: "arcjet-mode",
+    category: "security",
+    key: "ARCJET_MODE",
+    label: "Arcjet protection mode",
+    detail: "Required to make expensive endpoint protection mode explicit for production.",
+    valueKind: "string"
   },
   {
     id: "provider-token-key",
@@ -259,6 +381,30 @@ const manualSmokeChecks: Array<Omit<ReleaseReadinessCheck, "status">> = [
     category: "smoke",
     label: "Production product smoke",
     detail: "Open Dashboard, Create, Calendar, Media, Auto Replies, Billing, and Analytics without console errors."
+  },
+  {
+    id: "trigger-smoke-task",
+    category: "automation",
+    label: "Trigger.dev smoke task",
+    detail: "Deploy and run deployment.smoke in the production Trigger.dev environment."
+  },
+  {
+    id: "object-storage-upload-read",
+    category: "storage",
+    label: "Object storage upload/read smoke",
+    detail: "Create a signed upload, write a small object, read it back, and delete it from the production bucket."
+  },
+  {
+    id: "media-job-smoke",
+    category: "smoke",
+    label: "Media job smoke",
+    detail: "Create a v2 media generation job from the web app and confirm the Trigger.dev run id is persisted."
+  },
+  {
+    id: "render-artifact-fetch",
+    category: "smoke",
+    label: "Render artifact fetch smoke",
+    detail: "Fetch a generated render artifact through the configured object storage public base URL."
   }
 ];
 
@@ -395,6 +541,92 @@ function hasConfirmation(value: string | undefined) {
   return normalized === "1" || normalized === "true";
 }
 
+function signedUploadLimitCheck(env: EnvMap): ReleaseReadinessCheck {
+  const value = requiredValue(env, "OBJECT_STORAGE_SIGNED_UPLOAD_MAX_BYTES");
+  const label = "Object storage signed upload size limit";
+  const detail = "Required to cap direct source-video uploads before issuing signed upload credentials.";
+
+  if (!value) {
+    return {
+      id: "object-storage-signed-upload-max-bytes",
+      category: "storage",
+      label,
+      status: "blocked",
+      detail: `${detail} OBJECT_STORAGE_SIGNED_UPLOAD_MAX_BYTES is missing.`
+    };
+  }
+
+  const numeric = Number(value);
+
+  if (!Number.isInteger(numeric) || numeric <= 0) {
+    return {
+      id: "object-storage-signed-upload-max-bytes",
+      category: "storage",
+      label,
+      status: "blocked",
+      detail: `${detail} OBJECT_STORAGE_SIGNED_UPLOAD_MAX_BYTES must be a positive integer.`
+    };
+  }
+
+  return {
+    id: "object-storage-signed-upload-max-bytes",
+    category: "storage",
+    label,
+    status: "pass",
+    detail
+  };
+}
+
+function sentryCheck(env: EnvMap): ReleaseReadinessCheck {
+  const enabled = hasConfirmation(env.SENTRY_ENABLED);
+  const value = requiredValue(env, "SENTRY_DSN");
+  const label = "Sentry DSN";
+  const detail = "Optional cross-runtime exception correlation for web, API, and Trigger.dev tasks.";
+
+  if (!enabled) {
+    return {
+      id: "sentry-dsn",
+      category: "observability",
+      label,
+      status: "pass",
+      detail: `${detail} Sentry is not enabled.`
+    };
+  }
+
+  if (!value) {
+    return {
+      id: "sentry-dsn",
+      category: "observability",
+      label,
+      status: "blocked",
+      detail: `${detail} SENTRY_ENABLED is set, but SENTRY_DSN is missing.`
+    };
+  }
+
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") {
+      throw new Error("unsupported scheme");
+    }
+  } catch {
+    return {
+      id: "sentry-dsn",
+      category: "observability",
+      label,
+      status: "blocked",
+      detail: `${detail} SENTRY_DSN must be a valid https URL when Sentry is enabled.`
+    };
+  }
+
+  return {
+    id: "sentry-dsn",
+    category: "observability",
+    label,
+    status: "pass",
+    detail
+  };
+}
+
 export function buildPassingReleaseGateResults(): ReleaseGateResult[] {
   return requiredReleaseGateCommands.map((command) => ({
     command,
@@ -500,7 +732,9 @@ export function buildReleaseReadinessReport({
   const checks: ReleaseReadinessCheck[] = [
     ...gateChecks(gateResults),
     ...productionEnvChecks.map((check) => productionEnvCheckResult(env, check)),
+    signedUploadLimitCheck(env),
     aiProviderCheck(env),
+    sentryCheck(env),
     ...manualSmokeChecks.map((check): ReleaseReadinessCheck => {
       const status = manualChecks[check.id] ?? "manual";
 

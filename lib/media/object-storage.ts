@@ -219,7 +219,9 @@ export async function createSignedSourceVideoUploadIntent({
     bucket: config.bucket,
     expiresAt,
     headers: {
-      "content-type": contentType
+      "content-type": contentType,
+      "x-amz-meta-uploadedbyuserid": userId,
+      "x-amz-meta-workspaceid": workspaceId
     },
     key,
     maxUploadBytes: config.maxUploadBytes,

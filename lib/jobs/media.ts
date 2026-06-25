@@ -15,6 +15,11 @@ import {
 
 const memoryJobsByWorkspace = new Map<string, MediaGenerationJobRecord[]>();
 
+export type CreateMediaGenerationJobResult = {
+  job: MediaGenerationJobRecord;
+  created: boolean;
+};
+
 export class MediaGenerationJobNotFoundError extends Error {
   constructor(message = "Media generation job was not found.") {
     super(message);
@@ -92,7 +97,7 @@ function createMemoryJob({
   now: Date;
   sourceAssetId?: string;
   workspaceId: string;
-}) {
+}): CreateMediaGenerationJobResult {
   if (!allowMemoryFallback && isDatabaseConfigured) {
     throw new Error("Memory media generation jobs are only available without a configured database.");
   }
@@ -101,28 +106,34 @@ function createMemoryJob({
     const existing = getMemoryJobs(workspaceId).find((job) => job.idempotencyKey === idempotencyKey);
 
     if (existing) {
-      return existing;
+      return {
+        job: existing,
+        created: false
+      };
     }
   }
 
   const isoNow = nowIso(now);
-  return setMemoryJob({
-    id: `media_job_${randomUUID()}`,
-    workspaceId,
-    createdByUserId,
-    jobKind,
-    status: "queued",
-    idempotencyKey,
-    sourceAssetId,
-    progress: 0,
-    input,
-    output: {},
-    cost: {},
-    audit: {},
-    queuedAt: isoNow,
-    createdAt: isoNow,
-    updatedAt: isoNow
-  });
+  return {
+    job: setMemoryJob({
+      id: `media_job_${randomUUID()}`,
+      workspaceId,
+      createdByUserId,
+      jobKind,
+      status: "queued",
+      idempotencyKey,
+      sourceAssetId,
+      progress: 0,
+      input,
+      output: {},
+      cost: {},
+      audit: {},
+      queuedAt: isoNow,
+      createdAt: isoNow,
+      updatedAt: isoNow
+    }),
+    created: true
+  };
 }
 
 export async function createMediaGenerationJobForWorkspace({
@@ -143,7 +154,7 @@ export async function createMediaGenerationJobForWorkspace({
   idempotencyKey?: string;
   allowMemoryFallback?: boolean;
   now?: Date;
-}) {
+}): Promise<CreateMediaGenerationJobResult> {
   if (allowMemoryFallback || !isDatabaseConfigured) {
     return createMemoryJob({
       allowMemoryFallback,
@@ -159,39 +170,59 @@ export async function createMediaGenerationJobForWorkspace({
 
   const db = getDb();
 
-  if (idempotencyKey) {
-    const [existing] = await db
-      .select()
-      .from(mediaGenerationJobs)
-      .where(
-        and(
-          eq(mediaGenerationJobs.workspaceId, workspaceId),
-          eq(mediaGenerationJobs.idempotencyKey, idempotencyKey)
-        )
-      )
-      .limit(1);
+  const values = {
+    id: `media_job_${randomUUID()}`,
+    workspaceId,
+    createdByUserId,
+    jobKind,
+    idempotencyKey,
+    sourceAssetId,
+    input,
+    queuedAt: now,
+    updatedAt: now
+  };
 
-    if (existing) {
-      return mediaGenerationJobRowToRecord(existing);
-    }
+  if (!idempotencyKey) {
+    const [row] = await db.insert(mediaGenerationJobs).values(values).returning();
+
+    return {
+      job: mediaGenerationJobRowToRecord(row),
+      created: true
+    };
   }
 
   const [row] = await db
     .insert(mediaGenerationJobs)
-    .values({
-      id: `media_job_${randomUUID()}`,
-      workspaceId,
-      createdByUserId,
-      jobKind,
-      idempotencyKey,
-      sourceAssetId,
-      input,
-      queuedAt: now,
-      updatedAt: now
+    .values(values)
+    .onConflictDoNothing({
+      target: [mediaGenerationJobs.workspaceId, mediaGenerationJobs.idempotencyKey],
+      where: sql`${mediaGenerationJobs.idempotencyKey} is not null`
     })
     .returning();
 
-  return mediaGenerationJobRowToRecord(row);
+  if (row) {
+    return {
+      job: mediaGenerationJobRowToRecord(row),
+      created: true
+    };
+  }
+
+  const [existing] = await db
+    .select()
+    .from(mediaGenerationJobs)
+    .where(
+      and(eq(mediaGenerationJobs.workspaceId, workspaceId), eq(mediaGenerationJobs.idempotencyKey, idempotencyKey))
+    )
+    .limit(1);
+
+  if (!existing) {
+    throw new Error("Media generation job idempotency conflict could not be resolved.");
+  }
+
+  return {
+    job: mediaGenerationJobRowToRecord(existing),
+    created: false
+  };
 }
 
 export async function listMediaGenerationJobsForWorkspace({
@@ -312,6 +343,7 @@ export async function setMediaGenerationJobStatus({
 }) {
   const nextProgress =
     progress ?? (status === "succeeded" ? 100 : status === "queued" || status === "canceled" ? 0 : undefined);
+  const shouldResetLifecycle = status === "queued";
 
   if (allowMemoryFallback || !isDatabaseConfigured) {
     const job = await getMediaGenerationJobForWorkspace({ allowMemoryFallback, jobId, workspaceId });
@@ -326,9 +358,10 @@ export async function setMediaGenerationJobStatus({
       progress: nextProgress ?? job.progress,
       output: output ?? job.output,
       error: error === null ? undefined : error ?? job.error,
-      startedAt: status === "running" ? nowIso(now) : job.startedAt,
-      completedAt: status === "succeeded" || status === "failed" ? nowIso(now) : job.completedAt,
-      canceledAt: status === "canceled" ? nowIso(now) : job.canceledAt,
+      startedAt: shouldResetLifecycle ? undefined : status === "running" ? nowIso(now) : job.startedAt,
+      completedAt:
+        shouldResetLifecycle ? undefined : status === "succeeded" || status === "failed" ? nowIso(now) : job.completedAt,
+      canceledAt: shouldResetLifecycle ? undefined : status === "canceled" ? nowIso(now) : job.canceledAt,
       updatedAt: nowIso(now)
     });
   }
@@ -340,9 +373,9 @@ export async function setMediaGenerationJobStatus({
       progress: nextProgress,
       output,
       error,
-      startedAt: status === "running" ? now : undefined,
-      completedAt: status === "succeeded" || status === "failed" ? now : undefined,
-      canceledAt: status === "canceled" ? now : undefined,
+      startedAt: shouldResetLifecycle ? null : status === "running" ? now : undefined,
+      completedAt: shouldResetLifecycle ? null : status === "succeeded" || status === "failed" ? now : undefined,
+      canceledAt: shouldResetLifecycle ? null : status === "canceled" ? now : undefined,
       updatedAt: now
     })
     .where(and(eq(mediaGenerationJobs.workspaceId, workspaceId), eq(mediaGenerationJobs.id, jobId)))

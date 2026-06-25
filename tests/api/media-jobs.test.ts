@@ -84,8 +84,10 @@ describe("media generation jobs API", () => {
     );
     const duplicatePayload = await duplicateResponse.json();
 
-    expect(duplicateResponse.status).toBe(201);
+    expect(duplicateResponse.status).toBe(200);
+    expect(duplicatePayload.dispatch).toBeNull();
     expect(duplicatePayload.job.id).toBe(createPayload.job.id);
+    expect(duplicatePayload.job.triggerRunId).toBe(createPayload.job.triggerRunId);
 
     const listResponse = await GET();
     const listPayload = await listResponse.json();
@@ -113,6 +115,7 @@ describe("media generation jobs API", () => {
 
     expect(cancelResponse.status).toBe(200);
     expect(cancelPayload.job.status).toBe("canceled");
+    expect(cancelPayload.job.canceledAt).toBeDefined();
 
     const retryResponse = await PATCH(
       new NextRequest(`http://localhost:3000/api/media/jobs/${createPayload.job.id}`, {
@@ -130,6 +133,9 @@ describe("media generation jobs API", () => {
       status: "queued",
       triggerRunId: `local-trigger-${createPayload.job.id}`
     });
+    expect(retryPayload.job.startedAt).toBeUndefined();
+    expect(retryPayload.job.completedAt).toBeUndefined();
+    expect(retryPayload.job.canceledAt).toBeUndefined();
   });
 
   it("rejects unsupported media job kinds", async () => {

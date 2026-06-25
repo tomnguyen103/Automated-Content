@@ -3,6 +3,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import {
+  consumeUsageForLimit,
+  UsageLimitExceededError
+} from "@/lib/billing/usage";
+import {
   createSignedSourceVideoUploadIntent,
   ObjectStorageConfigurationError,
   ObjectStorageUploadIntentError
@@ -34,13 +38,28 @@ export async function POST(request: NextRequest) {
   try {
     const input = sourceUploadIntentSchema.parse(body);
     const workspace = await resolvePersonalWorkspaceForUser(user);
+    const id = `source_${randomUUID()}`;
+
+    await consumeUsageForLimit({
+      workspaceId: workspace.id,
+      key: "mediaTransformsPerMonth",
+      sourceId: `source_upload_intent:${id}`,
+      metadata: {
+        contentType: input.contentType,
+        fileName: input.fileName,
+        sizeBytes: input.sizeBytes,
+        userId: user.id
+      },
+      skip: workspace.isLocalPreview
+    });
+
     const intent = await createSignedSourceVideoUploadIntent({
       workspaceId: workspace.id,
       userId: user.id,
       fileName: input.fileName,
       contentType: input.contentType,
       sizeBytes: input.sizeBytes,
-      id: `source_${randomUUID()}`
+      id
     });
 
     return NextResponse.json({ intent }, { status: 201 });
@@ -67,6 +86,16 @@ export async function POST(request: NextRequest) {
 
     if (error instanceof ObjectStorageUploadIntentError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    if (error instanceof UsageLimitExceededError) {
+      return NextResponse.json(
+        {
+          error: "Media transforms limit reached for the current plan.",
+          usage: error.metric
+        },
+        { status: 429 }
+      );
     }
 
     console.error("Unexpected source video upload intent error", error);

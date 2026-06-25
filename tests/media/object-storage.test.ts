@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import {
   createSignedSourceVideoUploadIntent,
   getObjectStorageConfig,
@@ -19,7 +20,11 @@ const config: ObjectStorageConfig = {
 
 describe("object storage upload intents", () => {
   it("builds signed source video upload intents with stable object keys", async () => {
-    const signer = vi.fn(async () => "https://signed-upload.example.com/put");
+    const signedCommands: PutObjectCommand[] = [];
+    const signer = vi.fn(async (_client: S3Client, command: PutObjectCommand) => {
+      signedCommands.push(command);
+      return "https://signed-upload.example.com/put";
+    });
     const intent = await createSignedSourceVideoUploadIntent({
       config,
       contentType: "video/mp4",
@@ -36,7 +41,9 @@ describe("object storage upload intents", () => {
       bucket: "automated-content-prod-video",
       expiresAt: "2026-06-25T12:45:00.000Z",
       headers: {
-        "content-type": "video/mp4"
+        "content-type": "video/mp4",
+        "x-amz-meta-uploadedbyuserid": "user_123",
+        "x-amz-meta-workspaceid": "workspace_123"
       },
       key: "workspaces/workspace_123/source-videos/2026/06/source_123.mp4",
       maxUploadBytes: 50_000_000,
@@ -46,6 +53,12 @@ describe("object storage upload intents", () => {
       uploadUrl: "https://signed-upload.example.com/put"
     });
     expect(signer).toHaveBeenCalledTimes(1);
+    expect(signedCommands[0]?.input).toMatchObject({
+      Metadata: {
+        uploadedByUserId: "user_123",
+        workspaceId: "workspace_123"
+      }
+    });
   });
 
   it("rejects non-video uploads and files above the configured limit", async () => {

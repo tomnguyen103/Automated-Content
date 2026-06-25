@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
   try {
     const input = createMediaGenerationJobSchema.parse(body);
     const workspace = await resolvePersonalWorkspaceForUser(user);
-    const createdJob = await createMediaGenerationJobForWorkspace({
+    const { created, job: createdJob } = await createMediaGenerationJobForWorkspace({
       workspaceId: workspace.id,
       createdByUserId: user.id,
       jobKind: input.kind,
@@ -54,6 +54,14 @@ export async function POST(request: NextRequest) {
       idempotencyKey: input.idempotencyKey,
       allowMemoryFallback: workspace.isLocalPreview
     });
+
+    if (!created) {
+      return NextResponse.json({
+        job: createdJob,
+        dispatch: null
+      });
+    }
+
     const dispatch = await dispatchMediaGenerationJob({ job: createdJob });
     const job = await attachMediaGenerationJobRun({
       workspaceId: workspace.id,

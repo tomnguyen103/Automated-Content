@@ -14,6 +14,9 @@ const completeEnv = {
   CLERK_SECRET_KEY: "sk_live_clerk_123",
   CLERK_WEBHOOK_SIGNING_SECRET: "whsec_prod_123",
   DATABASE_URL: "postgres://app_user:prod_password@db.automatedcontent.dev:5432/app",
+  ARCJET_KEY: "arcjet_prod_123",
+  ARCJET_MODE: "protect",
+  DEEPGRAM_API_KEY: "deepgram-prod-123",
   IMAGEKIT_PRIVATE_KEY: "private_prod_123",
   IMAGEKIT_PUBLIC_KEY: "public_prod_123",
   IMAGEKIT_URL_ENDPOINT: "https://ik.imagekit.io/automatedcontent",
@@ -26,9 +29,21 @@ const completeEnv = {
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_live_clerk_123",
   N8N_WEBHOOK_SECRET: "n8n-prod-webhook-value-123",
   N8N_WEBHOOK_URL: "https://n8n.automatedcontent.dev/webhook",
+  LUMA_API_KEY: "luma-prod-123",
+  OBJECT_STORAGE_ACCESS_KEY_ID: "storage-prod-access-key",
+  OBJECT_STORAGE_BUCKET: "automated-content-prod-video",
+  OBJECT_STORAGE_PROVIDER: "s3",
+  OBJECT_STORAGE_PUBLIC_BASE_URL: "https://media.automatedcontent.dev",
+  OBJECT_STORAGE_REGION: "us-east-1",
+  OBJECT_STORAGE_SECRET_ACCESS_KEY: "storage-prod-secret-key",
+  OBJECT_STORAGE_SIGNED_UPLOAD_MAX_BYTES: "5368709120",
   OPENAI_API_KEY: "sk-prod-123",
   PROVIDER_TOKEN_ENCRYPTION_KEY: "6e22b57d97484b67920c2f1b83e7db50",
   REDIS_URL: "rediss://redis.automatedcontent.dev:6379",
+  REMOTION_RENDERER_MODE: "lambda",
+  TRIGGER_PROJECT_REF: "proj_prod_automated_content",
+  TRIGGER_SECRET_KEY: "tr_prod_123",
+  TRIGGER_VERSION: "20260625.1",
   X_CLIENT_ID: "x-prod-client-123",
   X_REDIRECT_URI: "https://app.automatedcontent.dev/api/connections/x/callback"
 };
@@ -42,8 +57,12 @@ const passedManualChecks = {
   "billing-redirects": "pass",
   "drizzle-migrations": "pass",
   "live-provider-publish": "pass",
+  "media-job-smoke": "pass",
   "n8n-callback": "pass",
+  "object-storage-upload-read": "pass",
   "product-smoke": "pass",
+  "render-artifact-fetch": "pass",
+  "trigger-smoke-task": "pass",
   "worker-process": "pass"
 } as const;
 
@@ -76,6 +95,18 @@ describe("release readiness", () => {
         expect.objectContaining({
           id: "langsmith-api-key",
           status: "blocked"
+        }),
+        expect.objectContaining({
+          id: "trigger-secret-key",
+          status: "blocked"
+        }),
+        expect.objectContaining({
+          id: "object-storage-bucket",
+          status: "blocked"
+        }),
+        expect.objectContaining({
+          id: "deepgram-api-key",
+          status: "blocked"
         })
       ])
     );
@@ -102,6 +133,7 @@ describe("release readiness", () => {
         BILLING_UPGRADE_URL: "https://billing.example.com/checkout",
         DATABASE_URL: "postgres://app_user:password@localhost:5432/app",
         NEXT_PUBLIC_APP_URL: "http://localhost:3000",
+        OBJECT_STORAGE_PUBLIC_BASE_URL: "https://media.example.com",
         OPENAI_API_KEY: "sk-local-placeholder",
         REDIS_URL: "redis://127.0.0.1:6379"
       },
@@ -127,6 +159,10 @@ describe("release readiness", () => {
         }),
         expect.objectContaining({
           id: "redis-url",
+          status: "blocked"
+        }),
+        expect.objectContaining({
+          id: "object-storage-public-base-url",
           status: "blocked"
         }),
         expect.objectContaining({
@@ -252,6 +288,34 @@ describe("release readiness", () => {
           label: "AI provider selection",
           status: "blocked",
           detail: "AI_PROVIDER must be either 'openai' or 'gemini'."
+        })
+      ])
+    );
+  });
+
+  it("blocks invalid signed upload limits and enabled Sentry without a DSN", () => {
+    const report = buildReleaseReadinessReport({
+      env: {
+        ...completeEnv,
+        OBJECT_STORAGE_SIGNED_UPLOAD_MAX_BYTES: "0",
+        SENTRY_ENABLED: "1",
+        SENTRY_DSN: ""
+      },
+      gateResults: passingGates,
+      manualChecks: passedManualChecks,
+      now: new Date("2026-06-24T12:00:00.000Z")
+    });
+
+    expect(report.ready).toBe(false);
+    expect(report.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "object-storage-signed-upload-max-bytes",
+          status: "blocked"
+        }),
+        expect.objectContaining({
+          id: "sentry-dsn",
+          status: "blocked"
         })
       ])
     );

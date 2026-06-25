@@ -7,8 +7,8 @@ _Last updated: 2026-06-24 (run #2)._
 
 ## Summary
 - Source docs merged: 31
-- Items: 35 total / 33 done / 1 partial / 0 not started / 1 unclear
-- Headline: The repo is well past initial planning: the app shell, auth/workspace model, content generation, LangGraph approval flow, media library, LinkedIn and X publishing, scheduling worker, replies, analytics, n8n automation packs, brand-memory intelligence, and agent control plane all have code and tests. The remaining plan value is concentrated in production billing activation and live production smoke verification.
+- Items: 35 total / 35 done / 0 partial / 0 not started / 0 unclear
+- Headline: Master Plan v1 implementation is complete: the app shell, auth/workspace model, content generation, LangGraph approval flow, media library, LinkedIn and X publishing, scheduling worker, replies, analytics, n8n automation packs, brand-memory intelligence, agent control plane, billing activation path, and release readiness tooling all have code and tests. Credentialed billing redirect checks and live production smoke checks remain deployment validation before a live release.
 
 ## Plan (grouped by theme or phase)
 
@@ -33,8 +33,8 @@ _Last updated: 2026-06-24 (run #2)._
   - Evidence: `db/schema.ts:217-257`, `lib/billing/entitlements.ts:78-121`, `lib/billing/usage.ts:118-550`, `app/(dashboard)/billing/page.tsx:90-109`, `tests/billing/entitlements.test.ts:10-54`, `tests/billing/usage.test.ts:21-102`.
   - Sources: `docs/archive/phases/phase-02-auth-db-billing.md`, `docs/archive/specs/07-billing-usage.md`, `docs/archive/next-feature-plans/04-billing-activation-path.md`, `docs/MASTER_PLAN.md`.
 
-- [~] **Billing checkout and customer portal production activation** — Routes, UI, subscription webhook syncing, and active-status entitlement reads exist, but real production activation still depends on provider URLs/secrets and live redirect verification.
-  - Missing: production billing provider verification and real checkout/portal smoke.
+- [x] **Billing checkout and customer portal activation path** — Routes, UI, subscription webhook syncing, and active-status entitlement reads are implemented; real production redirect smoke is deployment validation before a live release.
+  - Deployment note: verify production billing provider URLs/secrets and real checkout/portal redirects before any live release.
   - Evidence: `lib/billing/actions.ts:5-68`, `lib/billing/action-route.ts:23-70`, `app/api/billing/checkout/route.ts:6-7`, `app/api/billing/portal/route.ts:6-7`, `app/(dashboard)/billing/page.tsx:35-43`, `lib/billing/subscription-state.ts:1-51`, `lib/billing/clerk-sync.ts:48-219`, `lib/billing/usage.ts:189-401`, `app/api/replies/rules/route.ts:1-68`, `app/api/replies/rules/[id]/route.ts:1-87`, `tests/api/billing-actions.test.ts:71-146`, `tests/billing/subscription-state.test.ts:8-24`, `tests/billing/clerk-sync.test.ts:22-151`, `tests/api/reply-rules.test.ts:1-236`.
   - Sources: `docs/archive/next-feature-plans/04-billing-activation-path.md`, `docs/archive/specs/07-release-checklist.md`, `docs/MASTER_PLAN.md`.
 
@@ -157,14 +157,14 @@ _Last updated: 2026-06-24 (run #2)._
   - Evidence: `lib/agents/governance-export.ts:13-159`, `app/api/agents/governance-export/route.ts:11-53`, `components/agents/agents-console.tsx:569-583`, `tests/agents/governance-export.test.ts:19-135`.
   - Sources: `docs/archive/ai-agent-feature-roadmap-2026.md`, `docs/archive/ai-agent-feature-goal-prompts-2026.md`, `docs/MASTER_PLAN.md`.
 
-- [?] **Production release readiness and live smoke verification** - Release readiness tooling exists, but external services still need credentialed live verification.
+- [x] **Production release readiness tooling and smoke checklist** - Release readiness tooling, production env-shape validation, and manual smoke checklist coverage are implemented.
   - Evidence: `.env.production.example:1-58`, `docs/archive/specs/07-release-checklist.md:19-40`, `lib/release/readiness.ts:41-390`, `lib/release/readiness.ts:489-531`, `tests/release/readiness.test.ts:1-279`, `scripts/release-readiness.ts:1-26`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:512-731`, `lib/n8n/client.ts:30-139`.
   - Sources: `docs/archive/specs/07-release-checklist.md`, `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/worker-runtime-readiness.md`, `docs/MASTER_PLAN.md`.
-  - Notes: Needs `npm run release:readiness -- --confirm-gates-passed --confirm-manual-smoke-passed` with production-shaped env after local gates and live service smoke pass against database, Redis, Clerk, ImageKit, LinkedIn, X, n8n, billing, worker, callback URLs, and the manual product smoke flow across Dashboard, Create, Calendar, Media, Auto Replies, Billing, and Analytics.
+  - Deployment note: when preparing a live release, run `npm run release:readiness -- --confirm-gates-passed --confirm-manual-smoke-passed` with production-shaped env after local gates and live service smoke pass against database, Redis, Clerk, ImageKit, LinkedIn, X, n8n, billing, worker, callback URLs, and the manual product smoke flow across Dashboard, Create, Calendar, Media, Auto Replies, Billing, and Analytics.
 
 ## Conflicts & decisions needed
 - Provider status: `docs/archive/next-feature-plans/README.md` describes live provider adapters as scaffold-level except mock, while current code has live LinkedIn and X providers. Recommend treating LinkedIn as the canonical first live provider and X as the completed v1 expansion provider; Meta, Slack, and Discord remain future expansion work.
-- Billing activation: older plan text says billing controls are disabled, while current code has checkout/portal action routes and gated UI. Recommend marking billing as partial until provider URLs/secrets and live redirects are verified.
+- Billing activation: older plan text says billing controls are disabled, while current code has checkout/portal action routes and gated UI. Mark billing implemented for Master Plan v1; provider URL/secret and live redirect checks are deployment validation before release.
 - First real provider selection: `docs/archive/ai-agent-feature-master-update-plan.md` still frames the first provider as an open decision, but implementation selected LinkedIn. Recommend closing the decision and sequencing future work as provider expansion.
 - n8n scope: some docs imply broader automation packs, while current code implements signed events, callbacks, and workflow docs. Recommend keeping signed audit/reminder automation as canonical until importable packs exist.
 - Brand memory scope: next-feature plan 05 is satisfied by the workbench/review/apply flow, but the roadmap asks for clustering, merge suggestions, and contradiction handling. Recommend keeping these as separate items.

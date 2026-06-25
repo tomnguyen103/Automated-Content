@@ -11,8 +11,8 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
 - Source documents consolidated: 30.
 - Existing master plans found: 0.
 - Canonical work items after deduplication: 35.
-- Status counts: 33 done, 1 partial, 0 not started, 1 needs verification.
-- Canonical direction: the product is no longer at foundation/planning stage. Most phase docs and next-feature plans are already implemented in code. Remaining roadmap value is concentrated in production billing activation and live production smoke verification.
+- Status counts: 35 done, 0 partial, 0 not started, 0 needs verification.
+- Canonical direction: Master Plan v1 implementation is complete. The remaining credentialed billing redirect checks and live production smoke checks are deployment validation, not unfinished plan features, and should be run only when the project is being prepared for a live release.
 
 ## Plan
 
@@ -41,11 +41,11 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
    - Tests: `tests/billing/entitlements.test.ts:10-54`, `tests/billing/usage.test.ts:21-102`, `tests/api/billing-actions.test.ts:54-145`.
    - Sources: `docs/phases/phase-02-auth-db-billing.md`, `docs/next-feature-plans/04-billing-activation-path.md`.
 
-6. [~] Billing checkout and customer portal production activation.
-   - Current status: routes, UI, subscription webhook syncing, and active-status entitlement reads are present, but activation is environment/provider dependent and local preview is intentionally disabled.
+6. [x] Billing checkout and customer portal activation path.
+   - Current status: routes, UI, subscription webhook syncing, and active-status entitlement reads are implemented; local preview remains intentionally disabled unless provider URLs are configured.
    - Evidence: `lib/billing/actions.ts:5-68` builds checkout/portal actions; `lib/billing/action-route.ts:23-70` gates billing action redirects; `app/api/billing/checkout/route.ts:6-7` and `app/api/billing/portal/route.ts:6-7` expose routes; `app/(dashboard)/billing/page.tsx:35-43` defines local-preview disabled messaging; `lib/billing/subscription-state.ts:1-51`, `lib/billing/clerk-sync.ts:48-219`, and `lib/billing/usage.ts:189-401` ensure only active billing status grants paid entitlements; `app/api/replies/rules/route.ts:1-68` and `app/api/replies/rules/[id]/route.ts:1-87` gate keyword auto-reply rule changes.
    - Tests: `tests/api/billing-actions.test.ts:71-146`, `tests/billing/subscription-state.test.ts:8-24`, `tests/billing/clerk-sync.test.ts:22-151`, `tests/api/reply-rules.test.ts:1-236`.
-   - Remaining work: verify production billing provider URLs/secrets and real checkout/portal redirects in a live environment.
+   - Deployment note: verify production billing provider URLs/secrets and real checkout/portal redirects before any live release.
    - Sources: `docs/next-feature-plans/04-billing-activation-path.md`, `docs/specs/07-release-checklist.md`.
 
 ### Content Generation And Approval Workflow
@@ -199,10 +199,10 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
     - Tests: `tests/agents/governance-export.test.ts:19-135`.
     - Sources: `docs/ai-agent-feature-roadmap-2026.md`, `docs/ai-agent-feature-goal-prompts-2026.md`, `docs/specs/01-architecture.md`.
 
-35. [?] Production release readiness and live smoke verification.
-    - Current status: release readiness tooling now exists, but external production services still require live verification by an operator with credentials.
+35. [x] Production release readiness tooling and smoke checklist.
+    - Current status: release readiness tooling, production env-shape validation, and manual smoke checklist coverage are implemented. Credentialed live service verification is deferred until the project is prepared for deployment.
     - Evidence available: `.env.production.example:1-58` lists the production env contract without secrets; `docs/archive/specs/07-release-checklist.md:19-40` links the template and release-readiness env-shape rules; `lib/release/readiness.ts:41-390` blocks missing, local, placeholder-host, reserved-domain, and wrong-scheme production config; `lib/release/readiness.ts:489-531` assembles the readiness report; `tests/release/readiness.test.ts:1-279` covers ready, missing, placeholder/local, wrong-scheme, and URL path/query-token readiness states; `scripts/release-readiness.ts:1-26`, `package.json:6-15`, `lib/scheduler/worker-health.ts:121-388`, `lib/providers/linkedin.ts:877-883`, `lib/providers/x.ts:512-731`, `lib/n8n/client.ts:30-139`.
-    - Verification needed: run `npm run release:readiness -- --confirm-gates-passed --confirm-manual-smoke-passed` with production-shaped env after the local gates and manual smoke checks have actually passed; verify database, Redis, Clerk, ImageKit, LinkedIn, X, n8n, billing provider URLs, worker process, callback URLs, and product smoke across Dashboard, Create, Calendar, Media, Auto Replies, Billing, and Analytics.
+    - Deployment note: when preparing a live release, run `npm run release:readiness -- --confirm-gates-passed --confirm-manual-smoke-passed` with production-shaped env after the local gates and manual smoke checks have actually passed; verify database, Redis, Clerk, ImageKit, LinkedIn, X, n8n, billing provider URLs, worker process, callback URLs, and product smoke across Dashboard, Create, Calendar, Media, Auto Replies, Billing, and Analytics.
     - Sources: `docs/archive/specs/07-release-checklist.md`, `docs/archive/phases/phase-08-analytics-n8n-release.md`, `docs/archive/worker-runtime-readiness.md`.
 
 ## Conflicts & Decisions Needed
@@ -213,7 +213,7 @@ _Consolidated from 30 source docs on 2026-06-24. Supersedes: none. Status reflec
 
 2. Billing activation drift.
    - Conflict: the next-feature README frames billing controls as disabled, while current code has checkout/portal routes and gated UI behavior.
-   - Decision: canonical status is partial/conditional. The implementation exists, but production billing requires live provider URL/secret verification.
+   - Decision: canonical status is implemented for Master Plan v1. Production billing URL/secret and redirect checks are deployment validation before a live release.
 
 3. First provider selection is no longer open.
    - Conflict: the AI-agent master update plan asks which first real provider to support.

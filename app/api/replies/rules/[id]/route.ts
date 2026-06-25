@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import {
+  ensureFeatureAllowed,
+  FeatureAccessError
+} from "@/lib/billing/usage";
 import { updateReplyRuleRequestSchema } from "@/lib/replies/console";
 import { resolveReplyServerContext } from "@/lib/replies/server";
 
@@ -28,13 +32,28 @@ export async function PATCH(request: Request, context: RuleRouteContext) {
   try {
     const { id } = await context.params;
     const input = updateReplyRuleRequestSchema.parse(body);
-    const rule = await replyContext.repository.updateRuleEnabled({
+    const currentRules = await replyContext.repository.listRules(replyContext.workspace.id);
+    const currentRule = currentRules.find((rule) => rule.id === id);
+
+    if (!currentRule) {
+      return NextResponse.json({ error: "Reply rule not found." }, { status: 404 });
+    }
+
+    if (input.enabled && !currentRule.enabled) {
+      await ensureFeatureAllowed({
+        workspaceId: replyContext.workspace.id,
+        feature: "keywordAutoReplies",
+        skip: replyContext.workspace.isLocalPreview
+      });
+    }
+
+    const updatedRule = await replyContext.repository.updateRuleEnabled({
       workspaceId: replyContext.workspace.id,
       ruleId: id,
       enabled: input.enabled
     });
 
-    if (!rule) {
+    if (!updatedRule) {
       return NextResponse.json({ error: "Reply rule not found." }, { status: 404 });
     }
 
@@ -47,6 +66,18 @@ export async function PATCH(request: Request, context: RuleRouteContext) {
           issues: error.issues
         },
         { status: 400 }
+      );
+    }
+
+    if (error instanceof FeatureAccessError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: "upgrade_required",
+          feature: error.feature,
+          requiredPlan: error.requiredPlan
+        },
+        { status: 402 }
       );
     }
 

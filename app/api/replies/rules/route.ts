@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import {
+  ensureFeatureAllowed,
+  FeatureAccessError
+} from "@/lib/billing/usage";
 import { createReplyRuleRequestSchema } from "@/lib/replies/console";
 import { resolveReplyServerContext } from "@/lib/replies/server";
 
@@ -20,10 +24,18 @@ export async function POST(request: Request) {
   }
 
   try {
+    const rule = createReplyRuleRequestSchema.parse(body);
+
+    await ensureFeatureAllowed({
+      workspaceId: context.workspace.id,
+      feature: "keywordAutoReplies",
+      skip: context.workspace.isLocalPreview
+    });
+
     await context.repository.createRule({
       workspaceId: context.workspace.id,
       userId: context.user.id,
-      rule: createReplyRuleRequestSchema.parse(body)
+      rule
     });
 
     return NextResponse.json(await context.repository.getConsoleState(context.workspace.id), { status: 201 });
@@ -35,6 +47,18 @@ export async function POST(request: Request) {
           issues: error.issues
         },
         { status: 400 }
+      );
+    }
+
+    if (error instanceof FeatureAccessError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: "upgrade_required",
+          feature: error.feature,
+          requiredPlan: error.requiredPlan
+        },
+        { status: 402 }
       );
     }
 

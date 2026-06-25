@@ -35,7 +35,7 @@ _Last updated: 2026-06-24 (run #2)._
 
 - [~] **Billing checkout and customer portal production activation** — Routes, UI, subscription webhook syncing, and active-status entitlement reads exist, but real production activation still depends on provider URLs/secrets and live redirect verification.
   - Missing: production billing provider verification and real checkout/portal smoke.
-  - Evidence: `lib/billing/actions.ts:5-68`, `lib/billing/action-route.ts:23-70`, `app/api/billing/checkout/route.ts:6-7`, `app/api/billing/portal/route.ts:6-7`, `app/(dashboard)/billing/page.tsx:35-43`, `lib/billing/subscription-state.ts:1-51`, `lib/billing/clerk-sync.ts:48-219`, `lib/billing/usage.ts:189-401`, `tests/api/billing-actions.test.ts:71-146`, `tests/billing/subscription-state.test.ts:8-24`, `tests/billing/clerk-sync.test.ts:22-151`.
+  - Evidence: `lib/billing/actions.ts:5-68`, `lib/billing/action-route.ts:23-70`, `app/api/billing/checkout/route.ts:6-7`, `app/api/billing/portal/route.ts:6-7`, `app/(dashboard)/billing/page.tsx:35-43`, `lib/billing/subscription-state.ts:1-51`, `lib/billing/clerk-sync.ts:48-219`, `lib/billing/usage.ts:189-401`, `app/api/replies/rules/route.ts:1-68`, `app/api/replies/rules/[id]/route.ts:1-87`, `tests/api/billing-actions.test.ts:71-146`, `tests/billing/subscription-state.test.ts:8-24`, `tests/billing/clerk-sync.test.ts:22-151`, `tests/api/reply-rules.test.ts:1-236`.
   - Sources: `docs/archive/next-feature-plans/04-billing-activation-path.md`, `docs/archive/specs/07-release-checklist.md`, `docs/MASTER_PLAN.md`.
 
 ### Content Generation And Approval Workflow

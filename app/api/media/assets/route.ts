@@ -21,7 +21,7 @@ const saveMediaAssetsSchema = z.object({
   assets: z.array(mediaAssetSchema).min(1).max(20)
 });
 
-export async function GET() {
+export async function GET(request?: NextRequest) {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -29,10 +29,12 @@ export async function GET() {
   }
 
   const workspace = await resolvePersonalWorkspaceForUser(user);
+  const limit = request ? new URL(request.url).searchParams.get("limit") ?? undefined : undefined;
   const assets = await listMediaAssetsForWorkspace({
     workspaceId: workspace.id,
     allowMemoryFallback: workspace.isLocalPreview,
-    fallbackUploadedByUserId: user.id
+    fallbackUploadedByUserId: user.id,
+    limit
   });
 
   return NextResponse.json({ assets });

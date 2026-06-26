@@ -13,6 +13,10 @@ import {
 } from "@/lib/jobs/media";
 import { dispatchMediaGenerationJob } from "@/lib/jobs/trigger";
 import { createMediaGenerationJobSchema } from "@/lib/jobs/types";
+import {
+  assertExpensiveEndpointAllowed,
+  ExpensiveEndpointRateLimitError
+} from "@/lib/security/expensive-endpoint-protection";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
 
 export const runtime = "nodejs";
@@ -50,6 +54,12 @@ export async function POST(request: NextRequest) {
   try {
     const input = createMediaGenerationJobSchema.parse(body);
     const workspace = await resolvePersonalWorkspaceForUser(user);
+    assertExpensiveEndpointAllowed({
+      route: "media.jobs.create",
+      userId: user.id,
+      workspaceId: workspace.id,
+      skip: workspace.isLocalPreview
+    });
     const usageSourceId = input.idempotencyKey
       ? `media_generation_job:${workspace.id}:${input.idempotencyKey}`
       : `media_generation_job:${randomUUID()}`;
@@ -115,6 +125,18 @@ export async function POST(request: NextRequest) {
         {
           error: "Media transforms limit reached for the current plan.",
           usage: error.metric
+        },
+        { status: 429 }
+      );
+    }
+
+    if (error instanceof ExpensiveEndpointRateLimitError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          limit: error.limit,
+          resetAt: error.resetAt,
+          windowMs: error.windowMs
         },
         { status: 429 }
       );

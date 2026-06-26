@@ -79,19 +79,27 @@ function fromPayload(payload: TokenVaultPayload): ProviderTokenSet {
 }
 
 function getVaultKey() {
-  if (!env.PROVIDER_TOKEN_ENCRYPTION_KEY) {
-    throw new TokenVaultConfigurationError();
-  }
+  const secret = getRequiredVaultSecret();
 
-  return crypto.createHash("sha256").update(env.PROVIDER_TOKEN_ENCRYPTION_KEY).digest();
+  return crypto.createHash("sha256").update(secret).digest();
 }
 
 function getKeyVersion() {
+  const secret = getRequiredVaultSecret();
+
+  return crypto.createHash("sha256").update(secret).digest("hex").slice(0, 12);
+}
+
+function getRequiredVaultSecret() {
   if (!env.PROVIDER_TOKEN_ENCRYPTION_KEY) {
     throw new TokenVaultConfigurationError();
   }
 
-  return crypto.createHash("sha256").update(env.PROVIDER_TOKEN_ENCRYPTION_KEY).digest("hex").slice(0, 12);
+  if (env.PROVIDER_TOKEN_ENCRYPTION_KEY.length < 32) {
+    throw new TokenVaultConfigurationError("PROVIDER_TOKEN_ENCRYPTION_KEY must be at least 32 characters.");
+  }
+
+  return env.PROVIDER_TOKEN_ENCRYPTION_KEY;
 }
 
 function encryptPayload(payload: TokenVaultPayload) {

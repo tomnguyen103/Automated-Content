@@ -2,7 +2,7 @@
 
 import {
   Clapperboard,
-  Download,
+  FileJson,
   FileText,
   RefreshCcw,
   Sparkles,
@@ -88,7 +88,7 @@ const presets: WorkflowPreset[] = [
   {
     kind: "media.render-short-clip",
     label: "Render Clip",
-    icon: Download,
+    icon: FileJson,
     buildInput: (state) => ({
       sourceUrl: state.sourceUrl,
       transcriptText: state.transcriptText,
@@ -166,12 +166,13 @@ function outputText(job: MediaGenerationJobRecord) {
   return "Workflow output stored.";
 }
 
-function renderedDownloadUrl(job: MediaGenerationJobRecord) {
+function artifactManifestUrl(job: MediaGenerationJobRecord) {
   const clip = objectRecord(job.output.renderedClip);
+  const asset = objectRecord(job.output.influencerAsset);
   const avatar = objectRecord(job.output.avatarVideo);
-  const downloadUrl = clip?.downloadUrl ?? avatar?.downloadUrl;
+  const manifestUrl = clip?.artifactManifestUrl ?? asset?.artifactManifestUrl ?? avatar?.artifactManifestUrl;
 
-  return typeof downloadUrl === "string" ? downloadUrl : null;
+  return typeof manifestUrl === "string" ? manifestUrl : null;
 }
 
 export function MediaWorkflowStudio() {
@@ -381,7 +382,7 @@ export function MediaWorkflowStudio() {
             </div>
           ) : (
             latestJobs.map((job) => {
-              const downloadUrl = renderedDownloadUrl(job);
+              const manifestUrl = artifactManifestUrl(job);
 
               return (
                 <article key={job.id} className="rounded-[var(--radius-md)] border border-[var(--color-border)] p-4">
@@ -402,13 +403,13 @@ export function MediaWorkflowStudio() {
                     {outputText(job)}
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {downloadUrl ? (
+                    {manifestUrl ? (
                       <a
                         className="inline-flex h-8 items-center justify-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-xs font-semibold transition hover:border-[var(--color-primary)]"
-                        href={downloadUrl}
+                        href={manifestUrl}
                       >
-                        <Download size={14} aria-hidden="true" />
-                        Download
+                        <FileJson size={14} aria-hidden="true" />
+                        Manifest
                       </a>
                     ) : null}
                     {job.status === "queued" || job.status === "running" ? (

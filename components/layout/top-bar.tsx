@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { Bell, ChevronDown, Menu, Plus, Search } from "lucide-react";
+import { Bell, Menu, Plus } from "lucide-react";
 import { AuthControls } from "@/components/auth/auth-controls";
 import { NavLinks } from "@/components/layout/nav-links";
-import { Button } from "@/components/ui/button";
 import { brand } from "@/lib/design/tokens";
 import type { CurrentAppUser } from "@/lib/auth/current-user";
 import { isClerkClientConfigured } from "@/lib/env";
@@ -31,25 +30,27 @@ export function TopBar({ user }: { user: CurrentAppUser | null }) {
               </nav>
             </div>
           </details>
-          <button
-            type="button"
-            className="hidden rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium lg:inline-flex"
+          <div
+            className="hidden rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 lg:block"
+            aria-label="Current workspace"
           >
-            Growth workspace
-            <ChevronDown className="ml-2" size={15} aria-hidden="true" />
-          </button>
-          <label className="relative hidden min-w-72 md:block">
-            <span className="sr-only">Search workspace</span>
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-subtle)]"
-              size={16}
-              aria-hidden="true"
-            />
-            <input
-              className="h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] pl-9 pr-3 text-sm"
-              placeholder="Search posts, media, jobs"
-            />
-          </label>
+            <p className="text-sm font-medium leading-4 text-[var(--color-text)]">Growth workspace</p>
+            <p className="mt-0.5 text-xs leading-4 text-[var(--color-text-muted)]">{brand.shortName}</p>
+          </div>
+          <nav className="hidden items-center gap-1 md:flex" aria-label="Quick links">
+            <Link
+              href="/approvals"
+              className="rounded-[var(--radius-md)] px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
+            >
+              Approvals
+            </Link>
+            <Link
+              href="/analytics"
+              className="rounded-[var(--radius-md)] px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
+            >
+              Analytics
+            </Link>
+          </nav>
         </div>
 
         <div className="flex items-center gap-2">
@@ -60,19 +61,23 @@ export function TopBar({ user }: { user: CurrentAppUser | null }) {
             <Plus size={16} aria-hidden="true" />
             Create
           </Link>
-          <Button variant="ghost" size="md" aria-label="Notifications">
+          <Link
+            href="/approvals"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
+            aria-label="Open approvals"
+          >
             <Bell size={17} aria-hidden="true" />
-          </Button>
+          </Link>
           {isClerkClientConfigured ? (
             <AuthControls surface="topbar" />
           ) : (
-            <button
-              type="button"
-              className="h-9 w-9 rounded-full bg-[var(--color-text)] text-sm font-semibold text-white"
+            <span
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-text)] text-sm font-semibold text-white"
               aria-label={userLabel}
+              title={userLabel}
             >
               {user?.initials ?? "US"}
-            </button>
+            </span>
           )}
         </div>
       </div>

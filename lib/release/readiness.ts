@@ -521,6 +521,10 @@ function productionEnvCheckResult(
     return blockedEnvCheck(check, `${check.key} must be replaced with a production value.`);
   }
 
+  if (check.key === "PROVIDER_TOKEN_ENCRYPTION_KEY" && value.length < 32) {
+    return blockedEnvCheck(check, `${check.key} must be at least 32 characters.`);
+  }
+
   return {
     id: check.id,
     category: check.category,
@@ -683,16 +687,16 @@ function backgroundJobBackendCheck(env: EnvMap): ReleaseReadinessCheck {
   };
 }
 
-export function buildPassingReleaseGateResults(): ReleaseGateResult[] {
+function buildOperatorConfirmedGateResults(): ReleaseGateResult[] {
   return requiredReleaseGateCommands.map((command) => ({
     command,
-    status: "pass",
-    detail: "Gate marked passed via operator confirmation."
+    status: "fail",
+    detail: "Operator confirmation is recorded, but this report requires captured gate output before release."
   }));
 }
 
-export function buildPassingManualSmokeChecks(): Partial<Record<string, ReleaseCheckStatus>> {
-  return Object.fromEntries(manualSmokeChecks.map((check) => [check.id, "pass"]));
+function buildOperatorConfirmedManualSmokeChecks(): Partial<Record<string, ReleaseCheckStatus>> {
+  return Object.fromEntries(manualSmokeChecks.map((check) => [check.id, "manual"]));
 }
 
 export function getReleaseReadinessInputsFromCli({
@@ -711,11 +715,11 @@ export function getReleaseReadinessInputsFromCli({
     hasConfirmation(env[releaseReadinessEnvFlags.confirmManualSmokePassed]);
 
   return {
-    gateResults: confirmedGates ? buildPassingReleaseGateResults() : [],
-    manualChecks: confirmedManualSmoke ? buildPassingManualSmokeChecks() : {},
+    gateResults: confirmedGates ? buildOperatorConfirmedGateResults() : [],
+    manualChecks: confirmedManualSmoke ? buildOperatorConfirmedManualSmokeChecks() : {},
     confirmationMessages: [
-      confirmedGates ? "Local gates marked passed via operator confirmation." : null,
-      confirmedManualSmoke ? "Manual smoke checks marked passed via operator confirmation." : null
+      confirmedGates ? "Local gate confirmation recorded; captured command results are still required." : null,
+      confirmedManualSmoke ? "Manual smoke confirmation recorded; smoke evidence is still required." : null
     ].filter((message): message is string => Boolean(message))
   };
 }

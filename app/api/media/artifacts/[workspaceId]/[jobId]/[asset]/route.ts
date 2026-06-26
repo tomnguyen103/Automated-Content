@@ -14,9 +14,10 @@ type RouteContext = {
 };
 
 function safeAttachmentName(asset: string) {
-  const cleaned = asset.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
+  const withoutQuery = asset.split("?")[0] ?? asset;
+  const cleaned = withoutQuery.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
 
-  return `${cleaned || "generated-artifact"}.json`;
+  return cleaned.endsWith(".json") ? cleaned : `${cleaned || "generated-artifact"}.json`;
 }
 
 function syntheticLabel(output: Record<string, unknown>) {
@@ -80,6 +81,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     {
       headers: {
         "Cache-Control": "private, no-store",
+        "Content-Type": "application/json; charset=utf-8",
         ...(isDownload
           ? {
               "Content-Disposition": `attachment; filename="${safeAttachmentName(asset)}"`

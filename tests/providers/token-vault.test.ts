@@ -69,4 +69,22 @@ describe("provider token vault", () => {
 
     expect(tokens).toBeNull();
   });
+
+  it("rejects short production encryption keys before database storage", async () => {
+    vi.resetModules();
+    vi.stubEnv("DATABASE_URL", "postgres://app_user:prod_password@db.example.com:5432/app");
+    vi.stubEnv("PROVIDER_TOKEN_ENCRYPTION_KEY", "short-secret");
+    const { storeProviderTokens } = await loadTokenVault();
+
+    await expect(
+      storeProviderTokens({
+        workspaceId: "00000000-0000-0000-0000-000000000001",
+        provider: "mock",
+        providerAccountId: "mock_account",
+        tokens: {
+          accessToken: "access-token"
+        }
+      })
+    ).rejects.toThrow("PROVIDER_TOKEN_ENCRYPTION_KEY must be at least 32 characters.");
+  });
 });

@@ -31,6 +31,11 @@ import { autoReplyRuleSchema, normalizeReplyRule, type AutoReplyRule } from "@/l
 type CommentReplyWorkflowStatus = "sent" | "awaiting_approval" | "ignored" | "failed";
 type ReplyAttemptStatus = "approved" | "awaiting_approval" | "sent" | "failed" | "skipped";
 
+const autoReplyRuleListLimit = 100;
+const autoReplyConsoleEventLimit = 100;
+const autoReplyConsoleAttemptLimit = 100;
+const recentReplyAttemptLimit = 250;
+
 export type PersistedReplyAttemptInput = {
   id: string;
   commentId: string;
@@ -385,15 +390,18 @@ function createMemoryReplyRepository({ seedLocalPreview = false } = {}): ReplyRe
 
     const workspaceRules = [...rules.values()]
       .filter((rule) => rule.workspaceId === workspaceId)
-      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
+      .slice(0, autoReplyRuleListLimit);
     const workspacePrefix = `${workspaceId}:`;
     const workspaceComments = [...comments.entries()]
       .filter(([commentKey]) => commentKey.startsWith(workspacePrefix))
       .map(([, comment]) => comment)
-      .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
+      .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
+      .slice(0, autoReplyConsoleEventLimit);
     const workspaceAttempts = [...attempts.values()]
       .filter((attempt) => attempt.workspaceId === workspaceId)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, autoReplyConsoleAttemptLimit);
     const approvals = workspaceAttempts
       .filter((attempt) => attempt.status === "awaiting_approval")
       .map((attempt) => {
@@ -456,6 +464,8 @@ function createMemoryReplyRepository({ seedLocalPreview = false } = {}): ReplyRe
     async listRecentAttempts(workspaceId) {
       return [...attempts.values()]
         .filter((attempt) => attempt.workspaceId === workspaceId && attempt.ruleId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, recentReplyAttemptLimit)
         .map((attempt) => ({
           ruleId: attempt.ruleId!,
           attemptedAt: attempt.sentAt ?? attempt.createdAt,
@@ -631,7 +641,8 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
       .select()
       .from(commentEvents)
       .where(eq(commentEvents.workspaceId, workspaceId))
-      .orderBy(desc(commentEvents.receivedAt));
+      .orderBy(desc(commentEvents.receivedAt))
+      .limit(autoReplyConsoleEventLimit);
     const inbox: InboxComment[] = commentRows.map((comment) => {
       const metadata = toJsonRecord(comment.metadata);
 
@@ -673,7 +684,8 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
         )
       )
       .where(eq(replyAttempts.workspaceId, workspaceId))
-      .orderBy(desc(replyAttempts.createdAt));
+      .orderBy(desc(replyAttempts.createdAt))
+      .limit(autoReplyConsoleAttemptLimit);
     const approvals: ReplyApprovalItem[] = [];
     const logs: ReplyLogEntry[] = [];
 
@@ -737,7 +749,8 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
         .select()
         .from(autoReplyRules)
         .where(eq(autoReplyRules.workspaceId, workspaceId))
-        .orderBy(desc(autoReplyRules.createdAt));
+        .orderBy(desc(autoReplyRules.createdAt))
+        .limit(autoReplyRuleListLimit);
 
       return rows.map(toRule);
     },
@@ -768,7 +781,9 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
           status: replyAttempts.status
         })
         .from(replyAttempts)
-        .where(eq(replyAttempts.workspaceId, workspaceId));
+        .where(eq(replyAttempts.workspaceId, workspaceId))
+        .orderBy(desc(replyAttempts.createdAt))
+        .limit(recentReplyAttemptLimit);
 
       return rows
         .filter((row): row is typeof row & { ruleId: string } => Boolean(row.ruleId))

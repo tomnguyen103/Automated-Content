@@ -167,6 +167,7 @@ describe("source upload intents API", () => {
     const payload = await response.json();
 
     expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("60");
     expect(payload).toEqual({
       error: "Too many expensive media requests. Try again shortly.",
       limit: 20,

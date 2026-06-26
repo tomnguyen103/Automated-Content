@@ -96,7 +96,12 @@ export async function POST(request: NextRequest) {
           resetAt: error.resetAt,
           windowMs: error.windowMs
         },
-        { status: 429 }
+        {
+          status: 429,
+          headers: {
+            "Retry-After": Math.ceil(error.windowMs / 1000).toString()
+          }
+        }
       );
     }
 

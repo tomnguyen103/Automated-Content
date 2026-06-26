@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { getDb, type DatabaseClient } from "@/db";
 import {
   autoReplyRules,
@@ -390,17 +390,17 @@ function createMemoryReplyRepository({ seedLocalPreview = false } = {}): ReplyRe
 
     const workspaceRules = [...rules.values()]
       .filter((rule) => rule.workspaceId === workspaceId)
-      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
+      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.id.localeCompare(a.id))
       .slice(0, autoReplyRuleListLimit);
     const workspacePrefix = `${workspaceId}:`;
     const workspaceComments = [...comments.entries()]
       .filter(([commentKey]) => commentKey.startsWith(workspacePrefix))
       .map(([, comment]) => comment)
-      .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
+      .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt) || b.id.localeCompare(a.id))
       .slice(0, autoReplyConsoleEventLimit);
     const workspaceAttempts = [...attempts.values()]
       .filter((attempt) => attempt.workspaceId === workspaceId)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
       .slice(0, autoReplyConsoleAttemptLimit);
     const approvals = workspaceAttempts
       .filter((attempt) => attempt.status === "awaiting_approval")
@@ -464,7 +464,7 @@ function createMemoryReplyRepository({ seedLocalPreview = false } = {}): ReplyRe
     async listRecentAttempts(workspaceId) {
       return [...attempts.values()]
         .filter((attempt) => attempt.workspaceId === workspaceId && attempt.ruleId)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
         .slice(0, recentReplyAttemptLimit)
         .map((attempt) => ({
           ruleId: attempt.ruleId!,
@@ -641,7 +641,7 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
       .select()
       .from(commentEvents)
       .where(eq(commentEvents.workspaceId, workspaceId))
-      .orderBy(desc(commentEvents.receivedAt))
+      .orderBy(desc(commentEvents.receivedAt), desc(commentEvents.id))
       .limit(autoReplyConsoleEventLimit);
     const inbox: InboxComment[] = commentRows.map((comment) => {
       const metadata = toJsonRecord(comment.metadata);
@@ -684,7 +684,7 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
         )
       )
       .where(eq(replyAttempts.workspaceId, workspaceId))
-      .orderBy(desc(replyAttempts.createdAt))
+      .orderBy(desc(replyAttempts.createdAt), desc(replyAttempts.id))
       .limit(autoReplyConsoleAttemptLimit);
     const approvals: ReplyApprovalItem[] = [];
     const logs: ReplyLogEntry[] = [];
@@ -749,7 +749,7 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
         .select()
         .from(autoReplyRules)
         .where(eq(autoReplyRules.workspaceId, workspaceId))
-        .orderBy(desc(autoReplyRules.createdAt))
+        .orderBy(desc(autoReplyRules.createdAt), desc(autoReplyRules.id))
         .limit(autoReplyRuleListLimit);
 
       return rows.map(toRule);
@@ -781,8 +781,8 @@ export function createDatabaseReplyRepository(db: DatabaseClient = getDb()): Rep
           status: replyAttempts.status
         })
         .from(replyAttempts)
-        .where(eq(replyAttempts.workspaceId, workspaceId))
-        .orderBy(desc(replyAttempts.createdAt))
+        .where(and(eq(replyAttempts.workspaceId, workspaceId), isNotNull(replyAttempts.ruleId)))
+        .orderBy(desc(replyAttempts.createdAt), desc(replyAttempts.id))
         .limit(recentReplyAttemptLimit);
 
       return rows

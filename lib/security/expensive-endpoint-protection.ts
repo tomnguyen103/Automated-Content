@@ -2,8 +2,12 @@ import "server-only";
 
 const defaultWindowMs = 60_000;
 const defaultMaxRequests = 20;
+const sweepIntervalMs = 60_000;
 
+// Best-effort per-process throttle. Production abuse controls should back this
+// with a shared store before relying on cross-instance limits.
 const requestBuckets = new Map<string, number[]>();
+let lastSweepAt = 0;
 
 export class ExpensiveEndpointRateLimitError extends Error {
   readonly limit: number;
@@ -39,6 +43,25 @@ function bucketKey({
   return `${route}:${workspaceId}:${userId}`;
 }
 
+function pruneExpiredBuckets(nowMs: number, windowMs: number) {
+  if (nowMs - lastSweepAt < sweepIntervalMs) {
+    return;
+  }
+
+  lastSweepAt = nowMs;
+  const cutoff = nowMs - windowMs;
+
+  for (const [key, timestamps] of requestBuckets) {
+    const active = timestamps.filter((timestamp) => timestamp > cutoff);
+
+    if (active.length === 0) {
+      requestBuckets.delete(key);
+    } else {
+      requestBuckets.set(key, active);
+    }
+  }
+}
+
 export function assertExpensiveEndpointAllowed({
   limit = defaultMaxRequests,
   now = new Date(),
@@ -61,11 +84,13 @@ export function assertExpensiveEndpointAllowed({
   }
 
   const key = bucketKey({ route, userId, workspaceId });
-  const cutoff = now.getTime() - windowMs;
+  const nowMs = now.getTime();
+  pruneExpiredBuckets(nowMs, windowMs);
+  const cutoff = nowMs - windowMs;
   const bucket = (requestBuckets.get(key) ?? []).filter((timestamp) => timestamp > cutoff);
 
   if (bucket.length >= limit) {
-    const oldest = bucket[0] ?? now.getTime();
+    const oldest = bucket[0] ?? nowMs;
     throw new ExpensiveEndpointRateLimitError({
       limit,
       resetAt: new Date(oldest + windowMs),
@@ -73,10 +98,19 @@ export function assertExpensiveEndpointAllowed({
     });
   }
 
-  bucket.push(now.getTime());
+  if (bucket.length === 0) {
+    requestBuckets.delete(key);
+  }
+
+  bucket.push(nowMs);
   requestBuckets.set(key, bucket);
 }
 
 export function clearExpensiveEndpointProtectionForTests() {
   requestBuckets.clear();
+  lastSweepAt = 0;
+}
+
+export function getExpensiveEndpointBucketCountForTests() {
+  return requestBuckets.size;
 }

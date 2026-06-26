@@ -169,6 +169,29 @@ describe("release readiness", () => {
     );
   });
 
+  it("blocks weak provider token encryption keys", () => {
+    const report = buildReleaseReadinessReport({
+      env: {
+        ...completeEnv,
+        PROVIDER_TOKEN_ENCRYPTION_KEY: "short-secret"
+      },
+      gateResults: passingGates,
+      manualChecks: passedManualChecks,
+      now: new Date("2026-06-24T12:00:00.000Z")
+    });
+
+    expect(report.ready).toBe(false);
+    expect(report.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "provider-token-key",
+          status: "blocked",
+          detail: expect.stringContaining("PROVIDER_TOKEN_ENCRYPTION_KEY must be at least 32 characters.")
+        })
+      ])
+    );
+  });
+
   it("requires Redis only when Trigger.dev is not the configured background backend", () => {
     const report = buildReleaseReadinessReport({
       env: {
@@ -232,7 +255,7 @@ describe("release readiness", () => {
     expect(report.blockerCount).toBe(0);
   });
 
-  it("accepts explicit CLI confirmations for completed gates and manual smoke checks", () => {
+  it("records explicit CLI confirmations without marking missing evidence ready", () => {
     const cliInputs = getReleaseReadinessInputsFromCli({
       args: ["--confirm-gates-passed", "--confirm-manual-smoke-passed"],
       env: {}
@@ -244,29 +267,30 @@ describe("release readiness", () => {
     });
 
     expect(cliInputs.confirmationMessages).toEqual([
-      "Local gates marked passed via operator confirmation.",
-      "Manual smoke checks marked passed via operator confirmation."
+      "Local gate confirmation recorded; captured command results are still required.",
+      "Manual smoke confirmation recorded; smoke evidence is still required."
     ]);
     expect(report.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           label: "npm run lint",
-          detail: "Gate marked passed via operator confirmation."
+          status: "blocked",
+          detail: "Operator confirmation is recorded, but this report requires captured gate output before release."
         }),
         expect.objectContaining({
           label: "Production product smoke",
+          status: "manual",
           detail:
-            "Open Dashboard, Create, Calendar, Media, Auto Replies, Billing, and Analytics without console errors. Operator confirmed this manual smoke check passed."
+            "Open Dashboard, Create, Calendar, Media, Auto Replies, Billing, and Analytics without console errors."
         })
       ])
     );
-    expect(report.ready).toBe(true);
-    expect(report.blockerCount).toBe(0);
-    expect(report.manualCount).toBe(0);
-    expect(report.passedCount).toBe(report.checks.length);
+    expect(report.ready).toBe(false);
+    expect(report.blockerCount).toBe(requiredReleaseGateCommands.length);
+    expect(report.manualCount).toBeGreaterThan(0);
   });
 
-  it("accepts env confirmations for completed gates and manual smoke checks", () => {
+  it("records env confirmations without marking missing evidence ready", () => {
     const cliInputs = getReleaseReadinessInputsFromCli({
       args: [],
       env: {
@@ -281,12 +305,12 @@ describe("release readiness", () => {
     });
 
     expect(cliInputs.confirmationMessages).toEqual([
-      "Local gates marked passed via operator confirmation.",
-      "Manual smoke checks marked passed via operator confirmation."
+      "Local gate confirmation recorded; captured command results are still required.",
+      "Manual smoke confirmation recorded; smoke evidence is still required."
     ]);
-    expect(report.ready).toBe(true);
-    expect(report.blockerCount).toBe(0);
-    expect(report.manualCount).toBe(0);
+    expect(report.ready).toBe(false);
+    expect(report.blockerCount).toBe(requiredReleaseGateCommands.length);
+    expect(report.manualCount).toBeGreaterThan(0);
   });
 
   it("blocks unsupported AI provider values instead of falling back to OpenAI", () => {

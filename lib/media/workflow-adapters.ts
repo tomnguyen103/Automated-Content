@@ -28,9 +28,9 @@ export type ClipCandidate = {
 };
 
 export type RenderedClip = {
+  artifactManifestUrl: string;
   id: string;
   clipCandidateId: string;
-  downloadUrl: string;
   format: "mp4";
   height: number;
   status: "succeeded";
@@ -40,6 +40,7 @@ export type RenderedClip = {
 };
 
 export type GeneratedInfluencerAsset = {
+  artifactManifestUrl: string;
   id: string;
   assetType: "synthetic_influencer";
   mediaType: "image" | "video";
@@ -58,9 +59,9 @@ export type ConsentRecord = {
 };
 
 export type GeneratedAvatarVideo = {
+  artifactManifestUrl: string;
   id: string;
   avatarAssetId: string;
-  downloadUrl: string;
   provider: "mock";
   syntheticMediaLabel: string;
   url: string;
@@ -342,12 +343,12 @@ export const deterministicMediaWorkflowAdapter: MediaWorkflowProviderAdapter = {
     const renderedClip: RenderedClip = {
       id: stableId("render", [input.jobId, clip.id]),
       clipCandidateId: clip.id,
-      downloadUrl: artifactUrl(input, `${clip.id}.mp4?download=1`),
+      artifactManifestUrl: artifactUrl(input, `${clip.id}.json?download=1`),
       format: "mp4",
       height: 1920,
       status: "succeeded",
       syntheticMediaLabel: "Edited from user-provided source video with AI-selected captions.",
-      url: artifactUrl(input, `${clip.id}.mp4`),
+      url: artifactUrl(input, `${clip.id}.json`),
       width: 1080
     };
 
@@ -378,11 +379,12 @@ export const deterministicMediaWorkflowAdapter: MediaWorkflowProviderAdapter = {
       stringInput(input.input, "prompt") ??
       `Create a synthetic creator asset for ${stringInput(input.input, "topic") ?? "the campaign"}.`;
     const id = stableId("influencer", [input.jobId, personaName, prompt]);
-    const url = artifactUrl(input, `${id}.png`);
+    const url = artifactUrl(input, `${id}.json`);
 
     return {
       influencerAsset: {
         id,
+        artifactManifestUrl: `${url}?download=1`,
         assetType: "synthetic_influencer",
         mediaType: "image",
         personaName,
@@ -426,7 +428,7 @@ export const deterministicMediaWorkflowAdapter: MediaWorkflowProviderAdapter = {
     const avatarAssetId = stableId("avatar", [input.jobId, avatarName]);
     const voiceAssetId = stableId("voice", [input.jobId, script]);
     const id = stableId("talking_video", [input.jobId, avatarAssetId, voiceAssetId]);
-    const url = artifactUrl(input, `${id}.mp4`);
+    const url = artifactUrl(input, `${id}.json`);
 
     return {
       consentRecord: {
@@ -443,8 +445,8 @@ export const deterministicMediaWorkflowAdapter: MediaWorkflowProviderAdapter = {
       },
       avatarVideo: {
         id,
+        artifactManifestUrl: `${url}?download=1`,
         avatarAssetId,
-        downloadUrl: `${url}?download=1`,
         provider: "mock",
         syntheticMediaLabel: "AI-generated avatar and voice video.",
         url,

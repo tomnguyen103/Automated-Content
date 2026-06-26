@@ -128,6 +128,7 @@ describe("media generation workflows", () => {
     });
 
     expect(renderRun.job.output.renderedClip).toMatchObject({
+      artifactManifestUrl: expect.stringContaining(".json?download=1"),
       clipCandidateId: clipCandidates[0]!.id,
       format: "mp4",
       status: "succeeded"
@@ -155,6 +156,7 @@ describe("media generation workflows", () => {
     });
 
     expect(result.job.output.influencerAsset).toMatchObject({
+      artifactManifestUrl: expect.stringContaining(".json?download=1"),
       assetType: "synthetic_influencer",
       provider: "mock",
       syntheticMediaLabel: "AI-generated synthetic influencer asset."
@@ -207,6 +209,7 @@ describe("media generation workflows", () => {
       retentionDays: 14
     });
     expect(result.job.output.avatarVideo).toMatchObject({
+      artifactManifestUrl: expect.stringContaining(".json?download=1"),
       provider: "mock",
       syntheticMediaLabel: "AI-generated avatar and voice video."
     });

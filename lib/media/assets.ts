@@ -18,6 +18,7 @@ import {
 } from "@/lib/media/types";
 
 const memoryAssetsByWorkspace = new Map<string, MediaAsset[]>();
+export const mediaAssetListLimit = 100;
 
 export class MediaAssetConflictError extends Error {
   constructor(message = "Media asset already belongs to a different workspace.") {
@@ -134,6 +135,16 @@ function uniqueAssets(assets: MediaAsset[]) {
   return unique;
 }
 
+export function normalizeMediaAssetListLimit(value: number | string | undefined = mediaAssetListLimit) {
+  const parsed = typeof value === "string" ? Number.parseInt(value, 10) : value;
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return mediaAssetListLimit;
+  }
+
+  return Math.min(Math.floor(parsed), mediaAssetListLimit);
+}
+
 function parseTransformDefaults(value: Record<string, unknown>): MediaTransformSettings {
   const parsed = mediaTransformSettingsSchema.safeParse(value);
 
@@ -227,24 +238,29 @@ function fallbackAssetsForWorkspace({
 export async function listMediaAssetsForWorkspace({
   allowMemoryFallback = false,
   fallbackUploadedByUserId = "local-preview-user",
+  limit = mediaAssetListLimit,
   workspaceId
 }: {
   workspaceId: string;
   allowMemoryFallback?: boolean;
   fallbackUploadedByUserId?: string;
+  limit?: number | string;
 }) {
+  const normalizedLimit = normalizeMediaAssetListLimit(limit);
+
   if (allowMemoryFallback || !isDatabaseConfigured) {
     return fallbackAssetsForWorkspace({
       uploadedByUserId: fallbackUploadedByUserId,
       workspaceId
-    });
+    }).slice(0, normalizedLimit);
   }
 
   const rows = await getDb()
     .select()
     .from(mediaAssets)
     .where(eq(mediaAssets.workspaceId, workspaceId))
-    .orderBy(desc(mediaAssets.createdAt));
+    .orderBy(desc(mediaAssets.createdAt))
+    .limit(normalizedLimit);
 
   return rows.map(mediaAssetRowToAsset);
 }

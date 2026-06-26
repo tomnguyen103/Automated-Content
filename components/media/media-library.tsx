@@ -33,7 +33,7 @@ export function MediaLibrary() {
 
     const loadAssets = async () => {
       try {
-        const response = await fetch("/api/media/assets");
+        const response = await fetch("/api/media/assets?limit=100");
         const payload = await response.json();
 
         if (!response.ok) {

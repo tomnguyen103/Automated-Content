@@ -92,6 +92,17 @@ describe("media assets API", () => {
     expect(nextPayload.assets.some((asset: { id: string }) => asset.id === sampleAsset.id)).toBe(true);
   });
 
+  it("bounds media asset list responses", async () => {
+    const { GET, clearMediaAssetsForTests } = await loadMediaAssetRoute();
+    clearMediaAssetsForTests();
+
+    const response = await GET(new NextRequest("http://localhost:3000/api/media/assets?limit=1"));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.assets).toHaveLength(1);
+  });
+
   it("fails closed when media assets are requested without authentication", async () => {
     vi.resetModules();
     vi.stubEnv("AUTH_LOCAL_PREVIEW", "");

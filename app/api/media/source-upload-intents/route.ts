@@ -3,15 +3,15 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import {
-  consumeUsageForLimit,
-  UsageLimitExceededError
-} from "@/lib/billing/usage";
-import {
   createSignedSourceVideoUploadIntent,
   getObjectStorageConfig,
   ObjectStorageConfigurationError,
   ObjectStorageUploadIntentError
 } from "@/lib/media/object-storage";
+import {
+  assertExpensiveEndpointAllowed,
+  ExpensiveEndpointRateLimitError
+} from "@/lib/security/expensive-endpoint-protection";
 import { resolvePersonalWorkspaceForUser } from "@/lib/workspaces/personal-workspace";
 
 export const runtime = "nodejs";
@@ -41,23 +41,16 @@ export async function POST(request: NextRequest) {
     const workspace = await resolvePersonalWorkspaceForUser(user);
     const id = `source_${randomUUID()}`;
     const storageConfig = getObjectStorageConfig();
+    assertExpensiveEndpointAllowed({
+      route: "media.source-upload-intents.create",
+      userId: user.id,
+      workspaceId: workspace.id,
+      skip: workspace.isLocalPreview
+    });
 
     if (input.sizeBytes > storageConfig.maxUploadBytes) {
       throw new ObjectStorageUploadIntentError("Source video exceeds the configured upload size limit.");
     }
-
-    await consumeUsageForLimit({
-      workspaceId: workspace.id,
-      key: "mediaTransformsPerMonth",
-      sourceId: `source_upload_intent:${id}`,
-      metadata: {
-        contentType: input.contentType,
-        fileName: input.fileName,
-        sizeBytes: input.sizeBytes,
-        userId: user.id
-      },
-      skip: workspace.isLocalPreview
-    });
 
     const intent = await createSignedSourceVideoUploadIntent({
       workspaceId: workspace.id,
@@ -95,13 +88,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    if (error instanceof UsageLimitExceededError) {
+    if (error instanceof ExpensiveEndpointRateLimitError) {
       return NextResponse.json(
         {
-          error: "Media transforms limit reached for the current plan.",
-          usage: error.metric
+          error: error.message,
+          limit: error.limit,
+          resetAt: error.resetAt,
+          windowMs: error.windowMs
         },
-        { status: 429 }
+        {
+          status: 429,
+          headers: {
+            "Retry-After": Math.ceil(error.windowMs / 1000).toString()
+          }
+        }
       );
     }
 

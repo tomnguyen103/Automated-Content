@@ -57,14 +57,17 @@ describe("generated media artifacts API", () => {
         workspaceId: job.workspaceId
       }
     });
-    const renderedClip = result.job.output.renderedClip as { downloadUrl: string; url: string };
+    const renderedClip = result.job.output.renderedClip as { artifactManifestUrl: string; url: string };
 
     expect(renderedClip.url).toContain(`/api/media/artifacts/${localPreviewWorkspaceId}/${job.id}/`);
+    expect(renderedClip.url).toContain(".json");
+    expect(renderedClip.artifactManifestUrl).toContain("?download=1");
 
+    const manifestUrl = new URL(renderedClip.artifactManifestUrl, "http://localhost:3000");
     const response = await GET(
-      new NextRequest(`http://localhost:3000${renderedClip.downloadUrl}`),
+      new NextRequest(manifestUrl.toString()),
       routeContext({
-        asset: renderedClip.downloadUrl.split("/").at(-1)!.replace("?download=1", ""),
+        asset: manifestUrl.pathname.split("/").at(-1)!,
         jobId: job.id,
         workspaceId: job.workspaceId
       })
@@ -73,6 +76,7 @@ describe("generated media artifacts API", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(response.headers.get("Content-Type")).toContain("application/json");
     expect(response.headers.get("Content-Disposition")).toContain("attachment;");
     expect(payload.artifact).toMatchObject({
       jobId: job.id,

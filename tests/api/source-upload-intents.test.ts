@@ -1,28 +1,18 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const usageMetric = {
-  key: "mediaTransformsPerMonth",
-  label: "Media transforms",
-  used: 10,
-  limit: 10,
-  remaining: 0,
-  allowed: false,
-  cadence: "monthly"
-} as const;
-
-class UsageLimitExceededError extends Error {
-  readonly metric: typeof usageMetric;
-
-  constructor(metric = usageMetric) {
-    super("Media transforms limit reached for the current plan.");
-    this.name = "UsageLimitExceededError";
-    this.metric = metric;
-  }
-}
-
 class ObjectStorageConfigurationError extends Error {}
 class ObjectStorageUploadIntentError extends Error {}
+class ExpensiveEndpointRateLimitError extends Error {
+  readonly limit = 20;
+  readonly resetAt = "2026-06-25T12:01:00.000Z";
+  readonly windowMs = 60_000;
+
+  constructor() {
+    super("Too many expensive media requests. Try again shortly.");
+    this.name = "ExpensiveEndpointRateLimitError";
+  }
+}
 
 const storageConfig = {
   accessKeyId: "storage_access_key",
@@ -41,7 +31,7 @@ async function loadSourceUploadIntentRoute() {
 }
 
 function mockProductionContext({
-  consumeUsageForLimit = vi.fn(async () => null),
+  assertExpensiveEndpointAllowed = vi.fn(),
   getObjectStorageConfig = vi.fn(() => storageConfig),
   createSignedSourceVideoUploadIntent = vi.fn(async () => ({
     bucket: "automated-content-prod-video",
@@ -59,7 +49,7 @@ function mockProductionContext({
     uploadUrl: "https://signed-upload.example.com/put"
   }))
 }: {
-  consumeUsageForLimit?: ReturnType<typeof vi.fn>;
+  assertExpensiveEndpointAllowed?: ReturnType<typeof vi.fn>;
   getObjectStorageConfig?: ReturnType<typeof vi.fn>;
   createSignedSourceVideoUploadIntent?: ReturnType<typeof vi.fn>;
 } = {}) {
@@ -80,19 +70,19 @@ function mockProductionContext({
       isLocalPreview: false
     }))
   }));
-  vi.doMock("@/lib/billing/usage", () => ({
-    UsageLimitExceededError,
-    consumeUsageForLimit
-  }));
   vi.doMock("@/lib/media/object-storage", () => ({
     ObjectStorageConfigurationError,
     ObjectStorageUploadIntentError,
     createSignedSourceVideoUploadIntent,
     getObjectStorageConfig
   }));
+  vi.doMock("@/lib/security/expensive-endpoint-protection", () => ({
+    assertExpensiveEndpointAllowed,
+    ExpensiveEndpointRateLimitError
+  }));
 
   return {
-    consumeUsageForLimit,
+    assertExpensiveEndpointAllowed,
     getObjectStorageConfig,
     createSignedSourceVideoUploadIntent
   };
@@ -128,14 +118,14 @@ describe("source upload intents API", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.doUnmock("@/lib/auth/current-user");
-    vi.doUnmock("@/lib/billing/usage");
     vi.doUnmock("@/lib/media/object-storage");
+    vi.doUnmock("@/lib/security/expensive-endpoint-protection");
     vi.doUnmock("@/lib/workspaces/personal-workspace");
     vi.resetModules();
   });
 
-  it("records media usage before creating production source upload intents", async () => {
-    const { consumeUsageForLimit, createSignedSourceVideoUploadIntent } = mockProductionContext();
+  it("creates production source upload intents without consuming transform quota", async () => {
+    const { assertExpensiveEndpointAllowed, createSignedSourceVideoUploadIntent } = mockProductionContext();
     const { POST } = await loadSourceUploadIntentRoute();
 
     const response = await POST(sourceUploadIntentRequest());
@@ -143,16 +133,10 @@ describe("source upload intents API", () => {
 
     expect(response.status).toBe(201);
     expect(payload.intent.uploadUrl).toBe("https://signed-upload.example.com/put");
-    expect(consumeUsageForLimit).toHaveBeenCalledWith({
+    expect(assertExpensiveEndpointAllowed).toHaveBeenCalledWith({
+      route: "media.source-upload-intents.create",
+      userId: "user_upload_1",
       workspaceId: "workspace_upload_1",
-      key: "mediaTransformsPerMonth",
-      sourceId: expect.stringMatching(/^source_upload_intent:source_/),
-      metadata: {
-        contentType: "video/mp4",
-        fileName: "Launch Clip.mp4",
-        sizeBytes: 12_000_000,
-        userId: "user_upload_1"
-      },
       skip: false
     });
     expect(createSignedSourceVideoUploadIntent).toHaveBeenCalledWith(
@@ -166,18 +150,15 @@ describe("source upload intents API", () => {
         config: storageConfig
       })
     );
-    const usageCalls = consumeUsageForLimit.mock.calls as Array<[{ sourceId?: string }]>;
-    const intentCalls = createSignedSourceVideoUploadIntent.mock.calls as Array<[{ id?: string }]>;
-    expect(usageCalls[0]?.[0].sourceId).toBe(`source_upload_intent:${intentCalls[0]?.[0].id}`);
   });
 
-  it("returns 429 before signing source upload intents when media usage is exhausted", async () => {
-    const consumeUsageForLimit = vi.fn(async () => {
-      throw new UsageLimitExceededError();
+  it("returns 429 before signing source upload intents when expensive endpoint protection blocks", async () => {
+    const assertExpensiveEndpointAllowed = vi.fn(() => {
+      throw new ExpensiveEndpointRateLimitError();
     });
     const createSignedSourceVideoUploadIntent = vi.fn();
     mockProductionContext({
-      consumeUsageForLimit,
+      assertExpensiveEndpointAllowed,
       createSignedSourceVideoUploadIntent
     });
     const { POST } = await loadSourceUploadIntentRoute();
@@ -186,18 +167,19 @@ describe("source upload intents API", () => {
     const payload = await response.json();
 
     expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("60");
     expect(payload).toEqual({
-      error: "Media transforms limit reached for the current plan.",
-      usage: usageMetric
+      error: "Too many expensive media requests. Try again shortly.",
+      limit: 20,
+      resetAt: "2026-06-25T12:01:00.000Z",
+      windowMs: 60_000
     });
     expect(createSignedSourceVideoUploadIntent).not.toHaveBeenCalled();
   });
 
-  it("rejects oversized source upload intents before consuming media usage", async () => {
-    const consumeUsageForLimit = vi.fn(async () => null);
+  it("rejects oversized source upload intents before signing upload credentials", async () => {
     const createSignedSourceVideoUploadIntent = vi.fn();
     mockProductionContext({
-      consumeUsageForLimit,
       getObjectStorageConfig: vi.fn(() => ({
         ...storageConfig,
         maxUploadBytes: 1_000
@@ -211,7 +193,6 @@ describe("source upload intents API", () => {
 
     expect(response.status).toBe(400);
     expect(payload.error).toBe("Source video exceeds the configured upload size limit.");
-    expect(consumeUsageForLimit).not.toHaveBeenCalled();
     expect(createSignedSourceVideoUploadIntent).not.toHaveBeenCalled();
   });
 });

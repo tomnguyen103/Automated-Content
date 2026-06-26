@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import {
+  consumeUsageForLimit,
+  UsageLimitExceededError
+} from "@/lib/billing/usage";
 import {
   attachMediaGenerationJobRun,
   createMediaGenerationJobForWorkspace,
@@ -45,6 +50,22 @@ export async function POST(request: NextRequest) {
   try {
     const input = createMediaGenerationJobSchema.parse(body);
     const workspace = await resolvePersonalWorkspaceForUser(user);
+    const usageSourceId = input.idempotencyKey
+      ? `media_generation_job:${workspace.id}:${input.idempotencyKey}`
+      : `media_generation_job:${randomUUID()}`;
+
+    await consumeUsageForLimit({
+      workspaceId: workspace.id,
+      key: "mediaTransformsPerMonth",
+      sourceId: usageSourceId,
+      metadata: {
+        jobKind: input.kind,
+        sourceAssetId: input.sourceAssetId,
+        userId: user.id
+      },
+      skip: workspace.isLocalPreview
+    });
+
     const { created, job: createdJob } = await createMediaGenerationJobForWorkspace({
       workspaceId: workspace.id,
       createdByUserId: user.id,
@@ -86,6 +107,16 @@ export async function POST(request: NextRequest) {
           issues: error.issues
         },
         { status: 400 }
+      );
+    }
+
+    if (error instanceof UsageLimitExceededError) {
+      return NextResponse.json(
+        {
+          error: "Media transforms limit reached for the current plan.",
+          usage: error.metric
+        },
+        { status: 429 }
       );
     }
 

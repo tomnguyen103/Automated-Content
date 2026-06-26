@@ -1,4 +1,5 @@
 import { task } from "@trigger.dev/sdk";
+import { executeMediaGenerationWorkflow } from "../lib/jobs/media-workflows";
 import { mediaGenerationTaskPayloadSchema } from "../lib/jobs/types";
 
 function createMediaWorkflowTask(id: string) {
@@ -10,10 +11,15 @@ function createMediaWorkflowTask(id: string) {
     },
     run: async (payload: unknown) => {
       const parsed = mediaGenerationTaskPayloadSchema.parse(payload);
+      const result = await executeMediaGenerationWorkflow({
+        payload: parsed
+      });
 
       return {
+        job: result.job,
         jobId: parsed.jobId,
-        status: "accepted",
+        replayed: result.replayed,
+        status: result.job.status,
         taskId: id,
         workspaceId: parsed.workspaceId
       };

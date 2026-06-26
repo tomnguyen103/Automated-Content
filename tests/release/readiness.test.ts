@@ -158,15 +158,36 @@ describe("release readiness", () => {
           status: "blocked"
         }),
         expect.objectContaining({
-          id: "redis-url",
-          status: "blocked"
-        }),
-        expect.objectContaining({
           id: "object-storage-public-base-url",
           status: "blocked"
         }),
         expect.objectContaining({
           id: "ai-provider-key",
+          status: "blocked"
+        })
+      ])
+    );
+  });
+
+  it("requires Redis only when Trigger.dev is not the configured background backend", () => {
+    const report = buildReleaseReadinessReport({
+      env: {
+        ...completeEnv,
+        REDIS_URL: "",
+        TRIGGER_PROJECT_REF: "",
+        TRIGGER_SECRET_KEY: "",
+        TRIGGER_VERSION: ""
+      },
+      gateResults: passingGates,
+      manualChecks: passedManualChecks,
+      now: new Date("2026-06-24T12:00:00.000Z")
+    });
+
+    expect(report.ready).toBe(false);
+    expect(report.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "redis-url",
           status: "blocked"
         })
       ])

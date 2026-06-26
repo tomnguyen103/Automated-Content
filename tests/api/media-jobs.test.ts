@@ -17,6 +17,12 @@ async function loadMediaJobRoutes() {
   };
 }
 
+async function loadMediaJobCreateRoute() {
+  const { POST } = await import("@/app/api/media/jobs/route");
+
+  return { POST };
+}
+
 function routeContext(id: string) {
   return {
     params: Promise.resolve({ id })
@@ -36,6 +42,11 @@ describe("media generation jobs API", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.doUnmock("@/lib/auth/current-user");
+    vi.doUnmock("@/lib/billing/usage");
+    vi.doUnmock("@/lib/jobs/media");
+    vi.doUnmock("@/lib/jobs/trigger");
+    vi.doUnmock("@/lib/workspaces/personal-workspace");
     vi.resetModules();
   });
 
@@ -155,5 +166,123 @@ describe("media generation jobs API", () => {
 
     expect(response.status).toBe(400);
     expect(payload.error).toBe("Invalid media generation job payload.");
+  });
+
+  it("reserves media transform usage before dispatching production jobs", async () => {
+    vi.resetModules();
+    vi.stubEnv("AUTH_LOCAL_PREVIEW", "");
+    vi.stubEnv("PLAYWRIGHT_AUTH_LOCAL_PREVIEW", "");
+    vi.stubEnv("DATABASE_URL", "postgres://app_user:prod_password@db.example.com:5432/app");
+
+    const job = {
+      id: "media_job_prod_1",
+      workspaceId: "workspace_prod_1",
+      createdByUserId: "user_prod_1",
+      jobKind: "media.generate-influencer-asset",
+      status: "queued",
+      idempotencyKey: "media-job-prod-001",
+      progress: 0,
+      input: {
+        prompt: "Launch asset"
+      },
+      output: {},
+      cost: {},
+      audit: {},
+      queuedAt: "2026-06-25T12:00:00.000Z",
+      createdAt: "2026-06-25T12:00:00.000Z",
+      updatedAt: "2026-06-25T12:00:00.000Z"
+    };
+    const consumeUsageForLimit = vi.fn(async () => null);
+    const createMediaGenerationJobForWorkspace = vi.fn(async () => ({
+      created: true,
+      job
+    }));
+    const attachMediaGenerationJobRun = vi.fn(async () => ({
+      ...job,
+      triggerRunId: "run_prod_1",
+      triggerTaskId: "media.generate-influencer-asset"
+    }));
+    const dispatchMediaGenerationJob = vi.fn(async () => ({
+      mode: "trigger.dev",
+      runId: "run_prod_1",
+      taskId: "media.generate-influencer-asset"
+    }));
+
+    class UsageLimitExceededError extends Error {
+      readonly metric = {
+        key: "mediaTransformsPerMonth",
+        label: "Media transforms",
+        used: 10,
+        limit: 10,
+        remaining: 0,
+        allowed: false,
+        cadence: "monthly"
+      };
+    }
+
+    vi.doMock("@/lib/auth/current-user", () => ({
+      getCurrentUser: vi.fn(async () => ({
+        id: "user_prod_1",
+        email: "prod@example.com",
+        name: "Prod User",
+        imageUrl: null,
+        initials: "PU",
+        isLocalPreview: false
+      }))
+    }));
+    vi.doMock("@/lib/workspaces/personal-workspace", () => ({
+      resolvePersonalWorkspaceForUser: vi.fn(async () => ({
+        id: "workspace_prod_1",
+        isLocalPreview: false,
+        role: "owner"
+      }))
+    }));
+    vi.doMock("@/lib/billing/usage", () => ({
+      UsageLimitExceededError,
+      consumeUsageForLimit
+    }));
+    vi.doMock("@/lib/jobs/media", () => ({
+      attachMediaGenerationJobRun,
+      createMediaGenerationJobForWorkspace,
+      listMediaGenerationJobsForWorkspace: vi.fn()
+    }));
+    vi.doMock("@/lib/jobs/trigger", () => ({
+      dispatchMediaGenerationJob
+    }));
+
+    const { POST } = await loadMediaJobCreateRoute();
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/media/jobs", {
+        method: "POST",
+        body: JSON.stringify({
+          kind: "media.generate-influencer-asset",
+          idempotencyKey: "media-job-prod-001",
+          input: {
+            prompt: "Launch asset"
+          }
+        })
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(payload.job.triggerRunId).toBe("run_prod_1");
+    expect(consumeUsageForLimit).toHaveBeenCalledWith({
+      workspaceId: "workspace_prod_1",
+      key: "mediaTransformsPerMonth",
+      sourceId: "media_generation_job:workspace_prod_1:media-job-prod-001",
+      metadata: {
+        jobKind: "media.generate-influencer-asset",
+        sourceAssetId: undefined,
+        userId: "user_prod_1"
+      },
+      skip: false
+    });
+    expect(consumeUsageForLimit.mock.invocationCallOrder[0]).toBeLessThan(
+      createMediaGenerationJobForWorkspace.mock.invocationCallOrder[0]!
+    );
+    expect(dispatchMediaGenerationJob).toHaveBeenCalledWith({
+      job
+    });
   });
 });
